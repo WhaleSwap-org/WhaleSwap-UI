@@ -210,7 +210,7 @@ async function getTokenMetadata(tokenAddress) {
             },
             '0x693ed886545970f0a3adf8c59af5ccdb6ddf0a76': {
                 symbol: 'LIB',
-                name: 'Liberdus',
+                name: 'WhaleSwap',
                 decimals: 18
             },
             '0x7ceb23fd6bc0add59e62ac25578270cff1b9f619': {

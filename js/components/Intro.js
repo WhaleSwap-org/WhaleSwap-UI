@@ -39,7 +39,7 @@ export class Intro extends BaseComponent {
 		if (!this.container) return;
 		this.container.innerHTML = `
 			<div class="tab-content-wrapper">
-				<h2>Welcome to LiberdusOTC</h2>
+				<h2>Welcome to WhaleSwap</h2>
 				<p class="intro-lead">Create orders by depositing tokens into escrow and setting the buy price, or fill existing orders to buy tokens at the set buy price set by the seller</p>
 				
 				<div class="intro-content">

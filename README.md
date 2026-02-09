@@ -1,4 +1,4 @@
-# OTC Token Swap DApp
+# WhaleSwap Token Swap DApp
 
 A decentralized application for over-the-counter token swaps on Polygon networks.
 
@@ -62,7 +62,7 @@ http-server
 4. Connect your wallet. On mismatch, the chain selector can request wallet switch between Polygon Mainnet and Amoy.
 
 ## Features
-- Create OTC swap orders
+- Create swap orders
 - Fill existing orders
 - Cancel your orders
 - View active orders

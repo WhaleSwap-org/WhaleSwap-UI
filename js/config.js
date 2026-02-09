@@ -2,7 +2,7 @@ import { abi as CONTRACT_ABI } from './abi/OTCSwap.js';
 import { ethers } from 'ethers';
 import { createLogger } from './services/LogService.js';
 
-export const APP_BRAND = 'LiberdusOTC';
+export const APP_BRAND = 'WhaleSwap';
 export const APP_LOGO = 'assets/1.png';
 
 const networkConfig = {
@@ -101,7 +101,7 @@ export const DEBUG_CONFIG = {
     TOKEN_ICON_SERVICE: false, // Add token icon service debugging
     TOAST: false, // Enable toast debugging for testing
     PRICING_DEFAULT_TO_ONE: false, // Default missing prices to 1 for testing, false for production
-    LIBERDUS_VALIDATION: true, // Enable frontend Liberdus token validation
+    LIBERDUS_VALIDATION: true, // Enable frontend WhaleSwap token validation
     // Add more specific flags as needed
 };
 
@@ -142,7 +142,7 @@ export const TOKEN_ICON_CONFIG = {
     
     // Special cases
     SPECIAL_TOKENS: {
-        "0x693ed886545970f0a3adf8c59af5ccdb6ddf0a76": "assets/32.png" // Liberdus
+        "0x693ed886545970f0a3adf8c59af5ccdb6ddf0a76": "assets/32.png" // WhaleSwap
     },
     
     // Rate limiting configuration

@@ -545,7 +545,7 @@ export class CreateOrder extends BaseComponent {
                 
                 if (!sellTokenIsLiberdus && !buyTokenIsLiberdus) {
                     this.debug('Liberdus validation failed');
-                    this.showError('One of the tokens must be Liberdus (LIB). Please select Liberdus as either the buy or sell token.');
+                    this.showError('One of the tokens must be WhaleSwap (LIB). Please select WhaleSwap as either the buy or sell token.');
                     return;
                 }
             }
