@@ -13,8 +13,13 @@ export class WalletUI extends BaseComponent {
         
         // Store bound handlers for cleanup
         this._boundConnectHandler = null;
-        this._boundDisconnectHandler = null;
+        this._boundWalletInfoHandler = null;
+        this._boundPopupContainerHandler = null;
+        this._boundDocumentClickHandler = null;
         this._boundWalletListener = null;
+        this.popupContainer = null;
+        this.popupAccount = null;
+        this.walletPopup = null;
         
         this.debug('Constructor completed (no side effects)');
     }
@@ -68,10 +73,22 @@ export class WalletUI extends BaseComponent {
             this.connectButton.removeEventListener('click', this._boundConnectHandler);
         }
         
-        // Remove disconnect button listener
-        if (this.disconnectButton && this._boundDisconnectHandler) {
-            this.disconnectButton.removeEventListener('click', this._boundDisconnectHandler);
+        // Remove wallet info listener
+        if (this.walletInfo && this._boundWalletInfoHandler) {
+            this.walletInfo.removeEventListener('click', this._boundWalletInfoHandler);
         }
+
+        // Remove popup container listener
+        if (this.popupContainer && this._boundPopupContainerHandler) {
+            this.popupContainer.removeEventListener('click', this._boundPopupContainerHandler);
+        }
+
+        // Remove outside click listener
+        if (this._boundDocumentClickHandler) {
+            document.removeEventListener('click', this._boundDocumentClickHandler);
+        }
+
+        this.hideWalletPopup();
         
         // Remove wallet manager listener
         if (this._boundWalletListener) {
@@ -87,11 +104,11 @@ export class WalletUI extends BaseComponent {
             
             // Initialize DOM elements with error checking
             this.connectButton = document.getElementById('walletConnect');
-            this.disconnectButton = document.getElementById('walletDisconnect');
             this.walletInfo = document.getElementById('walletInfo');
             this.accountAddress = document.getElementById('accountAddress');
+            this.popupContainer = document.getElementById('wallet-popup-container');
 
-            if (!this.connectButton || !this.disconnectButton || !this.walletInfo || !this.accountAddress) {
+            if (!this.connectButton || !this.walletInfo || !this.accountAddress || !this.popupContainer) {
                 this.error('Required wallet UI elements not found');
                 throw new Error('Required wallet UI elements not found');
             }
@@ -112,44 +129,61 @@ export class WalletUI extends BaseComponent {
         this.connectButton.addEventListener('click', this._boundConnectHandler);
         this.debug('Click listener added to connect button');
 
-        // Create bound handler for disconnect button
-        this._boundDisconnectHandler = async (e) => {
+        // Click on connected wallet chip opens popup
+        this._boundWalletInfoHandler = (e) => {
             e.preventDefault();
-            this.debug('Disconnect button clicked');
-            try {
-                // Clean up CreateOrder component before disconnecting
-                if (window.app?.components['create-order']?.cleanup) {
-                    window.app.components['create-order'].cleanup();
+            e.stopPropagation();
+            this.toggleWalletPopup();
+        };
+        this.walletInfo.addEventListener('click', this._boundWalletInfoHandler);
+
+        // Static popup event delegation (listener attached once on load)
+        this._boundPopupContainerHandler = async (e) => {
+            const target = e.target;
+            if (!(target instanceof Element)) return;
+
+            const closeBtn = target.closest('[data-wallet-close]');
+            if (closeBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                this.hideWalletPopup();
+                return;
+            }
+
+            const copyBtn = target.closest('[data-wallet-copy]');
+            if (copyBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!this.popupAccount) return;
+                try {
+                    await navigator.clipboard.writeText(this.popupAccount);
+                    this.showInfo('Address copied');
+                } catch (_) {
+                    this.showError('Failed to copy address');
                 }
-                
-                // Update create order button
-                const createOrderBtn = document.getElementById('createOrderBtn');
-                if (createOrderBtn) {
-                    createOrderBtn.disabled = true;
-                    createOrderBtn.textContent = 'Connect Wallet to Create Order';
-                }
-                
-                // Use the new disconnect method that saves user preference
-                walletManager.disconnect();
-                
-                // Reset UI
-                this.showConnectButton();
-                this.accountAddress.textContent = '';
-                
-                // Update tab visibility
-                if (window.app?.updateTabVisibility) {
-                    window.app.updateTabVisibility(false);
-                }
-                
-                // Only trigger app-level disconnect handler (which will show the message)
-                if (window.app?.handleWalletDisconnect) {
-                    window.app.handleWalletDisconnect();
-                }
-            } catch (error) {
-                this.error('[WalletUI] Error disconnecting:', error);
+                return;
+            }
+
+            const disconnectBtn = target.closest('[data-wallet-disconnect]');
+            if (disconnectBtn) {
+                await this.disconnectWallet(e);
             }
         };
-        this.disconnectButton.addEventListener('click', this._boundDisconnectHandler);
+        this.popupContainer.addEventListener('click', this._boundPopupContainerHandler);
+
+        // Close popup on outside click
+        this._boundDocumentClickHandler = (e) => {
+            if (!this.walletPopup) return;
+            const target = e.target;
+            if (!(target instanceof Element)) {
+                this.hideWalletPopup();
+                return;
+            }
+            if (!target.closest('.wallet-info-popup') && !target.closest('#walletInfo')) {
+                this.hideWalletPopup();
+            }
+        };
+        document.addEventListener('click', this._boundDocumentClickHandler);
 
         // Setup wallet manager listener
         this._boundWalletListener = (event, data) => {
@@ -161,19 +195,64 @@ export class WalletUI extends BaseComponent {
                     break;
                 case 'disconnect':
                     this.debug('Disconnect event received');
+                    this.hideWalletPopup();
                     this.showConnectButton();
                     break;
                 case 'accountsChanged':
                     this.debug('Account change event received');
                     this.updateUI(data.account);
+                    this.hideWalletPopup();
                     break;
                 case 'chainChanged':
                     this.debug('Chain change event received');
                     this.updateNetworkBadge(data.chainId);
+                    this.hideWalletPopup();
                     break;
             }
         };
         walletManager.addListener(this._boundWalletListener);
+    }
+
+    async disconnectWallet(e = null) {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        this.debug('Disconnect button clicked');
+        try {
+            this.hideWalletPopup();
+
+            // Clean up CreateOrder component before disconnecting
+            if (window.app?.components['create-order']?.cleanup) {
+                window.app.components['create-order'].cleanup();
+            }
+            
+            // Update create order button
+            const createOrderBtn = document.getElementById('createOrderBtn');
+            if (createOrderBtn) {
+                createOrderBtn.disabled = true;
+                createOrderBtn.textContent = 'Connect Wallet to Create Order';
+            }
+            
+            // Use the new disconnect method that saves user preference
+            walletManager.disconnect();
+            
+            // Reset UI
+            this.showConnectButton();
+            this.accountAddress.textContent = '';
+            
+            // Update tab visibility
+            if (window.app?.updateTabVisibility) {
+                window.app.updateTabVisibility(false);
+            }
+            
+            // Only trigger app-level disconnect handler (which will show the message)
+            if (window.app?.handleWalletDisconnect) {
+                window.app.handleWalletDisconnect();
+            }
+        } catch (error) {
+            this.error('[WalletUI] Error disconnecting:', error);
+        }
     }
 
     async checkInitialConnectionState() {
@@ -289,6 +368,7 @@ export class WalletUI extends BaseComponent {
             this.debug('Showing connect button');
             this.connectButton.classList.remove('hidden');
             this.walletInfo.classList.add('hidden');
+            this.hideWalletPopup();
             // Remove wallet-connected class
             document.querySelector('.swap-section')?.classList.remove('wallet-connected');
             this.debug('Connect button shown');
@@ -333,5 +413,71 @@ export class WalletUI extends BaseComponent {
         } catch (error) {
             this.error('[WalletUI] Error updating network badge:', error);
         }
+    }
+
+    toggleWalletPopup() {
+        if (this.walletInfo.classList.contains('hidden')) return;
+
+        if (this.walletPopup) {
+            this.hideWalletPopup();
+            return;
+        }
+
+        this.showWalletPopup();
+    }
+
+    showWalletPopup() {
+        const account = walletManager.getAccount?.();
+        if (!account || !this.walletInfo || !this.popupContainer) return;
+
+        this.hideWalletPopup();
+        this.popupAccount = account;
+        const short = `${account.slice(0, 6)}...${account.slice(-4)}`;
+
+        this.popupContainer.innerHTML = `
+            <div class="wallet-info-popup" role="dialog" aria-label="Wallet actions">
+                <div class="wallet-info-popup-content">
+                    <button class="wallet-popup-close" type="button" title="Close" data-wallet-close>×</button>
+                    <div class="wallet-popup-row">
+                        <span class="wallet-popup-label">Wallet Address</span>
+                        <div class="wallet-popup-address-box">
+                            <span class="wallet-popup-address address-text" data-wallet-copy title="${account}">${short}</span>
+                            <button type="button" class="copy-icon-button" data-wallet-copy>Copy</button>
+                        </div>
+                    </div>
+                    <div class="wallet-popup-actions">
+                        <button type="button" class="disconnect-button" data-wallet-disconnect>Disconnect</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        this.walletPopup = this.popupContainer.querySelector('.wallet-info-popup');
+        this.positionWalletPopup();
+    }
+
+    positionWalletPopup() {
+        if (!this.walletPopup || !this.walletInfo) return;
+
+        const rect = this.walletInfo.getBoundingClientRect();
+        const popupRect = this.walletPopup.getBoundingClientRect();
+
+        let top = rect.bottom + 8;
+        let left = rect.right - popupRect.width;
+
+        if (left < 8) left = 8;
+        if (top + popupRect.height > window.innerHeight - 8) {
+            top = rect.top - popupRect.height - 8;
+        }
+
+        this.walletPopup.style.top = `${top}px`;
+        this.walletPopup.style.left = `${left}px`;
+    }
+
+    hideWalletPopup() {
+        if (this.popupContainer) {
+            this.popupContainer.innerHTML = '';
+        }
+        this.popupAccount = null;
+        this.walletPopup = null;
     }
 }
