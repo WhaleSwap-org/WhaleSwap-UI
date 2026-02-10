@@ -137,19 +137,15 @@ export class CreateOrder extends BaseComponent {
                 setVisibility(buyBal, false);
             }
             
-            // Handle read-only mode first, before any other initialization
+            // Keep status area quiet in read-only mode, but continue initialization so
+            // users can still view inputs and token lists while disconnected.
             if (readOnlyMode) {
-                this.setReadOnlyMode();
-                // Clear any existing error messages in read-only mode
                 const statusElement = document.getElementById('status');
                 if (statusElement) {
                     statusElement.style.display = 'none';
                 }
-                this.initialized = true;
-                return;
             }
 
-            // Rest of the initialization code for connected mode...
             const ws = this.ctx.getWebSocket();
             // CreateOrder only creates orders, it doesn't need to listen to order events
 
@@ -183,8 +179,11 @@ export class CreateOrder extends BaseComponent {
             // Initialize contract service
             contractService.initialize();
             
-            // Enable form when wallet is connected
-            this.setConnectedMode();
+            if (readOnlyMode) {
+                this.setReadOnlyMode();
+            } else {
+                this.setConnectedMode();
+            }
             
             // Setup UI only on first render to preserve user input on tab switches
             if (!this.hasLoadedData) {
@@ -308,9 +307,8 @@ export class CreateOrder extends BaseComponent {
     setReadOnlyMode() {
         this.debug('Setting read-only mode');
         const createOrderBtn = document.getElementById('createOrderBtn');
-        const orderCreationFee = document.getElementById('orderCreationFee');
         
-        // Ensure UI is hidden per styles by removing wallet-connected
+        // Keep form visible while disconnected; only gate submission.
         const swapSection = document.querySelector('.swap-section');
         if (swapSection) {
             swapSection.classList.remove('wallet-connected');
@@ -320,12 +318,6 @@ export class CreateOrder extends BaseComponent {
             createOrderBtn.disabled = true;
             createOrderBtn.textContent = 'Connect Wallet to Create Order';
         }
-        
-        // Disable input fields
-        ['partner', 'sellToken', 'sellAmount', 'buyToken', 'buyAmount'].forEach(id => {
-            const element = document.getElementById(id);
-            if (element) element.disabled = true;
-        });
     }
 
     setConnectedMode() {
@@ -2370,4 +2362,3 @@ export class CreateOrder extends BaseComponent {
         }
     }
 }
-

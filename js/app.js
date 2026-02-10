@@ -344,9 +344,10 @@ class App {
 		this.updateTabVisibility = (isConnected) => {
 			const tabButtons = document.querySelectorAll('.tab-button');
 			tabButtons.forEach(button => {
-				// always show intro, view-orders, cleanup-orders, contract-params
+				// Always show intro, create-order, view-orders, cleanup-orders, contract-params
 				if (
 					button.dataset.tab === 'intro' ||
+					button.dataset.tab === 'create-order' ||
 					button.dataset.tab === 'view-orders' ||
 					button.dataset.tab === 'cleanup-orders' ||
 					button.dataset.tab === 'contract-params'
@@ -359,7 +360,7 @@ class App {
 			
 			// If disconnected, only switch to view-orders if current tab is not visible
 			if (!isConnected) {
-				const visibleWhenDisconnected = new Set(['intro', 'view-orders', 'cleanup-orders', 'contract-params']);
+				const visibleWhenDisconnected = new Set(['intro', 'create-order', 'view-orders', 'cleanup-orders', 'contract-params']);
 				if (!visibleWhenDisconnected.has(this.currentTab)) {
 					this.showTab('view-orders');
 				}
@@ -550,7 +551,7 @@ class App {
 			
 			// In read-only mode, initialize the tabs that should always be visible
 			if (readOnlyMode) {
-				const readOnlyTabs = ['intro', 'view-orders', 'cleanup-orders', 'contract-params'];
+				const readOnlyTabs = ['intro', 'create-order', 'view-orders', 'cleanup-orders', 'contract-params'];
 				for (const tabId of readOnlyTabs) {
 					const component = this.components[tabId];
 					if (component && typeof component.initialize === 'function') {
@@ -765,8 +766,10 @@ class App {
 		try {
 			this.debug('Reinitializing components with wallet...');
 			
-			// Clean up all components first
-			Object.values(this.components).forEach(component => {
+			// Clean up tab components first.
+			// Keep WalletUI mounted so its static header listeners (wallet chip popup) remain active.
+			Object.entries(this.components).forEach(([id, component]) => {
+				if (id === 'wallet-info') return;
 				if (component?.cleanup && component.initialized) {
 					try {
 						component.cleanup();

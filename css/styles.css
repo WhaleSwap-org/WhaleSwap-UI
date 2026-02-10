@@ -547,20 +547,6 @@ input {
   color: #fff;
 }
 
-/* Add these new styles */
-.swap-section:not(.wallet-connected) > *:not(#createOrderBtn):not(#status) {
-  display: none !important;
-}
-
-.swap-section.wallet-connected > * {
-  display: block;
-}
-
-/* Make sure the swap arrow stays flex when visible */
-.swap-section.wallet-connected .swap-arrow {
-  display: flex;
-}
-
 /* Add new standardized card class */
 .card {
   background: var(--card-bg);
