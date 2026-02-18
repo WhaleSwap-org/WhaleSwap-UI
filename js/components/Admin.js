@@ -15,6 +15,10 @@ export class Admin extends BaseComponent {
 
         this.isInitializing = false;
         this.isInitialized = false;
+        this.feeTokenMetadataCache = new Map();
+        this.currentFeeTokenMetadata = null;
+        this.feeTokenLookupTimeout = null;
+        this.feeTokenLookupRequestId = 0;
     }
 
     async initialize(readOnlyMode = true) {
@@ -83,6 +87,19 @@ export class Admin extends BaseComponent {
                             <input id="admin-fee-amount" class="admin-input" type="text" placeholder="e.g. 1.5" />
                         </div>
                     </div>
+                    <div class="admin-form-grid admin-meta-grid">
+                        <div>
+                            <label for="admin-fee-symbol">Token symbol (retrieved)</label>
+                            <input id="admin-fee-symbol" class="admin-input" type="text" placeholder="Auto" readonly />
+                        </div>
+                        <div>
+                            <label for="admin-fee-decimals">Token decimals (retrieved)</label>
+                            <input id="admin-fee-decimals" class="admin-input" type="text" placeholder="Auto" readonly />
+                        </div>
+                    </div>
+                    <div class="admin-help-text" id="admin-fee-amount-hint">
+                        Enter a normal token amount (for example, 1 or 2). We automatically convert it to base units using the token's decimals.
+                    </div>
                     <div class="admin-current" id="admin-current-fee">Current fee config: Loading...</div>
                     <button id="admin-update-fee" class="action-button">Update Fee Config</button>
                 </section>
@@ -137,15 +154,130 @@ export class Admin extends BaseComponent {
         this.disableButton = document.getElementById('admin-disable-contract');
         this.addTokenButton = document.getElementById('admin-add-token');
         this.tokenRowsContainer = document.getElementById('admin-token-rows');
+        this.feeTokenInput = document.getElementById('admin-fee-token');
+        this.feeAmountInput = document.getElementById('admin-fee-amount');
+        this.feeSymbolInput = document.getElementById('admin-fee-symbol');
+        this.feeDecimalsInput = document.getElementById('admin-fee-decimals');
+        this.feeAmountHint = document.getElementById('admin-fee-amount-hint');
 
         this.updateFeeButton?.addEventListener('click', () => this.updateFeeConfig());
         this.updateTokensButton?.addEventListener('click', () => this.updateAllowedTokens());
         this.disableButton?.addEventListener('click', () => this.disableContract());
         this.addTokenButton?.addEventListener('click', () => this.addTokenRow());
+        this.feeTokenInput?.addEventListener('input', () => this.scheduleFeeTokenMetadataLookup());
+        this.feeTokenInput?.addEventListener('blur', () => this.resolveFeeTokenMetadata());
         this.tokenRowsContainer?.addEventListener('click', (event) => this.handleTokenRowsClick(event));
         this.tokenRowsContainer?.addEventListener('input', (event) => this.handleTokenRowsInput(event));
 
+        this.resetFeeAmountHint();
         this.resetTokenRows();
+    }
+
+    updateFeeTokenMetadataDisplay(metadata = null) {
+        if (this.feeSymbolInput) {
+            this.feeSymbolInput.value = metadata?.symbol || '';
+        }
+        if (this.feeDecimalsInput) {
+            this.feeDecimalsInput.value = metadata?.decimals?.toString?.() || '';
+        }
+    }
+
+    resetFeeAmountHint() {
+        this.setFeeAmountHint(
+            'Enter a normal token amount (for example, 1 or 2). We automatically convert it to base units using the token\'s decimals.'
+        );
+        if (this.feeAmountInput) {
+            this.feeAmountInput.placeholder = 'e.g. 1.5';
+        }
+        this.updateFeeTokenMetadataDisplay(null);
+    }
+
+    setFeeAmountHint(message, tone = 'default') {
+        if (!this.feeAmountHint) return;
+
+        this.feeAmountHint.textContent = message;
+        this.feeAmountHint.classList.remove('is-error', 'is-success');
+        if (tone === 'error') this.feeAmountHint.classList.add('is-error');
+        if (tone === 'success') this.feeAmountHint.classList.add('is-success');
+    }
+
+    scheduleFeeTokenMetadataLookup() {
+        if (this.feeTokenLookupTimeout) {
+            clearTimeout(this.feeTokenLookupTimeout);
+        }
+        this.feeTokenLookupTimeout = setTimeout(() => {
+            this.resolveFeeTokenMetadata();
+        }, 350);
+    }
+
+    async getFeeTokenMetadata(tokenAddress) {
+        const normalizedAddress = ethers.utils.getAddress(tokenAddress);
+        const cacheKey = normalizedAddress.toLowerCase();
+        const cachedMetadata = this.feeTokenMetadataCache.get(cacheKey);
+        if (cachedMetadata) return cachedMetadata;
+
+        const tokenContract = new ethers.Contract(normalizedAddress, erc20Abi, this.contract.provider);
+        const [symbolRaw, decimalsRaw] = await Promise.all([
+            tokenContract.symbol(),
+            tokenContract.decimals()
+        ]);
+
+        const symbol = symbolRaw || 'TOKEN';
+        const decimals = Number(decimalsRaw);
+        if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255) {
+            throw new Error('Invalid token decimals');
+        }
+
+        const metadata = { address: normalizedAddress, symbol, decimals };
+        this.feeTokenMetadataCache.set(cacheKey, metadata);
+        return metadata;
+    }
+
+    async resolveFeeTokenMetadata() {
+        const feeToken = this.feeTokenInput?.value?.trim();
+        if (!feeToken) {
+            this.currentFeeTokenMetadata = null;
+            this.resetFeeAmountHint();
+            return;
+        }
+
+        if (!ethers.utils.isAddress(feeToken)) {
+            this.currentFeeTokenMetadata = null;
+            this.updateFeeTokenMetadataDisplay(null);
+            this.setFeeAmountHint(
+                'Enter a valid token contract address to auto-load decimals before submitting.',
+                'error'
+            );
+            return;
+        }
+
+        const requestId = ++this.feeTokenLookupRequestId;
+        this.setFeeAmountHint('Fetching token decimals to convert your amount to base units...');
+
+        try {
+            const metadata = await this.getFeeTokenMetadata(feeToken);
+            if (requestId !== this.feeTokenLookupRequestId) return;
+
+            this.currentFeeTokenMetadata = metadata;
+            if (this.feeAmountInput) {
+                this.feeAmountInput.placeholder = `e.g. 1 ${metadata.symbol}`;
+            }
+            this.setFeeAmountHint(
+                `Amount is in ${metadata.symbol} units. Enter values like 1 or 2, and we convert using ${metadata.decimals} decimals before submitting.`,
+                'success'
+            );
+            this.updateFeeTokenMetadataDisplay(metadata);
+        } catch (error) {
+            if (requestId !== this.feeTokenLookupRequestId) return;
+
+            this.currentFeeTokenMetadata = null;
+            this.updateFeeTokenMetadataDisplay(null);
+            this.setFeeAmountHint(
+                'Could not read token decimals from this address. Verify the token contract address and try again.',
+                'error'
+            );
+            this.warn('Failed to load fee token metadata:', error);
+        }
     }
 
     resetTokenRows() {
@@ -259,8 +391,8 @@ export class Admin extends BaseComponent {
     }
 
     async updateFeeConfig() {
-        const tokenInput = document.getElementById('admin-fee-token');
-        const amountInput = document.getElementById('admin-fee-amount');
+        const tokenInput = this.feeTokenInput || document.getElementById('admin-fee-token');
+        const amountInput = this.feeAmountInput || document.getElementById('admin-fee-amount');
         const feeToken = tokenInput?.value?.trim();
         const feeAmount = amountInput?.value?.trim();
 
@@ -280,17 +412,29 @@ export class Admin extends BaseComponent {
 
             const wallet = this.ctx.getWallet();
             const signer = await wallet.getSigner();
-            const tokenContract = new ethers.Contract(feeToken, erc20Abi, this.contract.provider);
-            const decimals = await tokenContract.decimals();
-            const amountInUnits = ethers.utils.parseUnits(feeAmount, decimals);
+            const metadata = await this.getFeeTokenMetadata(feeToken);
+            this.currentFeeTokenMetadata = metadata;
+            this.updateFeeTokenMetadataDisplay(metadata);
 
-            const tx = await this.contract.connect(signer).updateFeeConfig(feeToken, amountInUnits);
+            let amountInUnits;
+            try {
+                amountInUnits = ethers.utils.parseUnits(feeAmount, metadata.decimals);
+            } catch (parseError) {
+                this.showError(
+                    `Invalid amount for ${metadata.symbol}. This token supports up to ${metadata.decimals} decimal places.`
+                );
+                return;
+            }
+
+            const tx = await this.contract.connect(signer).updateFeeConfig(metadata.address, amountInUnits);
             await tx.wait();
 
             if (tokenInput) tokenInput.value = '';
             if (amountInput) amountInput.value = '';
+            this.currentFeeTokenMetadata = null;
+            this.resetFeeAmountHint();
             await this.loadCurrentFeeConfig();
-            this.showSuccess('Fee configuration updated.');
+            this.showSuccess(`Fee configuration updated using ${metadata.decimals} token decimals.`);
         } catch (error) {
             this.error('Failed to update fee config:', error);
             this.showError(`Failed to update fee config: ${error.message}`);
