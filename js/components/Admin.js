@@ -76,11 +76,11 @@ export class Admin extends BaseComponent {
                     <div class="admin-form-grid">
                         <div>
                             <label for="admin-fee-token">Fee token address</label>
-                            <input id="admin-fee-token" type="text" placeholder="0x..." />
+                            <input id="admin-fee-token" class="admin-input" type="text" placeholder="0x..." />
                         </div>
                         <div>
                             <label for="admin-fee-amount">Fee amount</label>
-                            <input id="admin-fee-amount" type="text" placeholder="e.g. 1.5" />
+                            <input id="admin-fee-amount" class="admin-input" type="text" placeholder="e.g. 1.5" />
                         </div>
                     </div>
                     <div class="admin-current" id="admin-current-fee">Current fee config: Loading...</div>
@@ -89,11 +89,12 @@ export class Admin extends BaseComponent {
 
                 <section class="admin-section">
                     <h3>Update Allowed Tokens</h3>
-                    <p>Enter one token address per line, then choose whether to allow or disallow all of them.</p>
-                    <label for="admin-token-list">Token addresses</label>
-                    <textarea id="admin-token-list" rows="6" placeholder="0x...\n0x..."></textarea>
+                    <p>Add token addresses below, then choose whether to allow or disallow all listed tokens.</p>
+                    <label>Token addresses</label>
+                    <div id="admin-token-rows" class="admin-token-rows"></div>
+                    <button id="admin-add-token" type="button" class="admin-secondary-button">+ Add Token</button>
                     <label for="admin-token-action">Action</label>
-                    <select id="admin-token-action">
+                    <select id="admin-token-action" class="admin-select">
                         <option value="allow">Allow tokens</option>
                         <option value="disallow">Disallow tokens</option>
                     </select>
@@ -134,10 +135,104 @@ export class Admin extends BaseComponent {
         this.updateFeeButton = document.getElementById('admin-update-fee');
         this.updateTokensButton = document.getElementById('admin-update-tokens');
         this.disableButton = document.getElementById('admin-disable-contract');
+        this.addTokenButton = document.getElementById('admin-add-token');
+        this.tokenRowsContainer = document.getElementById('admin-token-rows');
 
         this.updateFeeButton?.addEventListener('click', () => this.updateFeeConfig());
         this.updateTokensButton?.addEventListener('click', () => this.updateAllowedTokens());
         this.disableButton?.addEventListener('click', () => this.disableContract());
+        this.addTokenButton?.addEventListener('click', () => this.addTokenRow());
+        this.tokenRowsContainer?.addEventListener('click', (event) => this.handleTokenRowsClick(event));
+        this.tokenRowsContainer?.addEventListener('input', (event) => this.handleTokenRowsInput(event));
+
+        this.resetTokenRows();
+    }
+
+    resetTokenRows() {
+        if (!this.tokenRowsContainer) return;
+        this.tokenRowsContainer.innerHTML = '';
+        this.addTokenRow();
+    }
+
+    addTokenRow(value = '') {
+        if (!this.tokenRowsContainer) return;
+
+        const row = document.createElement('div');
+        row.className = 'admin-token-row';
+        row.innerHTML = `
+            <input class="admin-input admin-token-address" type="text" placeholder="0x..." value="${value}" />
+            <button type="button" class="admin-token-remove">Remove</button>
+        `;
+
+        this.tokenRowsContainer.appendChild(row);
+        this.refreshTokenRowState();
+    }
+
+    handleTokenRowsClick(event) {
+        const removeButton = event.target?.closest?.('.admin-token-remove');
+        if (!removeButton) return;
+
+        const row = removeButton.closest('.admin-token-row');
+        if (!row) return;
+
+        if (this.tokenRowsContainer?.children.length === 1) {
+            const input = row.querySelector('.admin-token-address');
+            if (input) {
+                input.value = '';
+                this.clearTokenInputError(input);
+                input.focus();
+            }
+            return;
+        }
+
+        row.remove();
+        this.refreshTokenRowState();
+    }
+
+    handleTokenRowsInput(event) {
+        const input = event.target?.closest?.('.admin-token-address');
+        if (!input) return;
+        this.validateTokenInput(input);
+    }
+
+    refreshTokenRowState() {
+        const rows = this.tokenRowsContainer
+            ? Array.from(this.tokenRowsContainer.querySelectorAll('.admin-token-row'))
+            : [];
+        const disableRemove = rows.length <= 1;
+
+        rows.forEach((row) => {
+            const removeButton = row.querySelector('.admin-token-remove');
+            if (removeButton) removeButton.disabled = disableRemove;
+        });
+    }
+
+    setTokenInputError(input, message) {
+        input.classList.add('admin-input-error');
+        input.setAttribute('aria-invalid', 'true');
+        input.title = message;
+    }
+
+    clearTokenInputError(input) {
+        input.classList.remove('admin-input-error');
+        input.removeAttribute('aria-invalid');
+        input.removeAttribute('title');
+    }
+
+    validateTokenInput(input) {
+        const value = input?.value?.trim();
+        if (!value) {
+            this.clearTokenInputError(input);
+            return true;
+        }
+
+        if (!ethers.utils.isAddress(value)) {
+            this.setTokenInputError(input, 'Invalid token address');
+            return false;
+        }
+
+        this.clearTokenInputError(input);
+        return true;
     }
 
     async loadCurrentFeeConfig() {
@@ -206,21 +301,44 @@ export class Admin extends BaseComponent {
     }
 
     async updateAllowedTokens() {
-        const listInput = document.getElementById('admin-token-list');
         const actionInput = document.getElementById('admin-token-action');
+        const tokenInputs = this.tokenRowsContainer
+            ? Array.from(this.tokenRowsContainer.querySelectorAll('.admin-token-address'))
+            : [];
 
-        const rawLines = listInput?.value?.split('\n') || [];
-        const tokens = [...new Set(rawLines.map(line => line.trim()).filter(Boolean))];
-        if (!tokens.length) {
+        const providedTokenCount = tokenInputs.reduce((count, input) => {
+            return count + (input.value.trim() ? 1 : 0);
+        }, 0);
+
+        if (!providedTokenCount) {
             this.showError('Add at least one token address.');
             return;
         }
 
-        const invalid = tokens.find(addr => !ethers.utils.isAddress(addr));
-        if (invalid) {
-            this.showError(`Invalid token address: ${invalid}`);
+        const invalidInput = tokenInputs.find((input) => {
+            const value = input.value.trim();
+            if (!value) return false;
+            return !this.validateTokenInput(input);
+        });
+
+        if (invalidInput) {
+            this.showError('Please fix invalid token addresses before submitting.');
             return;
         }
+
+        const tokens = [];
+        const tokenSet = new Set();
+        tokenInputs.forEach((input) => {
+            const value = input.value.trim();
+            if (!value) return;
+
+            const normalizedAddress = ethers.utils.getAddress(value);
+            const key = normalizedAddress.toLowerCase();
+            if (tokenSet.has(key)) return;
+
+            tokenSet.add(key);
+            tokens.push(normalizedAddress);
+        });
 
         const allow = actionInput?.value !== 'disallow';
         const flags = tokens.map(() => allow);
@@ -234,7 +352,11 @@ export class Admin extends BaseComponent {
             const tx = await this.contract.connect(signer).updateAllowedTokens(tokens, flags);
             await tx.wait();
 
-            if (listInput) listInput.value = '';
+            if (tokens.length < providedTokenCount) {
+                this.showInfo('Duplicate token addresses were ignored.');
+            }
+
+            this.resetTokenRows();
             this.showSuccess(`Allowed tokens updated (${allow ? 'allow' : 'disallow'}).`);
         } catch (error) {
             this.error('Failed to update allowed tokens:', error);

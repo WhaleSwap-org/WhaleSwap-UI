@@ -180,14 +180,15 @@ class App {
 
 		// Fallback for rendering components that are not CreateOrder, ViewOrders, TakerOrders, WalletUI, or Cleanup
 		Object.entries(this.components).forEach(([id, component]) => {
-			if (component instanceof BaseComponent && 
-				!(component instanceof CreateOrder) && 
-				!(component instanceof ViewOrders) &&
-				!(component instanceof TakerOrders) &&
-				!(component instanceof WalletUI) &&
-				!(component instanceof Cleanup) &&
-				!(component instanceof Intro)) {
-				component.render = function() {
+				if (component instanceof BaseComponent && 
+					!(component instanceof CreateOrder) && 
+					!(component instanceof ViewOrders) &&
+					!(component instanceof TakerOrders) &&
+					!(component instanceof WalletUI) &&
+					!(component instanceof Cleanup) &&
+					!(component instanceof Admin) &&
+					!(component instanceof Intro)) {
+					component.render = function() {
 					if (!this.initialized) {
 						this.container.innerHTML = `
 							<div class="tab-content-wrapper">
