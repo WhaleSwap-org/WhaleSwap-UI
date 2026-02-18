@@ -2,6 +2,7 @@ import { BaseComponent } from './BaseComponent.js';
 import { ethers } from 'ethers';
 import { erc20Abi } from '../abi/erc20.js';
 import { createLogger } from '../services/LogService.js';
+import { DEBUG_CONFIG } from '../config.js';
 
 export class Admin extends BaseComponent {
     constructor() {
@@ -109,6 +110,10 @@ export class Admin extends BaseComponent {
     }
 
     async ensureOwnerAccess() {
+        if (DEBUG_CONFIG.ADMIN_BYPASS_OWNER_CHECK) {
+            return;
+        }
+
         const wallet = this.ctx.getWallet();
         const signer = await wallet?.getSigner?.();
         if (!signer) {

@@ -359,6 +359,11 @@ class App {
 				return false;
 			}
 
+			if (DEBUG_CONFIG.ADMIN_BYPASS_OWNER_CHECK) {
+				adminButton.style.display = 'block';
+				return true;
+			}
+
 			try {
 				const signer = await wallet.getSigner();
 				const ws = this.ctx.getWebSocket();
