@@ -1619,3 +1619,41 @@
     transform: none;
   }
 }
+
+.admin-panel .admin-section {
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.admin-panel .admin-danger {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.admin-panel .admin-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.admin-panel label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.admin-panel input,
+.admin-panel textarea,
+.admin-panel select {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.admin-panel .admin-current {
+  margin-bottom: 12px;
+  font-size: 0.95rem;
+  opacity: 0.9;
+}
