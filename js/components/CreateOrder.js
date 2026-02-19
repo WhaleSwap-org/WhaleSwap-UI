@@ -1255,10 +1255,6 @@ export class CreateOrder extends BaseComponent {
                 tokenElement.className = `token-item ${hasBalance ? 'token-has-balance' : 'token-no-balance'}`;
             }
             
-            // For sell tokens, add disabled class if no balance
-            if (type === 'sell' && !hasBalance) {
-                tokenElement.classList.add('token-disabled');
-            }
             tokenElement.dataset.address = token.address;
             
             // Format balance with up to 4 decimal places if they exist
@@ -1354,7 +1350,7 @@ export class CreateOrder extends BaseComponent {
                 <div class="summary-text">
                     Showing ${totalTokens} allowed tokens
                     ${tokensWithBalance > 0 ? `(${tokensWithBalance} with balance)` : ''}
-                    ${type === 'sell' && tokensWithBalance < totalTokens ? ` - ${totalTokens - tokensWithBalance} disabled (no balance)` : ''}
+                    ${type === 'sell' && tokensWithBalance < totalTokens ? ` - ${totalTokens - tokensWithBalance} with no balance` : ''}
                 </div>
             `;
             container.appendChild(summaryElement);
@@ -1832,13 +1828,27 @@ export class CreateOrder extends BaseComponent {
             }
         } catch (error) {
             this.debug('Error in handleTokenSelect:', error);
-            this.showError(`Failed to select ${type} token: ${error.message}`);
+            const reason = error?.reason || error?.message || 'Unknown reason';
+            this.showWarning(`Unable to select ${type} token: ${reason}`);
         }
     }
 
     async handleTokenItemClick(type, tokenItem) {
         try {
+            const isWalletConnected = typeof walletManager.isConnected === 'function'
+                ? walletManager.isConnected()
+                : Boolean(walletManager.isConnected);
+            if (!isWalletConnected) {
+                this.showWarning('Connect wallet to select a token.');
+                return;
+            }
+
             const address = tokenItem.dataset.address;
+            if (!address) {
+                this.showWarning('Unable to select token: missing token address.');
+                return;
+            }
+
             const token = this.tokens.find(t => t.address.toLowerCase() === address.toLowerCase());
             
             this.debug('Token item clicked:', {
@@ -1847,38 +1857,42 @@ export class CreateOrder extends BaseComponent {
                 token
             });
             
-            if (token) {
-                // For sell tokens, check if balance is zero
-                if (type === 'sell') {
-                    const balance = Number(token.balance) || 0;
-                    if (balance <= 0) {
-                        this.showWarning(`${token.symbol} has no balance available for selling. Please select a token with a balance.`);
-                        return; // Don't allow selection of tokens with zero balance for selling
-                    }
+            if (!token) {
+                this.showWarning('Unable to select token: token is not available in the current list.');
+                return;
+            }
+
+            // For sell tokens, check if balance is zero
+            if (type === 'sell') {
+                const balance = Number(token.balance) || 0;
+                if (balance <= 0) {
+                    this.showWarning(`${token.symbol} has no balance available for selling. Please select a token with a balance.`);
+                    return; // Don't allow selection of tokens with zero balance for selling
                 }
+            }
+            
+            // Add loading state to token item
+            tokenItem.style.opacity = '0.6';
+            tokenItem.style.pointerEvents = 'none';
+            
+            try {
+                // Token is already validated since it's in the allowed tokens list
+                await this.handleTokenSelect(type, token);
                 
-                // Add loading state to token item
-                tokenItem.style.opacity = '0.6';
-                tokenItem.style.pointerEvents = 'none';
-                
-                try {
-                    // Token is already validated since it's in the allowed tokens list
-                    await this.handleTokenSelect(type, token);
-                    
-                    // Close the modal after selection
-                    const modal = document.getElementById(`${type}TokenModal`);
-                    if (modal) {
-                        modal.style.display = 'none';
-                    }
-                } finally {
-                    // Remove loading state
-                    tokenItem.style.opacity = '1';
-                    tokenItem.style.pointerEvents = 'auto';
+                // Close the modal after selection
+                const modal = document.getElementById(`${type}TokenModal`);
+                if (modal) {
+                    modal.style.display = 'none';
                 }
+            } finally {
+                // Remove loading state
+                tokenItem.style.opacity = '1';
+                tokenItem.style.pointerEvents = 'auto';
             }
         } catch (error) {
             this.debug('Error in handleTokenItemClick:', error);
-            this.showError('Failed to select token');
+            const reason = error?.reason || error?.message || 'Unknown reason';
+            this.showWarning(`Unable to select token: ${reason}`);
         }
     }
 

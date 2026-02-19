@@ -634,20 +634,20 @@
 }
 
 .token-icon.small {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   background: transparent;
 }
 
 .token-icon.small img {
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
 }
 
 .token-icon.small .token-icon-fallback {
-  width: 16px;
-  height: 16px;
-  font-size: 10px;
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
 }
 
 /* Enhanced token modal search styles */
@@ -927,8 +927,8 @@
 }
 
 .token-selector-button {
-  padding: 8px 12px;
-  min-width: 120px;
+  padding: 8px 14px;
+  min-width: 156px;
   display: flex;
   align-items: center;
   background: var(--bg-secondary);
@@ -1114,8 +1114,8 @@
 }
 
 .token-selector-button {
-  padding: 6px 12px;
-  min-width: 120px;
+  padding: 8px 14px;
+  min-width: 156px;
   display: flex;
   align-items: center;
   background: var(--bg-secondary);
@@ -1138,18 +1138,30 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  flex: 1;
+  min-width: 0;
 }
 
 .token-info {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 
 .token-symbol {
   font-size: 14px;
   font-weight: 500;
   color: var(--text-primary);
+  white-space: nowrap;
+}
+
+/* Keep selected token symbols fully visible in swap selector buttons */
+.token-selector-button .token-symbol {
+  overflow: visible;
+  text-overflow: clip;
+  max-width: none;
+  flex: 0 1 auto;
 }
 
 .token-balance {
@@ -1260,22 +1272,6 @@
 .token-no-balance:hover {
   background-color: #f9fafb;
   opacity: 1;
-}
-
-/* Disabled token styling for sell selection */
-.token-disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  pointer-events: none;
-}
-
-.token-disabled:hover {
-  background-color: inherit;
-  border-color: inherit;
-}
-
-.token-disabled .token-item-content {
-  opacity: 0.6;
 }
 
 .has-balance {
@@ -1493,7 +1489,7 @@
   color: var(--text-primary);
   transition: background-color 0.2s;
   white-space: nowrap;
-  min-width: 120px; /* match selector min-width */
+  min-width: 156px; /* match selector min-width */
 }
 
 .balance-clickable:hover {
@@ -1555,11 +1551,28 @@
   color: var(--text-primary);
   gap: 8px; /* match selector */
   align-self: center; /* center chip in the group */
-  min-width: 120px; /* match selector min-width */
+  min-width: 156px; /* match selector min-width */
 }
 
 /* Responsive adjustments */
 @media (max-width: 480px) {
+  .token-selector-button,
+  .balance-clickable,
+  .token-balance-display {
+    min-width: 136px;
+  }
+
+  .token-icon.small {
+    width: 28px;
+    height: 28px;
+  }
+
+  .token-icon.small img,
+  .token-icon.small .token-icon-fallback {
+    width: 18px;
+    height: 18px;
+  }
+
   .token-balance-display {
     margin-top: 3px;
     padding: 3px 6px;
