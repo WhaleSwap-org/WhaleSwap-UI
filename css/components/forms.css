@@ -1252,17 +1252,6 @@
   opacity: 1 !important;
 }
 
-.token-not-allowed {
-  border-left: 3px solid #ef4444;
-  opacity: 0.8;
-  background-color: #fef2f2;
-}
-
-.token-not-allowed:hover {
-  background-color: #fee2e2;
-  opacity: 1;
-}
-
 .token-has-balance:hover {
   background-color: #f0fdf4;
   border-color: #059669;
@@ -1302,18 +1291,6 @@
   font-size: 0.75rem;
   color: #9ca3af;
   font-style: italic;
-}
-
-/* Token Not Allowed Message */
-.token-not-allowed-message {
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  color: #dc2626;
-  padding: 12px;
-  border-radius: 6px;
-  margin-top: 8px;
-  font-size: 0.875rem;
-  text-align: center;
 }
 
 /* Empty State Styling */
