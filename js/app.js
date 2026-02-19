@@ -83,6 +83,128 @@ class App {
 			});
 	}
 
+	getTabSkeletonVariant(tabId) {
+		if (tabId === 'view-orders' || tabId === 'my-orders' || tabId === 'taker-orders') {
+			return 'orders';
+		}
+		if (tabId === 'create-order') {
+			return 'form';
+		}
+		return 'stats';
+	}
+
+	getSkeletonMarkupByVariant(variant = 'form') {
+		if (variant === 'app') {
+			return `
+				<div class="loading-skeleton loading-skeleton--app" aria-hidden="true">
+					<div class="skeleton-app-header">
+						<div class="skeleton-app-brand">
+							<div class="skeleton-block skeleton-app-logo"></div>
+							<div class="skeleton-app-brand-lines">
+								<div class="skeleton-block skeleton-app-title"></div>
+								<div class="skeleton-block skeleton-app-version"></div>
+							</div>
+						</div>
+						<div class="skeleton-app-wallet">
+							<div class="skeleton-block skeleton-app-pill skeleton-app-pill--network"></div>
+							<div class="skeleton-block skeleton-app-pill skeleton-app-pill--account"></div>
+						</div>
+					</div>
+					<div class="skeleton-app-shell">
+						<div class="skeleton-app-tabs-row">
+							<div class="skeleton-block skeleton-app-tab skeleton-app-tab--sm"></div>
+							<div class="skeleton-block skeleton-app-tab skeleton-app-tab--md"></div>
+							<div class="skeleton-block skeleton-app-tab skeleton-app-tab--md"></div>
+							<div class="skeleton-block skeleton-app-tab skeleton-app-tab--md"></div>
+							<div class="skeleton-block skeleton-app-tab skeleton-app-tab--md"></div>
+							<div class="skeleton-block skeleton-app-tab skeleton-app-tab--sm"></div>
+							<div class="skeleton-block skeleton-app-tab skeleton-app-tab--sm"></div>
+						</div>
+						<div class="skeleton-block skeleton-app-divider"></div>
+						<div class="skeleton-app-main">
+							<div class="skeleton-app-form">
+								<div class="skeleton-block skeleton-app-token"></div>
+								<div class="skeleton-block skeleton-app-arrow"></div>
+								<div class="skeleton-block skeleton-app-token"></div>
+								<div class="skeleton-block skeleton-app-line"></div>
+								<div class="skeleton-block skeleton-app-line skeleton-app-line--short"></div>
+								<div class="skeleton-block skeleton-app-button"></div>
+							</div>
+						</div>
+						<div class="skeleton-block skeleton-app-footer"></div>
+					</div>
+				</div>
+			`;
+		}
+
+		if (variant === 'orders') {
+			return `
+				<div class="loading-skeleton loading-skeleton--orders loading-skeleton--compact" aria-hidden="true">
+					<div class="skeleton-block skeleton-block--orders-filter"></div>
+					<div class="skeleton-block skeleton-block--orders-head"></div>
+					<div class="skeleton-orders-row">
+						<span class="skeleton-block skeleton-orders-cell"></span>
+						<span class="skeleton-block skeleton-orders-cell"></span>
+						<span class="skeleton-block skeleton-orders-cell"></span>
+						<span class="skeleton-block skeleton-orders-cell"></span>
+						<span class="skeleton-block skeleton-orders-cell"></span>
+						<span class="skeleton-block skeleton-orders-cell"></span>
+						<span class="skeleton-block skeleton-orders-cell"></span>
+					</div>
+					<div class="skeleton-orders-row">
+						<span class="skeleton-block skeleton-orders-cell"></span>
+						<span class="skeleton-block skeleton-orders-cell"></span>
+						<span class="skeleton-block skeleton-orders-cell"></span>
+						<span class="skeleton-block skeleton-orders-cell"></span>
+						<span class="skeleton-block skeleton-orders-cell"></span>
+						<span class="skeleton-block skeleton-orders-cell"></span>
+						<span class="skeleton-block skeleton-orders-cell"></span>
+					</div>
+					<div class="skeleton-orders-row">
+						<span class="skeleton-block skeleton-orders-cell"></span>
+						<span class="skeleton-block skeleton-orders-cell"></span>
+						<span class="skeleton-block skeleton-orders-cell"></span>
+						<span class="skeleton-block skeleton-orders-cell"></span>
+						<span class="skeleton-block skeleton-orders-cell"></span>
+						<span class="skeleton-block skeleton-orders-cell"></span>
+						<span class="skeleton-block skeleton-orders-cell"></span>
+					</div>
+				</div>
+			`;
+		}
+
+		if (variant === 'stats') {
+			return `
+				<div class="loading-skeleton loading-skeleton--stats loading-skeleton--compact" aria-hidden="true">
+					<div class="skeleton-block skeleton-block--stats-title"></div>
+					<div class="skeleton-stats-grid">
+						<div class="skeleton-block skeleton-block--stats-card"></div>
+						<div class="skeleton-block skeleton-block--stats-card"></div>
+						<div class="skeleton-block skeleton-block--stats-card"></div>
+					</div>
+					<div class="skeleton-block skeleton-block--stats-row"></div>
+				</div>
+			`;
+		}
+
+		return `
+			<div class="loading-skeleton loading-skeleton--form loading-skeleton--compact" aria-hidden="true">
+				<div class="skeleton-block skeleton-block--form-title"></div>
+				<div class="skeleton-block skeleton-block--form-group"></div>
+				<div class="skeleton-block skeleton-block--form-group"></div>
+				<div class="skeleton-block skeleton-block--form-group"></div>
+				<div class="skeleton-block skeleton-block--form-button"></div>
+			</div>
+		`;
+	}
+
+	getSkeletonLoaderMarkup(message = 'Loading...', variant = 'form') {
+		return `
+			${this.getSkeletonMarkupByVariant(variant)}
+			<div class="loading-text">${message}</div>
+		`;
+	}
+
 	showGlobalLoader(message = 'Loading WhaleSwap...') {
 		if (window.__bootstrapLoaderTimeout) {
 			clearTimeout(window.__bootstrapLoaderTimeout);
@@ -114,10 +236,7 @@ class App {
 
 		const loader = document.createElement('div');
 		loader.className = 'loading-overlay loading-overlay--global';
-		loader.innerHTML = `
-			<div class="loading-spinner"></div>
-			<div class="loading-text">${message}</div>
-		`;
+		loader.innerHTML = this.getSkeletonLoaderMarkup(message, 'app');
 		document.body.appendChild(loader);
 		this.globalLoader = loader;
 		return loader;
@@ -814,10 +933,7 @@ class App {
 	showLoader(container = document.body) {
 		const loader = document.createElement('div');
 		loader.className = 'loading-overlay';
-		loader.innerHTML = `
-			<div class="loading-spinner"></div>
-			<div class="loading-text">Loading...</div>
-		`;
+		loader.innerHTML = this.getSkeletonLoaderMarkup('Loading...', 'form');
 		
 		if (container !== document.body) {
 			container.style.position = 'relative';
@@ -876,10 +992,8 @@ class App {
 			const tabContent = document.getElementById(tabId);
 			const loadingOverlay = document.createElement('div');
 			loadingOverlay.className = 'loading-overlay';
-			loadingOverlay.innerHTML = `
-				<div class="loading-spinner"></div>
-				<div class="loading-text">Loading...</div>
-			`;
+			const skeletonVariant = this.getTabSkeletonVariant(tabId);
+			loadingOverlay.innerHTML = this.getSkeletonLoaderMarkup('Loading...', skeletonVariant);
 			if (tabContent) {
 				tabContent.style.position = 'relative';
 				tabContent.appendChild(loadingOverlay);
