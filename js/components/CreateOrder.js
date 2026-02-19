@@ -57,16 +57,63 @@ export class CreateOrder extends BaseComponent {
         };
     }
 
-    // Method to reset component state for account switching
-    resetState() {
+    getDefaultTokenSelectorMarkup() {
+        return `
+            <span class="token-selector-content">
+                <span>Select token</span>
+                <svg width="12" height="12" viewBox="0 0 12 12">
+                    <path d="M3 5L6 8L9 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+            </span>
+        `;
+    }
+
+    clearSelectedTokens() {
+        this.sellToken = null;
+        this.buyToken = null;
+
+        ['sell', 'buy'].forEach(type => {
+            this[`${type}Token`] = null;
+
+            const selector = document.getElementById(`${type}TokenSelector`);
+            if (selector) {
+                selector.innerHTML = this.getDefaultTokenSelectorMarkup();
+            }
+
+            const tokenInput = document.getElementById(`${type}Token`);
+            if (tokenInput) {
+                tokenInput.value = '';
+            }
+
+            const amountInput = document.getElementById(`${type}Amount`);
+            if (amountInput) {
+                amountInput.value = '';
+            }
+
+            const usdDisplay = document.getElementById(`${type}AmountUSD`);
+            if (usdDisplay) {
+                usdDisplay.textContent = '≈ $0.00';
+                setVisibility(usdDisplay, false);
+            }
+        });
+
+        this.resetBalanceDisplays();
+        this.updateCreateButtonState();
+        this.debug('Cleared selected tokens from create order form');
+    }
+
+    // Method to reset component state for account switching/disconnects
+    resetState(options = {}) {
+        const { clearSelections = false } = options;
         this.debug('Resetting CreateOrder component state...');
         this.initialized = false;
         this.initializing = false;
         this.hasLoadedData = false;
         this.tokens = [];
-        // this.sellToken = null;  // Commented out - not resetting form
-        // this.buyToken = null;   // Commented out - not resetting form
         this.feeToken = null;
+        if (clearSelections) {
+            this.clearSelectedTokens();
+        }
         // Token cache is centralized in WebSocket - no local cache to clear
         this.resetBalanceDisplays();
     }

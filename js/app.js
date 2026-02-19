@@ -261,7 +261,7 @@ class App {
 					try {
 						const createOrderComponent = this.components['create-order'];
 						if (createOrderComponent?.resetState) {
-							createOrderComponent.resetState();
+							createOrderComponent.resetState({ clearSelections: true });
 						}
 					} catch (error) {
 						console.warn('[App] Error resetting CreateOrder on disconnect:', error);
