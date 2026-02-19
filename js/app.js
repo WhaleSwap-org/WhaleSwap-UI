@@ -34,7 +34,30 @@ class App {
 	}
 
 	showGlobalLoader(message = 'Loading WhaleSwap...') {
+		if (window.__bootstrapLoaderTimeout) {
+			clearTimeout(window.__bootstrapLoaderTimeout);
+			window.__bootstrapLoaderTimeout = null;
+		}
+
 		if (this.globalLoader?.parentElement) {
+			this.globalLoader.classList.remove('is-slow');
+			const hint = this.globalLoader.querySelector('[data-loader-hint]');
+			const retry = this.globalLoader.querySelector('[data-loader-retry]');
+			if (hint) hint.hidden = true;
+			if (retry) retry.hidden = true;
+			this.updateGlobalLoaderText(message);
+			return this.globalLoader;
+		}
+
+		const existingLoader = document.getElementById('app-bootstrap-loader')
+			|| document.querySelector('.loading-overlay--global');
+		if (existingLoader) {
+			this.globalLoader = existingLoader;
+			this.globalLoader.classList.remove('is-slow');
+			const hint = this.globalLoader.querySelector('[data-loader-hint]');
+			const retry = this.globalLoader.querySelector('[data-loader-retry]');
+			if (hint) hint.hidden = true;
+			if (retry) retry.hidden = true;
 			this.updateGlobalLoaderText(message);
 			return this.globalLoader;
 		}
@@ -59,6 +82,10 @@ class App {
 	}
 
 	hideGlobalLoader() {
+		if (window.__bootstrapLoaderTimeout) {
+			clearTimeout(window.__bootstrapLoaderTimeout);
+			window.__bootstrapLoaderTimeout = null;
+		}
 		if (this.globalLoader?.parentElement) {
 			this.globalLoader.remove();
 		}
