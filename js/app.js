@@ -23,6 +23,7 @@ class App {
 	constructor() {
 		this.isInitializing = false;
 		this.globalLoader = null;
+		this.initialOrderSyncPromise = null;
 		
 		// Replace debug initialization with LogService
 		const logger = createLogger('APP');
@@ -31,6 +32,55 @@ class App {
 		this.warn = logger.warn.bind(logger);
 
 		this.debug('App constructor called');
+	}
+
+	isOrdersTab(tabId = this.currentTab) {
+		return tabId === 'view-orders'
+			|| tabId === 'my-orders'
+			|| tabId === 'taker-orders'
+			|| tabId === 'cleanup-orders';
+	}
+
+	async refreshActiveOrdersTab() {
+		if (!this.isOrdersTab()) return;
+		const activeComponent = this.components?.[this.currentTab];
+		if (!activeComponent) return;
+
+		try {
+			if (typeof activeComponent.refreshOrdersView === 'function') {
+				await activeComponent.refreshOrdersView();
+				return;
+			}
+
+			if (typeof activeComponent.checkCleanupOpportunities === 'function') {
+				await activeComponent.checkCleanupOpportunities();
+				return;
+			}
+
+			if (typeof activeComponent.initialize === 'function') {
+				const wallet = this.ctx?.getWallet?.();
+				const readOnlyMode = !wallet?.isWalletConnected?.();
+				await activeComponent.initialize(readOnlyMode);
+			}
+		} catch (error) {
+			this.debug('Failed to refresh active orders tab after sync:', error);
+		}
+	}
+
+	startInitialOrderSync(ws = this.ctx?.getWebSocket?.()) {
+		if (!ws || this.initialOrderSyncPromise) return;
+
+		this.initialOrderSyncPromise = (async () => {
+			this.debug('Starting background initial order sync...');
+			await ws.syncAllOrders();
+			this.debug('Background initial order sync complete');
+		})()
+			.catch((error) => {
+				this.debug('Background initial order sync failed:', error);
+			})
+			.finally(() => {
+				this.initialOrderSyncPromise = null;
+			});
 	}
 
 	showGlobalLoader(message = 'Loading WhaleSwap...') {
@@ -502,12 +552,6 @@ class App {
 		// Initialize theme handling
 		this.initializeTheme();
 
-		// Sync orders with WebSocket
-		if (ws) {
-			this.updateGlobalLoaderText('Syncing orders...');
-			await ws.syncAllOrders();
-		}
-
 		// Prefer signer presence + selected-chain match for initial render
 		const initialReadOnlyMode = !hasInitialConnectedContext;
 		this.updateGlobalLoaderText('Preparing interface...');
@@ -518,6 +562,11 @@ class App {
 		
 		// Remove loading overlay after initialization
 		this.hideGlobalLoader();
+
+		// Start initial order sync in the background so first render is not blocked.
+		if (ws) {
+			this.startInitialOrderSync(ws);
+		}
 
 		this.lastDisconnectNotification = 0;
 		} finally {
@@ -616,6 +665,7 @@ class App {
 			webSocketService.subscribe('orderSyncComplete', () => {
 				this.wsInitialized = true;
 				this.debug('WebSocket order sync complete, showing content');
+				this.refreshActiveOrdersTab();
 			});
 
 			// Subscribe to order sync progress updates for UX
@@ -953,7 +1003,9 @@ class App {
 			// 	activeComponent.resetState();  // Commented out - not resetting form
 			// }
 			// TODO: maybe add to active depending on event
-			await activeComponent.initialize(false);
+			const wallet = this.ctx?.getWallet?.();
+			const readOnlyMode = !wallet?.isWalletConnected?.();
+			await activeComponent.initialize(readOnlyMode);
 		}
 	}
 
