@@ -481,6 +481,8 @@ class App {
 			}
 
 			try {
+				// Keep hidden until owner check confirms visibility to avoid startup flicker.
+				adminButton.style.display = 'none';
 				const signer = await wallet.getSigner();
 				const ws = this.ctx.getWebSocket();
 				await ws?.waitForInitialization();
@@ -533,7 +535,10 @@ class App {
 
 		// Update initial tab visibility based on connection + selected-chain match
 		this.updateTabVisibility(hasInitialConnectedContext);
-		await this.refreshAdminTabVisibility();
+		// Do not block first paint on owner check/network calls.
+		Promise.resolve()
+			.then(() => this.refreshAdminTabVisibility())
+			.catch((error) => this.debug('Deferred admin visibility check failed:', error));
 
 		// Add new property to track WebSocket readiness
 		this.wsInitialized = false;
@@ -558,7 +563,7 @@ class App {
 		await this.initializeComponents(initialReadOnlyMode);
 		
 		// Show the initial tab based on connection state (force read-only if needed for first paint)
-		await this.showTab(this.currentTab, initialReadOnlyMode);
+		await this.showTab(this.currentTab, initialReadOnlyMode, { skipInitialize: true });
 		
 		// Remove loading overlay after initialization
 		this.hideGlobalLoader();
@@ -852,9 +857,12 @@ class App {
 		return this.toast.showToast(message, type, duration);
 	}
 
-	async showTab(tabId, readOnlyOverride = null) {
+	async showTab(tabId, readOnlyOverride = null, options = {}) {
 		try {
 			this.debug('Switching to tab:', tabId);
+			const { skipInitialize = false } = options;
+			const previousTab = this.currentTab;
+			const isSameTab = previousTab === tabId;
 			
 			if (tabId === 'admin') {
 				const isOwner = await this.refreshAdminTabVisibility();
@@ -878,8 +886,8 @@ class App {
 			}
 			
 			// Cleanup previous tab's component if it exists
-			const previousComponent = this.components[this.currentTab];
-			if (previousComponent?.cleanup) {
+			const previousComponent = this.components[previousTab];
+			if (!isSameTab && previousComponent?.cleanup) {
 				previousComponent.cleanup();
 			}
 			
@@ -902,7 +910,7 @@ class App {
 				
 				// Initialize component for this tab
 				const component = this.components[tabId];
-				if (component?.initialize) {
+				if (!skipInitialize && component?.initialize) {
 					const wallet = this.ctx.getWallet();
 					const computedReadOnly = readOnlyOverride !== null
 						? !!readOnlyOverride
