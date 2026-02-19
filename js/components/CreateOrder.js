@@ -17,8 +17,6 @@ export class CreateOrder extends BaseComponent {
     static LIBERDUS_ADDRESSES = {
         '137': '0x693ed886545970f0a3adf8c59af5ccdb6ddf0a76' // Polygon Mainnet
     };
-    static LIBERDUS_DISPLAY_NAME = 'Liberdus';
-    static LIBERDUS_DISPLAY_SYMBOL = 'LIB';
     
     constructor() {
         super('create-order');
@@ -1452,23 +1450,8 @@ export class CreateOrder extends BaseComponent {
         }
     }
 
-    isKnownLiberdusAddress(tokenAddress) {
-        if (!tokenAddress) return false;
-        const normalizedAddress = tokenAddress.toLowerCase();
-        return Object.values(CreateOrder.LIBERDUS_ADDRESSES)
-            .some(address => address?.toLowerCase() === normalizedAddress);
-    }
-
     normalizeTokenDisplay(token) {
-        if (!token || !this.isKnownLiberdusAddress(token.address)) {
-            return token;
-        }
-
-        return {
-            ...token,
-            symbol: token.symbol || CreateOrder.LIBERDUS_DISPLAY_SYMBOL,
-            name: CreateOrder.LIBERDUS_DISPLAY_NAME
-        };
+        return token;
     }
 
     // Add helper method for token icons
