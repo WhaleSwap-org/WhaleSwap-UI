@@ -22,6 +22,7 @@ import { createAppContext, setGlobalContext } from './services/AppContext.js';
 class App {
 	constructor() {
 		this.isInitializing = false;
+		this.globalLoader = null;
 		
 		// Replace debug initialization with LogService
 		const logger = createLogger('APP');
@@ -30,6 +31,38 @@ class App {
 		this.warn = logger.warn.bind(logger);
 
 		this.debug('App constructor called');
+	}
+
+	showGlobalLoader(message = 'Loading WhaleSwap...') {
+		if (this.globalLoader?.parentElement) {
+			this.updateGlobalLoaderText(message);
+			return this.globalLoader;
+		}
+
+		const loader = document.createElement('div');
+		loader.className = 'loading-overlay loading-overlay--global';
+		loader.innerHTML = `
+			<div class="loading-spinner"></div>
+			<div class="loading-text">${message}</div>
+		`;
+		document.body.appendChild(loader);
+		this.globalLoader = loader;
+		return loader;
+	}
+
+	updateGlobalLoaderText(message) {
+		if (!this.globalLoader) return;
+		const textEl = this.globalLoader.querySelector('.loading-text');
+		if (textEl) {
+			textEl.textContent = message;
+		}
+	}
+
+	hideGlobalLoader() {
+		if (this.globalLoader?.parentElement) {
+			this.globalLoader.remove();
+		}
+		this.globalLoader = null;
 	}
 
 	getSelectedNetwork() {
@@ -78,71 +111,76 @@ class App {
 
 	async load () {
 		this.debug('Loading app components...');
+		this.showGlobalLoader('Initializing app...');
 
-		// Create application context for dependency injection
-		this.ctx = createAppContext();
-		setGlobalContext(this.ctx);
-		const initialSelectedNetwork = getInitialSelectedNetwork();
-		this.ctx.setSelectedChainSlug(initialSelectedNetwork.slug);
-		setActiveNetwork(initialSelectedNetwork);
-		this.debug('AppContext created');
-
-		// Initialize toast component
-		this.toast = getToast();
-		this.debug('Toast component initialized');
-		
-		// Populate context with toast functions
-		this.ctx.toast.showError = showError;
-		this.ctx.toast.showSuccess = showSuccess;
-		this.ctx.toast.showWarning = showWarning;
-		this.ctx.toast.showInfo = showInfo;
-
-		// Set brand in document title, header, and favicon from constants
 		try {
-			if (typeof APP_BRAND === 'string' && APP_BRAND.length > 0) {
-				document.title = APP_BRAND;
-				const headerTitle = document.querySelector('.header-left h1');
-				if (headerTitle) {
-					headerTitle.textContent = APP_BRAND;
-				}
-			}
-			
-			// Set favicon dynamically
-			if (typeof APP_LOGO === 'string' && APP_LOGO.length > 0) {
-				const favicon = document.querySelector('link[rel="icon"]');
-				const shortcutIcon = document.querySelector('link[rel="shortcut icon"]');
-				
-				if (favicon) {
-					favicon.href = APP_LOGO;
-				}
-				if (shortcutIcon) {
-					shortcutIcon.href = APP_LOGO;
-				}
-			}
-		} catch (e) {
-			this.warn('Failed to set brand name in DOM', e);
-		}
+			// Create application context for dependency injection
+			this.ctx = createAppContext();
+			setGlobalContext(this.ctx);
+			const initialSelectedNetwork = getInitialSelectedNetwork();
+			this.ctx.setSelectedChainSlug(initialSelectedNetwork.slug);
+			setActiveNetwork(initialSelectedNetwork);
+			this.debug('AppContext created');
 
-		await this.initializeWalletManager();
-		await this.initializePricingService();
-		await this.initializeWebSocket();
-		
-		// Initialize CreateOrder first
-		this.components = {
-			'create-order': new CreateOrder()
-		};
-		
-		// Then initialize other components that might depend on CreateOrder's DOM elements
-		this.components = {
-			...this.components,  // Keep CreateOrder
-			'view-orders': new ViewOrders(),
-			'my-orders': new MyOrders(),
-			'taker-orders': new TakerOrders(),
-			'cleanup-orders': new Cleanup(),
-			'contract-params': new ContractParams(),
-			'admin': new Admin(),
-			'intro': new Intro()
-		};
+			// Initialize toast component
+			this.toast = getToast();
+			this.debug('Toast component initialized');
+			
+			// Populate context with toast functions
+			this.ctx.toast.showError = showError;
+			this.ctx.toast.showSuccess = showSuccess;
+			this.ctx.toast.showWarning = showWarning;
+			this.ctx.toast.showInfo = showInfo;
+
+			// Set brand in document title, header, and favicon from constants
+			try {
+				if (typeof APP_BRAND === 'string' && APP_BRAND.length > 0) {
+					document.title = APP_BRAND;
+					const headerTitle = document.querySelector('.header-left h1');
+					if (headerTitle) {
+						headerTitle.textContent = APP_BRAND;
+					}
+				}
+				
+				// Set favicon dynamically
+				if (typeof APP_LOGO === 'string' && APP_LOGO.length > 0) {
+					const favicon = document.querySelector('link[rel="icon"]');
+					const shortcutIcon = document.querySelector('link[rel="shortcut icon"]');
+					
+					if (favicon) {
+						favicon.href = APP_LOGO;
+					}
+					if (shortcutIcon) {
+						shortcutIcon.href = APP_LOGO;
+					}
+				}
+			} catch (e) {
+				this.warn('Failed to set brand name in DOM', e);
+			}
+
+			this.updateGlobalLoaderText('Initializing wallet...');
+			await this.initializeWalletManager();
+			this.updateGlobalLoaderText('Initializing pricing...');
+			await this.initializePricingService();
+			this.updateGlobalLoaderText('Connecting to order feed...');
+			await this.initializeWebSocket();
+			
+			// Initialize CreateOrder first
+			this.components = {
+				'create-order': new CreateOrder()
+			};
+			
+			// Then initialize other components that might depend on CreateOrder's DOM elements
+			this.components = {
+				...this.components,  // Keep CreateOrder
+				'view-orders': new ViewOrders(),
+				'my-orders': new MyOrders(),
+				'taker-orders': new TakerOrders(),
+				'cleanup-orders': new Cleanup(),
+				'contract-params': new ContractParams(),
+				'admin': new Admin(),
+				'intro': new Intro()
+			};
 
 		// Pass context to all components
 		Object.values(this.components).forEach(component => {
@@ -423,15 +461,11 @@ class App {
 		// Add new property to track WebSocket readiness
 		this.wsInitialized = false;
 
+		// Alias for legacy references in WebSocket init callbacks
+		this.loadingOverlay = this.globalLoader;
+
 		// Add loading overlay to main content
 		const mainContent = document.querySelector('.main-content');
-		this.loadingOverlay = document.createElement('div');
-		this.loadingOverlay.className = 'loading-overlay';
-		this.loadingOverlay.innerHTML = `
-			<div class="loading-spinner"></div>
-			<div class="loading-text">Loading orders...</div>
-		`;
-		document.body.appendChild(this.loadingOverlay);
 
 		// Show main content after initialization
 		if (mainContent) {
@@ -443,22 +477,26 @@ class App {
 
 		// Sync orders with WebSocket
 		if (ws) {
+			this.updateGlobalLoaderText('Syncing orders...');
 			await ws.syncAllOrders();
 		}
 
 		// Prefer signer presence + selected-chain match for initial render
 		const initialReadOnlyMode = !hasInitialConnectedContext;
+		this.updateGlobalLoaderText('Preparing interface...');
 		await this.initializeComponents(initialReadOnlyMode);
 		
 		// Show the initial tab based on connection state (force read-only if needed for first paint)
 		await this.showTab(this.currentTab, initialReadOnlyMode);
 		
 		// Remove loading overlay after initialization
-		if (this.loadingOverlay && this.loadingOverlay.parentElement) {
-			this.loadingOverlay.remove();
-		}
+		this.hideGlobalLoader();
 
 		this.lastDisconnectNotification = 0;
+		} finally {
+			this.hideGlobalLoader();
+			this.loadingOverlay = null;
+		}
 	}
 
 	initializeEventListeners() {
@@ -525,10 +563,9 @@ class App {
 			// Initialize PricingService first (before WebSocket since WS needs it)
 			const pricingService = new PricingService();
 			
-			// Defer allowed token fetch until WebSocket/contract is ready
-			// The pricing service will refresh later when WebSocket finishes init
-			
-			await pricingService.initialize();
+			// Defer initial price refresh until WebSocket/contract provides allowed tokens.
+			// WebSocket initialization triggers allowed token + price fetch afterward.
+			await pricingService.initialize({ deferInitialRefresh: true });
 			
 			// Add to context
 			this.ctx.pricing = pricingService;
@@ -551,7 +588,6 @@ class App {
 			// Subscribe to orderSyncComplete event before initialization
 			webSocketService.subscribe('orderSyncComplete', () => {
 				this.wsInitialized = true;
-				this.loadingOverlay.remove();
 				this.debug('WebSocket order sync complete, showing content');
 			});
 
@@ -568,8 +604,6 @@ class App {
 			const wsInitialized = await webSocketService.initialize();
 			if (!wsInitialized) {
 				this.debug('WebSocket initialization failed, falling back to HTTP');
-				// Still remove overlay in case of failure
-				this.loadingOverlay.remove();
 			}
 			
 			// Add to context and update pricing service with webSocket reference
@@ -915,6 +949,7 @@ window.DEBUG_CONFIG = DEBUG_CONFIG;
 
 // Initialize app when DOM is loaded
 document.addEventListener('DOMContentLoaded', async () => {
+	window.app.showGlobalLoader('Checking for updates...');
 	try {
 		// Check version first, before anything else happens
 		await versionService.initialize();
@@ -933,7 +968,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 			}
 		});
 		
-		window.app.load();
+		await window.app.load();
 		
 		// Add network config button event listener here (element doesn't exist in HTML, so commented out)
 		// const networkConfigButton = document.querySelector('.network-config-button');
@@ -944,6 +979,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 		window.app.debug('Initialization complete');
 	} catch (error) {
 		console.error('[App] App initialization error:', error);
+	} finally {
+		window.app.hideGlobalLoader();
 	}
 });
 

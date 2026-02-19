@@ -349,6 +349,13 @@ label {
   border-radius: 16px;
 }
 
+.loading-overlay--global {
+  position: fixed;
+  border-radius: 0;
+  inset: 0;
+  z-index: 9999;
+}
+
 .loading-spinner {
   width: 40px;
   height: 40px;
@@ -361,7 +368,7 @@ label {
 
 .loading-text {
   font-size: 14px;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   font-weight: 500;
 }
 
@@ -445,15 +452,6 @@ input {
 /* Update status message backgrounds */
 .status {
   background: var(--bg-secondary);
-}
-
-/* Update loading overlay */
-.loading-overlay {
-  background: var(--bg-secondary);
-}
-
-.loading-text {
-  color: var(--text-primary);
 }
 
 /* Update tab button colors */
