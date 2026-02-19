@@ -25,6 +25,7 @@ export class Admin extends BaseComponent {
         this.deleteTokenModal = null;
         this.deleteTokenTargetRow = null;
         this.deleteAllowedTokens = [];
+        this.deleteTokenPickerRequestId = 0;
     }
 
     async initialize(readOnlyMode = true) {
@@ -319,7 +320,7 @@ export class Admin extends BaseComponent {
             const row = addressInput.closest('.admin-token-row');
             if (row && this.getTokenRowAction(row) === 'delete') {
                 event.preventDefault();
-                if (this.deleteTokenTargetRow === row) return;
+                if (this.deleteTokenTargetRow === row && this.deleteTokenModal?.classList.contains('show')) return;
                 this.openDeleteTokenPicker(row);
                 return;
             }
@@ -589,17 +590,22 @@ export class Admin extends BaseComponent {
         this.ensureDeleteTokenPickerModal();
         if (!this.deleteTokenModal) return;
 
+        const requestId = ++this.deleteTokenPickerRequestId;
         this.deleteTokenTargetRow = row;
-        await this.loadAllowedTokensForDeletePicker();
-        this.renderDeleteTokenList('');
-
         const searchInput = this.deleteTokenModal.querySelector('#admin-delete-token-search');
         if (searchInput) {
             searchInput.value = '';
         }
-
+        const listElement = this.deleteTokenModal.querySelector('#admin-delete-token-list');
+        if (listElement) {
+            listElement.innerHTML = '<div class="token-list-empty">Loading allowed tokens...</div>';
+        }
         this.deleteTokenModal.classList.add('show');
         searchInput?.focus();
+
+        await this.loadAllowedTokensForDeletePicker();
+        if (requestId !== this.deleteTokenPickerRequestId || this.deleteTokenTargetRow !== row) return;
+        this.renderDeleteTokenList(searchInput?.value || '');
     }
 
     getIconChainId() {
@@ -618,6 +624,7 @@ export class Admin extends BaseComponent {
 
     closeDeleteTokenPicker() {
         if (!this.deleteTokenModal) return;
+        this.deleteTokenPickerRequestId += 1;
         this.deleteTokenModal.classList.remove('show');
         this.deleteTokenTargetRow = null;
     }
