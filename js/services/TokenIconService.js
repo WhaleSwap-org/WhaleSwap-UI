@@ -1,4 +1,5 @@
 import { createLogger } from './LogService.js';
+import { TOKEN_ICON_CONFIG } from '../config.js';
 
 // Simple ethers-like utilities for address validation
 const ethers = {
@@ -20,6 +21,9 @@ const COINGECKO_API_BASE = 'https://api.coingecko.com/api/v3';
 const COINGECKO_ICON_BASE = 'https://assets.coingecko.com/coins/images';
 const COINGECKO_TOKENLIST_BASE = 'https://tokens.coingecko.com';
 const UNISWAP_TOKENLIST_URL = 'https://tokens.uniswap.org';
+const LOCAL_TOKEN_ICON_MAP = TOKEN_ICON_CONFIG.LOCAL_TOKEN_ICON_MAP || {};
+const LOCAL_ICON_VERSION = TOKEN_ICON_CONFIG.LOCAL_ICON_VERSION || '';
+const ENABLE_REMOTE_ICON_SOURCES = TOKEN_ICON_CONFIG.ENABLE_REMOTE_ICON_SOURCES !== false;
 
 // Rate limiting configuration
 const RATE_LIMIT_DELAY = 100; // ms between requests
@@ -27,7 +31,7 @@ const MAX_CACHE_SIZE = 1000; // Maximum number of cached icons
 const CACHE_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours in ms
 const UNKNOWN_TOKEN_CACHE_EXPIRY = 10 * 60 * 1000; // 10 minutes in ms
 const CACHE_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days in ms
-const ICON_CACHE_SCHEMA_VERSION = 'v4';
+const ICON_CACHE_SCHEMA_VERSION = 'v5';
 const ICON_CACHE_KEY_PREFIX = 'tokenIconCache';
 
 /**
@@ -97,6 +101,55 @@ export class TokenIconService {
         debug('TokenIconService initialized');
     }
 
+    normalizeChainId(chainId) {
+        if (chainId === null || chainId === undefined) {
+            return null;
+        }
+
+        if (typeof chainId === 'string' && chainId.toLowerCase().startsWith('0x')) {
+            const parsed = parseInt(chainId, 16);
+            return Number.isNaN(parsed) ? null : String(parsed);
+        }
+
+        const parsed = Number(chainId);
+        return Number.isFinite(parsed) ? String(parsed) : null;
+    }
+
+    buildVersionedIconUrl(iconPath) {
+        if (!iconPath || !LOCAL_ICON_VERSION) {
+            return iconPath;
+        }
+        const separator = iconPath.includes('?') ? '&' : '?';
+        return `${iconPath}${separator}v=${encodeURIComponent(LOCAL_ICON_VERSION)}`;
+    }
+
+    getLocalIconUrl(tokenAddress, chainId) {
+        const normalizedAddress = tokenAddress?.toLowerCase();
+        const normalizedChainId = this.normalizeChainId(chainId);
+        if (!normalizedAddress || !normalizedChainId) {
+            return null;
+        }
+
+        const chainIcons = LOCAL_TOKEN_ICON_MAP[normalizedChainId];
+        if (!chainIcons) {
+            return null;
+        }
+
+        const iconPath = chainIcons[normalizedAddress];
+        return this.buildVersionedIconUrl(iconPath || null);
+    }
+
+    persistCacheEntry(cacheKey, iconUrl, isUnknown = false) {
+        const cacheData = {
+            iconUrl,
+            timestamp: Date.now(),
+            ...(isUnknown ? { isUnknown: true } : {})
+        };
+        this.cache.set(cacheKey, cacheData);
+        this.cacheTimestamps.set(cacheKey, cacheData.timestamp);
+        this.saveCacheToStorage();
+    }
+
     /**
      * Get icon URL for a token with caching and fallbacks
      * @param {string} tokenAddress - Token contract address
@@ -112,6 +165,16 @@ export class TokenIconService {
 
             const normalizedAddress = tokenAddress.toLowerCase();
             const cacheKey = `${normalizedAddress}-${chainId}`;
+
+            // Local config map should always take precedence (even over stale unknown cache entries).
+            const mappedLocalIconUrl = this.getLocalIconUrl(normalizedAddress, chainId);
+            if (mappedLocalIconUrl) {
+                const existing = this.cache.get(cacheKey);
+                if (!existing || existing.iconUrl !== mappedLocalIconUrl) {
+                    this.persistCacheEntry(cacheKey, mappedLocalIconUrl);
+                }
+                return mappedLocalIconUrl;
+            }
 
             // Check memory cache first
             if (this.cache.has(cacheKey)) {
@@ -168,14 +231,23 @@ export class TokenIconService {
                     // Special case for Liberdus - use local icon
                     if (tokenAddress.toLowerCase() === "0x693ed886545970f0a3adf8c59af5ccdb6ddf0a76") {
                         debug('Using local Liberdus icon');
-                        const cacheData = {
-                            iconUrl: "assets/32.png",
-                            timestamp: Date.now()
-                        };
-                        this.cache.set(cacheKey, cacheData);
-                        this.cacheTimestamps.set(cacheKey, cacheData.timestamp);
-                        this.saveCacheToStorage();
+                        this.persistCacheEntry(cacheKey, "assets/32.png");
                         return "assets/32.png";
+                    }
+
+                    // Prefer configured local assets for known token addresses
+                    const localIconUrl = this.getLocalIconUrl(tokenAddress, chainId);
+                    if (localIconUrl) {
+                        debug('Using configured local token icon:', tokenAddress, localIconUrl);
+                        this.persistCacheEntry(cacheKey, localIconUrl);
+                        return localIconUrl;
+                    }
+
+                    // If remote sources are disabled, stop here and fallback
+                    if (!ENABLE_REMOTE_ICON_SOURCES) {
+                        debug('Remote icon sources disabled; using fallback for:', tokenAddress);
+                        this.persistCacheEntry(cacheKey, null, true);
+                        return this.getFallbackIconData(tokenAddress);
                     }
 
                     // Try to get CoinGecko icon URL with retry logic
@@ -190,26 +262,13 @@ export class TokenIconService {
                             
                             if (iconUrl) {
                                 debug('Found CoinGecko icon for:', tokenAddress, iconUrl);
-                                const cacheData = {
-                                    iconUrl,
-                                    timestamp: Date.now()
-                                };
-                                this.cache.set(cacheKey, cacheData);
-                                this.cacheTimestamps.set(cacheKey, cacheData.timestamp);
-                                this.saveCacheToStorage();
+                                this.persistCacheEntry(cacheKey, iconUrl);
                                 return iconUrl;
                             } else {
                                 // If iconUrl is null, it means the token is unknown
                                 // Cache this result to prevent infinite retries
                                 debug(`Token ${tokenAddress} is unknown, caching result to prevent retries`);
-                                const cacheData = {
-                                    iconUrl: null,
-                                    timestamp: Date.now(),
-                                    isUnknown: true
-                                };
-                                this.cache.set(cacheKey, cacheData);
-                                this.cacheTimestamps.set(cacheKey, cacheData.timestamp);
-                                this.saveCacheToStorage();
+                                this.persistCacheEntry(cacheKey, null, true);
                                 break; // Exit the retry loop for unknown tokens
                             }
                         } catch (error) {
