@@ -148,7 +148,6 @@ export const TOKEN_ICON_CONFIG = {
     // Update LOCAL_TOKEN_ICON_MAP when new allowed tokens are added.
     // Bump LOCAL_ICON_VERSION when replacing existing logo files to invalidate browser cache.
     LOCAL_ICON_VERSION: '2026-02-19',
-    ENABLE_REMOTE_ICON_SOURCES: false,
     LOCAL_TOKEN_ICON_MAP: {
         '137': {
             '0xd6df932a45c0f255f85145f286ea0b292b21c90b': 'img/token-logos/polygon/0xd6df932a45c0f255f85145f286ea0b292b21c90b.png', // AAVE
@@ -174,14 +173,8 @@ export const TOKEN_ICON_CONFIG = {
         }
     },
     
-    // Rate limiting configuration
-    RATE_LIMIT_DELAY: 100, // ms between requests
-    MAX_CACHE_SIZE: 1000, // Maximum number of cached icons
-    CACHE_EXPIRY: 24 * 60 * 60 * 1000, // 24 hours in ms
-    
     // Icon validation configuration
     VALIDATION_TIMEOUT: 5000, // 5 seconds timeout for icon validation
-    MAX_RETRIES: 3, // Maximum retries for failed icon requests
     
     // Fallback configuration
     ENABLE_FALLBACK_ICONS: true, // Enable color-based fallback icons
