@@ -2,7 +2,9 @@ import { BaseComponent } from './BaseComponent.js';
 import { ethers } from 'ethers';
 import { erc20Abi } from '../abi/erc20.js';
 import { createLogger } from '../services/LogService.js';
-import { DEBUG_CONFIG } from '../config.js';
+import { DEBUG_CONFIG, walletManager, getNetworkConfig } from '../config.js';
+import { tokenIconService } from '../services/TokenIconService.js';
+import { generateTokenIconHTML } from '../utils/tokenIcons.js';
 
 export class Admin extends BaseComponent {
     constructor() {
@@ -15,10 +17,14 @@ export class Admin extends BaseComponent {
 
         this.isInitializing = false;
         this.isInitialized = false;
-        this.feeTokenMetadataCache = new Map();
+        this.tokenMetadataCache = new Map();
         this.currentFeeTokenMetadata = null;
         this.feeTokenLookupTimeout = null;
         this.feeTokenLookupRequestId = 0;
+        this.tokenRowLookupTimeouts = new WeakMap();
+        this.deleteTokenModal = null;
+        this.deleteTokenTargetRow = null;
+        this.deleteAllowedTokens = [];
     }
 
     async initialize(readOnlyMode = true) {
@@ -77,7 +83,7 @@ export class Admin extends BaseComponent {
                 <section class="admin-section">
                     <h3>Update Fee Configuration</h3>
                     <p>Change the token and amount charged when creating new orders.</p>
-                    <div class="admin-form-grid">
+                    <div class="admin-form-grid admin-fee-grid">
                         <div>
                             <label for="admin-fee-token">Fee token address</label>
                             <input id="admin-fee-token" class="admin-input" type="text" placeholder="0x..." />
@@ -106,8 +112,8 @@ export class Admin extends BaseComponent {
 
                 <section class="admin-section">
                     <h3>Update Allowed Tokens</h3>
-                    <p>Choose allow/disallow for each token, then submit all rows together.</p>
-                    <label>Action and token address</label>
+                    <p>Choose add/delete for each token, then submit all rows together.</p>
+                    <label>Action, token address, and symbol</label>
                     <div id="admin-token-rows" class="admin-token-rows"></div>
                     <button id="admin-add-token" type="button" class="admin-secondary-button">+ Add Token</button>
                     <button id="admin-update-tokens" class="action-button">Update Allowed Tokens</button>
@@ -163,6 +169,10 @@ export class Admin extends BaseComponent {
         this.feeTokenInput?.addEventListener('blur', () => this.resolveFeeTokenMetadata());
         this.tokenRowsContainer?.addEventListener('click', (event) => this.handleTokenRowsClick(event));
         this.tokenRowsContainer?.addEventListener('input', (event) => this.handleTokenRowsInput(event));
+        this.tokenRowsContainer?.addEventListener('change', (event) => this.handleTokenRowsChange(event));
+        this.tokenRowsContainer?.addEventListener('focusin', (event) => this.handleTokenRowsFocusIn(event));
+        this.tokenRowsContainer?.addEventListener('focusout', (event) => this.handleTokenRowsFocusOut(event), true);
+        this.ensureDeleteTokenPickerModal();
 
         this.resetFeeAmountHint();
         this.resetTokenRows();
@@ -205,26 +215,28 @@ export class Admin extends BaseComponent {
         }, 350);
     }
 
-    async getFeeTokenMetadata(tokenAddress) {
+    async getTokenMetadata(tokenAddress) {
         const normalizedAddress = ethers.utils.getAddress(tokenAddress);
         const cacheKey = normalizedAddress.toLowerCase();
-        const cachedMetadata = this.feeTokenMetadataCache.get(cacheKey);
+        const cachedMetadata = this.tokenMetadataCache.get(cacheKey);
         if (cachedMetadata) return cachedMetadata;
 
         const tokenContract = new ethers.Contract(normalizedAddress, erc20Abi, this.contract.provider);
-        const [symbolRaw, decimalsRaw] = await Promise.all([
+        const [symbolRaw, decimalsRaw, nameRaw] = await Promise.all([
             tokenContract.symbol(),
-            tokenContract.decimals()
+            tokenContract.decimals(),
+            tokenContract.name().catch(() => '')
         ]);
 
         const symbol = symbolRaw || 'TOKEN';
+        const name = nameRaw || symbol || 'Token';
         const decimals = Number(decimalsRaw);
         if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255) {
             throw new Error('Invalid token decimals');
         }
 
-        const metadata = { address: normalizedAddress, symbol, decimals };
-        this.feeTokenMetadataCache.set(cacheKey, metadata);
+        const metadata = { address: normalizedAddress, symbol, decimals, name };
+        this.tokenMetadataCache.set(cacheKey, metadata);
         return metadata;
     }
 
@@ -250,7 +262,7 @@ export class Admin extends BaseComponent {
         this.setFeeAmountHint('Fetching token decimals to convert your amount to base units...');
 
         try {
-            const metadata = await this.getFeeTokenMetadata(feeToken);
+            const metadata = await this.getTokenMetadata(feeToken);
             if (requestId !== this.feeTokenLookupRequestId) return;
 
             this.currentFeeTokenMetadata = metadata;
@@ -288,18 +300,31 @@ export class Admin extends BaseComponent {
         row.className = 'admin-token-row';
         row.innerHTML = `
             <select class="admin-select admin-token-action">
-                <option value="allow">Allow</option>
-                <option value="disallow">Disallow</option>
+                <option value="add">Add</option>
+                <option value="delete">Delete</option>
             </select>
             <input class="admin-input admin-token-address" type="text" placeholder="0x..." value="${value}" />
+            <input class="admin-input admin-token-symbol" type="text" placeholder="Symbol" readonly />
             <button type="button" class="admin-token-remove">Remove</button>
         `;
 
         this.tokenRowsContainer.appendChild(row);
+        this.updateTokenRowActionState(row);
         this.refreshTokenRowState();
     }
 
     handleTokenRowsClick(event) {
+        const addressInput = event.target?.closest?.('.admin-token-address');
+        if (addressInput) {
+            const row = addressInput.closest('.admin-token-row');
+            if (row && this.getTokenRowAction(row) === 'delete') {
+                event.preventDefault();
+                if (this.deleteTokenTargetRow === row) return;
+                this.openDeleteTokenPicker(row);
+                return;
+            }
+        }
+
         const removeButton = event.target?.closest?.('.admin-token-remove');
         if (!removeButton) return;
 
@@ -311,11 +336,14 @@ export class Admin extends BaseComponent {
             if (input) {
                 input.value = '';
                 this.clearTokenInputError(input);
+                this.updateTokenRowSymbol(row, '');
                 input.focus();
             }
             return;
         }
 
+        const timeout = this.tokenRowLookupTimeouts.get(row);
+        if (timeout) clearTimeout(timeout);
         row.remove();
         this.refreshTokenRowState();
     }
@@ -323,7 +351,295 @@ export class Admin extends BaseComponent {
     handleTokenRowsInput(event) {
         const input = event.target?.closest?.('.admin-token-address');
         if (!input) return;
+        const row = input.closest('.admin-token-row');
+        if (row && this.getTokenRowAction(row) === 'delete') return;
+
         this.validateTokenInput(input);
+        if (!row) return;
+        this.scheduleTokenRowSymbolLookup(row);
+    }
+
+    handleTokenRowsChange(event) {
+        const actionInput = event.target?.closest?.('.admin-token-action');
+        if (!actionInput) return;
+
+        const row = actionInput.closest('.admin-token-row');
+        if (!row) return;
+        this.updateTokenRowActionState(row);
+    }
+
+    handleTokenRowsFocusOut(event) {
+        const input = event.target?.closest?.('.admin-token-address');
+        if (!input) return;
+        const row = input.closest('.admin-token-row');
+        if (!row) return;
+        this.resolveTokenRowSymbol(row);
+    }
+
+    handleTokenRowsFocusIn(event) {
+        const input = event.target?.closest?.('.admin-token-address');
+        if (!input) return;
+
+        const row = input.closest('.admin-token-row');
+        if (!row || this.getTokenRowAction(row) !== 'delete') return;
+        if (this.deleteTokenTargetRow === row) return;
+        if (this.deleteTokenModal?.classList.contains('show')) return;
+
+        this.openDeleteTokenPicker(row);
+    }
+
+    updateTokenRowSymbol(row, symbol = '') {
+        const symbolInput = row?.querySelector?.('.admin-token-symbol');
+        if (!symbolInput) return;
+        symbolInput.value = symbol || '';
+    }
+
+    getTokenRowAction(row) {
+        return row?.querySelector('.admin-token-action')?.value || 'add';
+    }
+
+    updateTokenRowActionState(row) {
+        const action = this.getTokenRowAction(row);
+        const addressInput = row?.querySelector('.admin-token-address');
+        if (!addressInput) return;
+
+        if (action === 'delete') {
+            addressInput.setAttribute('readonly', 'readonly');
+            addressInput.placeholder = 'Click to select allowed token';
+            addressInput.classList.add('admin-token-picker-input');
+            return;
+        }
+
+        addressInput.removeAttribute('readonly');
+        addressInput.placeholder = '0x...';
+        addressInput.classList.remove('admin-token-picker-input');
+    }
+
+    scheduleTokenRowSymbolLookup(row) {
+        const existingTimeout = this.tokenRowLookupTimeouts.get(row);
+        if (existingTimeout) clearTimeout(existingTimeout);
+
+        const timeout = setTimeout(() => {
+            this.resolveTokenRowSymbol(row);
+        }, 300);
+
+        this.tokenRowLookupTimeouts.set(row, timeout);
+    }
+
+    async resolveTokenRowSymbol(row) {
+        const addressInput = row?.querySelector?.('.admin-token-address');
+        if (!addressInput) return;
+
+        const value = addressInput.value.trim();
+        if (!value || !ethers.utils.isAddress(value)) {
+            this.updateTokenRowSymbol(row, '');
+            return;
+        }
+
+        const requestId = ((parseInt(row.dataset.lookupRequestId || '0', 10) || 0) + 1).toString();
+        row.dataset.lookupRequestId = requestId;
+        this.updateTokenRowSymbol(row, '...');
+
+        try {
+            const metadata = await this.getTokenMetadata(value);
+            if (row.dataset.lookupRequestId !== requestId) return;
+            this.updateTokenRowSymbol(row, metadata.symbol || 'N/A');
+        } catch (error) {
+            if (row.dataset.lookupRequestId !== requestId) return;
+            this.updateTokenRowSymbol(row, '');
+        }
+    }
+
+    ensureDeleteTokenPickerModal() {
+        const existing = document.getElementById('admin-delete-token-modal');
+        if (existing) {
+            this.deleteTokenModal = existing;
+            return;
+        }
+
+        const modal = document.createElement('div');
+        modal.className = 'token-modal';
+        modal.id = 'admin-delete-token-modal';
+        modal.innerHTML = `
+            <div class="token-modal-content">
+                <div class="token-modal-header">
+                    <h3>Select Token to Delete</h3>
+                    <button class="token-modal-close" type="button">&times;</button>
+                </div>
+                <div class="token-modal-search">
+                    <input
+                        type="text"
+                        class="token-search-input"
+                        id="admin-delete-token-search"
+                        placeholder="Search allowed token by symbol, name, or address"
+                    >
+                </div>
+                <div class="token-sections">
+                    <div class="token-section">
+                        <h4>Allowed tokens</h4>
+                        <div class="token-list" id="admin-delete-token-list"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+        this.deleteTokenModal = modal;
+
+        const closeButton = modal.querySelector('.token-modal-close');
+        const searchInput = modal.querySelector('#admin-delete-token-search');
+        closeButton?.addEventListener('click', () => this.closeDeleteTokenPicker());
+        searchInput?.addEventListener('input', (event) => {
+            this.renderDeleteTokenList(event.target.value);
+        });
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) {
+                this.closeDeleteTokenPicker();
+            }
+        });
+    }
+
+    async loadAllowedTokensForDeletePicker() {
+        const listElement = document.getElementById('admin-delete-token-list');
+        if (listElement) {
+            listElement.innerHTML = '<div class="token-list-empty">Loading allowed tokens...</div>';
+        }
+
+        try {
+            const tokenAddresses = await this.contract.getAllowedTokens();
+            const uniqueAddresses = [...new Set((tokenAddresses || []).map((address) => address.toLowerCase()))];
+            const iconChainId = this.getIconChainId();
+
+            const metadataEntries = await Promise.all(uniqueAddresses.map(async (address) => {
+                try {
+                    const metadata = await this.getTokenMetadata(address);
+                    let iconUrl = 'fallback';
+                    try {
+                        iconUrl = await tokenIconService.getIconUrl(metadata.address, iconChainId);
+                    } catch (_) {}
+
+                    return {
+                        address: metadata.address,
+                        symbol: metadata.symbol || 'TOKEN',
+                        name: metadata.name || metadata.symbol || 'Token',
+                        iconUrl
+                    };
+                } catch (error) {
+                    const normalized = ethers.utils.getAddress(address);
+                    return {
+                        address: normalized,
+                        symbol: 'TOKEN',
+                        name: normalized,
+                        iconUrl: 'fallback'
+                    };
+                }
+            }));
+
+            this.deleteAllowedTokens = metadataEntries.sort((a, b) => a.symbol.localeCompare(b.symbol));
+        } catch (error) {
+            this.deleteAllowedTokens = [];
+            this.showError(`Failed to load allowed tokens: ${error.message}`);
+        }
+    }
+
+    renderDeleteTokenList(searchTerm = '') {
+        const listElement = document.getElementById('admin-delete-token-list');
+        if (!listElement) return;
+
+        const query = (searchTerm || '').trim().toLowerCase();
+        const filteredTokens = query
+            ? this.deleteAllowedTokens.filter((token) =>
+                token.symbol.toLowerCase().includes(query) ||
+                (token.name || '').toLowerCase().includes(query) ||
+                token.address.toLowerCase().includes(query)
+            )
+            : this.deleteAllowedTokens;
+
+        if (!filteredTokens.length) {
+            listElement.innerHTML = '<div class="token-list-empty">No allowed tokens found.</div>';
+            return;
+        }
+
+        listElement.innerHTML = filteredTokens.map((token) => `
+            <div class="token-item" data-address="${token.address}">
+                <div class="token-item-content admin-delete-token-item-content">
+                    <div class="token-item-left">
+                        ${generateTokenIconHTML(token.iconUrl, token.symbol, token.address)}
+                        <div class="token-item-info">
+                            <div class="token-item-symbol">
+                                ${token.symbol}
+                                <span class="admin-token-name-inline">${token.name}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="token-item-name admin-token-address-inline">${token.address}</div>
+                </div>
+            </div>
+        `).join('');
+
+        listElement.querySelectorAll('.token-item').forEach((item) => {
+            item.addEventListener('click', () => {
+                const address = item.dataset.address;
+                if (address) this.selectDeleteToken(address);
+            });
+        });
+    }
+
+    async openDeleteTokenPicker(row) {
+        this.ensureDeleteTokenPickerModal();
+        if (!this.deleteTokenModal) return;
+
+        this.deleteTokenTargetRow = row;
+        await this.loadAllowedTokensForDeletePicker();
+        this.renderDeleteTokenList('');
+
+        const searchInput = this.deleteTokenModal.querySelector('#admin-delete-token-search');
+        if (searchInput) {
+            searchInput.value = '';
+        }
+
+        this.deleteTokenModal.classList.add('show');
+        searchInput?.focus();
+    }
+
+    getIconChainId() {
+        const chainIdCandidate =
+            walletManager.chainId ??
+            this.ctx?.getWalletChainId?.() ??
+            getNetworkConfig().chainId;
+
+        if (typeof chainIdCandidate === 'string' && chainIdCandidate.startsWith('0x')) {
+            return Number.parseInt(chainIdCandidate, 16) || 137;
+        }
+
+        const numeric = Number(chainIdCandidate);
+        return Number.isFinite(numeric) && numeric > 0 ? numeric : 137;
+    }
+
+    closeDeleteTokenPicker() {
+        if (!this.deleteTokenModal) return;
+        this.deleteTokenModal.classList.remove('show');
+        this.deleteTokenTargetRow = null;
+    }
+
+    async selectDeleteToken(tokenAddress) {
+        if (!this.deleteTokenTargetRow) return;
+
+        const addressInput = this.deleteTokenTargetRow.querySelector('.admin-token-address');
+        if (!addressInput) return;
+
+        const normalizedAddress = ethers.utils.getAddress(tokenAddress);
+        addressInput.value = normalizedAddress;
+        this.clearTokenInputError(addressInput);
+
+        try {
+            const metadata = await this.getTokenMetadata(normalizedAddress);
+            this.updateTokenRowSymbol(this.deleteTokenTargetRow, metadata.symbol || '');
+        } catch (error) {
+            this.updateTokenRowSymbol(this.deleteTokenTargetRow, '');
+        }
+
+        this.closeDeleteTokenPicker();
     }
 
     refreshTokenRowState() {
@@ -411,7 +727,7 @@ export class Admin extends BaseComponent {
 
             const wallet = this.ctx.getWallet();
             const signer = await wallet.getSigner();
-            const metadata = await this.getFeeTokenMetadata(feeToken);
+            const metadata = await this.getTokenMetadata(feeToken);
             this.currentFeeTokenMetadata = metadata;
             this.updateFeeTokenMetadataDisplay(metadata);
 
@@ -484,11 +800,11 @@ export class Admin extends BaseComponent {
 
             const normalizedAddress = ethers.utils.getAddress(value);
             const key = normalizedAddress.toLowerCase();
-            const allow = actionInput?.value !== 'disallow';
+            const isAddAction = actionInput?.value === 'add';
             const existing = tokenActionMap.get(key);
 
             if (existing !== undefined) {
-                if (existing !== allow) {
+                if (existing !== isAddAction) {
                     duplicateCount += 1;
                     hasConflictingDuplicate = true;
                     this.showError(`Conflicting actions found for token ${normalizedAddress}. Keep only one action per token.`);
@@ -498,9 +814,9 @@ export class Admin extends BaseComponent {
                 return;
             }
 
-            tokenActionMap.set(key, allow);
+            tokenActionMap.set(key, isAddAction);
             tokens.push(normalizedAddress);
-            flags.push(allow);
+            flags.push(isAddAction);
         });
 
         if (hasConflictingDuplicate) {

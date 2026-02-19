@@ -1664,6 +1664,10 @@
   margin-right: auto;
 }
 
+.admin-panel .admin-fee-grid {
+  grid-template-columns: minmax(0, 2.25fr) minmax(180px, 1fr);
+}
+
 .admin-panel .admin-meta-grid {
   margin-top: -2px;
 }
@@ -1760,7 +1764,7 @@
 
 .admin-panel .admin-token-row {
   display: grid;
-  grid-template-columns: 140px minmax(0, 1fr) auto;
+  grid-template-columns: 120px minmax(0, 1fr) 120px auto;
   gap: 8px;
   align-items: center;
 }
@@ -1768,6 +1772,51 @@
 .admin-panel .admin-token-row input,
 .admin-panel .admin-token-row select {
   margin-bottom: 0;
+}
+
+.admin-panel .admin-token-symbol {
+  text-align: center;
+  font-weight: 600;
+}
+
+.admin-panel .admin-token-picker-input {
+  cursor: pointer;
+}
+
+.admin-panel .admin-token-address-inline {
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+#admin-delete-token-modal .token-item-content {
+  align-items: flex-start;
+}
+
+.admin-token-name-inline {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+#admin-delete-token-modal .admin-delete-token-item-content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+#admin-delete-token-modal .token-item-left {
+  width: 100%;
+}
+
+#admin-delete-token-modal .admin-token-address-inline {
+  display: block;
+  width: 100%;
+  text-align: left;
+  line-height: 1.2;
+  word-break: break-all;
 }
 
 .admin-panel .admin-secondary-button,
@@ -1817,11 +1866,25 @@
 }
 
 @media (max-width: 640px) {
+  .admin-panel .admin-fee-grid {
+    grid-template-columns: 1fr;
+  }
+
   .admin-panel .admin-token-row {
     grid-template-columns: 1fr;
   }
 
   .admin-panel .admin-token-remove {
     width: 100%;
+  }
+
+  #admin-delete-token-modal .token-item-content {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  #admin-delete-token-modal .admin-token-address-inline {
+    text-align: left;
   }
 }
