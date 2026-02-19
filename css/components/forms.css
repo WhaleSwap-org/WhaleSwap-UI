@@ -1760,12 +1760,13 @@
 
 .admin-panel .admin-token-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 140px minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
 }
 
-.admin-panel .admin-token-row input {
+.admin-panel .admin-token-row input,
+.admin-panel .admin-token-row select {
   margin-bottom: 0;
 }
 

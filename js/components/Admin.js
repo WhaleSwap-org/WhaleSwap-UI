@@ -106,15 +106,10 @@ export class Admin extends BaseComponent {
 
                 <section class="admin-section">
                     <h3>Update Allowed Tokens</h3>
-                    <p>Add token addresses below, then choose whether to allow or disallow all listed tokens.</p>
-                    <label>Token addresses</label>
+                    <p>Choose allow/disallow for each token, then submit all rows together.</p>
+                    <label>Action and token address</label>
                     <div id="admin-token-rows" class="admin-token-rows"></div>
                     <button id="admin-add-token" type="button" class="admin-secondary-button">+ Add Token</button>
-                    <label for="admin-token-action">Action</label>
-                    <select id="admin-token-action" class="admin-select">
-                        <option value="allow">Allow tokens</option>
-                        <option value="disallow">Disallow tokens</option>
-                    </select>
                     <button id="admin-update-tokens" class="action-button">Update Allowed Tokens</button>
                 </section>
 
@@ -292,6 +287,10 @@ export class Admin extends BaseComponent {
         const row = document.createElement('div');
         row.className = 'admin-token-row';
         row.innerHTML = `
+            <select class="admin-select admin-token-action">
+                <option value="allow">Allow</option>
+                <option value="disallow">Disallow</option>
+            </select>
             <input class="admin-input admin-token-address" type="text" placeholder="0x..." value="${value}" />
             <button type="button" class="admin-token-remove">Remove</button>
         `;
@@ -445,13 +444,13 @@ export class Admin extends BaseComponent {
     }
 
     async updateAllowedTokens() {
-        const actionInput = document.getElementById('admin-token-action');
-        const tokenInputs = this.tokenRowsContainer
-            ? Array.from(this.tokenRowsContainer.querySelectorAll('.admin-token-address'))
+        const tokenRows = this.tokenRowsContainer
+            ? Array.from(this.tokenRowsContainer.querySelectorAll('.admin-token-row'))
             : [];
 
-        const providedTokenCount = tokenInputs.reduce((count, input) => {
-            return count + (input.value.trim() ? 1 : 0);
+        const providedTokenCount = tokenRows.reduce((count, row) => {
+            const input = row.querySelector('.admin-token-address');
+            return count + (input?.value?.trim() ? 1 : 0);
         }, 0);
 
         if (!providedTokenCount) {
@@ -459,8 +458,9 @@ export class Admin extends BaseComponent {
             return;
         }
 
-        const invalidInput = tokenInputs.find((input) => {
-            const value = input.value.trim();
+        const invalidInput = tokenRows.find((row) => {
+            const input = row.querySelector('.admin-token-address');
+            const value = input?.value?.trim();
             if (!value) return false;
             return !this.validateTokenInput(input);
         });
@@ -471,21 +471,45 @@ export class Admin extends BaseComponent {
         }
 
         const tokens = [];
-        const tokenSet = new Set();
-        tokenInputs.forEach((input) => {
+        const flags = [];
+        const tokenActionMap = new Map();
+        let duplicateCount = 0;
+        let hasConflictingDuplicate = false;
+
+        tokenRows.forEach((row) => {
+            const input = row.querySelector('.admin-token-address');
+            const actionInput = row.querySelector('.admin-token-action');
             const value = input.value.trim();
             if (!value) return;
 
             const normalizedAddress = ethers.utils.getAddress(value);
             const key = normalizedAddress.toLowerCase();
-            if (tokenSet.has(key)) return;
+            const allow = actionInput?.value !== 'disallow';
+            const existing = tokenActionMap.get(key);
 
-            tokenSet.add(key);
+            if (existing !== undefined) {
+                if (existing !== allow) {
+                    duplicateCount += 1;
+                    hasConflictingDuplicate = true;
+                    this.showError(`Conflicting actions found for token ${normalizedAddress}. Keep only one action per token.`);
+                    return;
+                }
+                duplicateCount += 1;
+                return;
+            }
+
+            tokenActionMap.set(key, allow);
             tokens.push(normalizedAddress);
+            flags.push(allow);
         });
 
-        const allow = actionInput?.value !== 'disallow';
-        const flags = tokens.map(() => allow);
+        if (hasConflictingDuplicate) {
+            return;
+        }
+
+        if (!tokens.length) {
+            return;
+        }
 
         try {
             this.updateTokensButton.disabled = true;
@@ -496,12 +520,12 @@ export class Admin extends BaseComponent {
             const tx = await this.contract.connect(signer).updateAllowedTokens(tokens, flags);
             await tx.wait();
 
-            if (tokens.length < providedTokenCount) {
+            if (duplicateCount > 0 || tokens.length < providedTokenCount) {
                 this.showInfo('Duplicate token addresses were ignored.');
             }
 
             this.resetTokenRows();
-            this.showSuccess(`Allowed tokens updated (${allow ? 'allow' : 'disallow'}).`);
+            this.showSuccess('Allowed tokens updated.');
         } catch (error) {
             this.error('Failed to update allowed tokens:', error);
             this.showError(`Failed to update allowed tokens: ${error.message}`);
