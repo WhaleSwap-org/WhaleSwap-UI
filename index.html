@@ -67,7 +67,7 @@
         border-radius: 12px;
         background: linear-gradient(90deg, #e2e7ef 25%, #f2f5fa 50%, #e2e7ef 75%);
         background-size: 200% 100%;
-        animation: bootstrap-shimmer 1.25s linear infinite;
+        animation: bootstrap-shimmer 3s ease-in-out infinite;
       }
 
       #app-bootstrap-loader .skeleton-app-header {
@@ -264,6 +264,13 @@
         }
         100% {
           background-position: -200% 0;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #app-bootstrap-loader .skeleton-block {
+          animation: none;
+          background-position: 50% 0;
         }
       }
 
