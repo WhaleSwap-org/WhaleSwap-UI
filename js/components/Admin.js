@@ -2,7 +2,8 @@ import { BaseComponent } from './BaseComponent.js';
 import { ethers } from 'ethers';
 import { erc20Abi } from '../abi/erc20.js';
 import { createLogger } from '../services/LogService.js';
-import { DEBUG_CONFIG, walletManager, getNetworkConfig } from '../config.js';
+import { DEBUG_CONFIG, getNetworkConfig } from '../config.js';
+import { walletManager } from '../services/WalletManager.js';
 import { generateTokenIconHTML } from '../utils/tokenIcons.js';
 import { getAllWalletTokens } from '../utils/contractTokens.js';
 
