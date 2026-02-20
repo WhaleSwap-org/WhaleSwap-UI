@@ -95,3 +95,6 @@ http-server
 
 ## Support
 For issues and feature requests, please open an issue on the repository.
+
+## License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
