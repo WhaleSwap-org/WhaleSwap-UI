@@ -14,18 +14,6 @@ export const TOKEN_ICON_CONFIG = {
     COINGECKO_API_BASE: 'https://api.coingecko.com/api/v3',
     COINGECKO_ICON_BASE: 'https://assets.coingecko.com/coins/images',
     
-    // CoinGecko chain mapping
-    CHAIN_ID_MAP: {
-        '1': 'ethereum',
-        '137': 'polygon-pos',
-        '56': 'binance-smart-chain',
-        '42161': 'arbitrum-one',
-        '10': 'optimistic-ethereum',
-        '43114': 'avalanche',
-        '250': 'fantom',
-        '25': 'cronos'
-    },
-    
     // Known token mappings for supported chains
     KNOWN_TOKENS: {
         "0x2791bca1f2de4661ed88a30c99a7a9449aa84174": "usd-coin", // Polygon USDC
@@ -40,11 +28,6 @@ export const TOKEN_ICON_CONFIG = {
         "0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270": "matic-network", // WMATIC
     },
     
-    // Special cases
-    SPECIAL_TOKENS: {
-        "0x693ed886545970f0a3adf8c59af5ccdb6ddf0a76": "assets/32.png" // Liberdus
-    },
-
     // Local token logo management
     // Runtime icon lookup probes `img/token-logos/{token-address}.{ext}`.
     // Bump LOCAL_ICON_VERSION when replacing existing logo files to invalidate browser cache.
