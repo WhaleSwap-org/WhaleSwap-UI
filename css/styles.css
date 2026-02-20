@@ -1,7 +1,7 @@
 /* At the top of styles.css */
 :root {
-  --font-ui: "Plus Jakarta Sans", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-  --font-accent: "Plus Jakarta Sans", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-ui: "DM Sans", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-accent: "Manrope", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   --font-mono: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
 
   /* Light theme (default) */
@@ -115,6 +115,15 @@ body {
   font-family: var(--font-ui);
   margin: 0;
   min-height: 100vh;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-accent);
 }
 
 .container {
