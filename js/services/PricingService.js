@@ -268,13 +268,13 @@ export class PricingService {
     }
 
     async fetchTokenPricesFromCoinGeckoIds(tokenAddresses, prices) {
-        const knownTokens = TOKEN_ICON_CONFIG?.KNOWN_TOKENS || {};
-        const mappedAddresses = tokenAddresses.filter(address => knownTokens[address]);
+        const priceIds = TOKEN_ICON_CONFIG?.COINGECKO_PRICE_IDS || {};
+        const mappedAddresses = tokenAddresses.filter(address => priceIds[address]);
         if (mappedAddresses.length === 0) {
             return;
         }
 
-        const uniqueIds = [...new Set(mappedAddresses.map(address => knownTokens[address]))];
+        const uniqueIds = [...new Set(mappedAddresses.map(address => priceIds[address]))];
         const idChunks = this.createSmartBatches(uniqueIds, 100);
         const coinGeckoPrices = new Map();
 
@@ -311,7 +311,7 @@ export class PricingService {
                 continue;
             }
 
-            const tokenId = knownTokens[address];
+            const tokenId = priceIds[address];
             const mappedPrice = coinGeckoPrices.get(tokenId);
             if (this.validatePrice(mappedPrice, address)) {
                 prices.set(address, {

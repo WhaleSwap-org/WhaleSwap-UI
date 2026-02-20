@@ -14,8 +14,8 @@ export const TOKEN_ICON_CONFIG = {
     COINGECKO_API_BASE: 'https://api.coingecko.com/api/v3',
     COINGECKO_ICON_BASE: 'https://assets.coingecko.com/coins/images',
     
-    // Known token mappings for supported chains
-    KNOWN_TOKENS: {
+    // Token address -> CoinGecko ID map for price fallback
+    COINGECKO_PRICE_IDS: {
         "0x2791bca1f2de4661ed88a30c99a7a9449aa84174": "usd-coin", // Polygon USDC
         "0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6": "wrapped-bitcoin", // Polygon WBTC
         "0x0000000000000000000000000000000000001010": "polygon-ecosystem-token", // Polygon native POL

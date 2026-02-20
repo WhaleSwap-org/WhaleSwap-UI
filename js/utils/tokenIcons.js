@@ -209,11 +209,9 @@ export function sanitizeTokenAddress(address) {
 }
 
 /**
- * Get known token mappings for a chain
- * @param {string|number} chainId - Chain ID
+ * Get token address -> CoinGecko ID map used for price fallback.
  * @returns {Object} Token address to CoinGecko ID mapping
  */
-export function getKnownTokens(chainId) {
-    // Shared known token map for currently supported chains
-    return TOKEN_ICON_CONFIG.KNOWN_TOKENS;
+export function getCoinGeckoPriceIds() {
+    return TOKEN_ICON_CONFIG.COINGECKO_PRICE_IDS;
 }
