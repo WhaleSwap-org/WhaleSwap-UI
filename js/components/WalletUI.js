@@ -1,5 +1,5 @@
 import { BaseComponent } from './BaseComponent.js';
-import { getDefaultNetwork, getNetworkById, getNetworkBySlug } from '../config.js';
+import { getDefaultNetwork, getNetworkById, getNetworkBySlug } from '../config/networks.js';
 import { walletManager } from '../services/WalletManager.js';
 import { createLogger } from '../services/LogService.js';
 

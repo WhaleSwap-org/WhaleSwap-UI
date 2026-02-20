@@ -7,7 +7,7 @@ import {
     getNetworkById,
     getNetworkBySlug,
     setActiveNetwork
-} from '../config.js';
+} from '../config/networks.js';
 
 const normalizeChainId = (chainId) => {
     if (chainId === null || chainId === undefined) {

@@ -1,4 +1,4 @@
-import { TOKEN_ICON_CONFIG } from '../config.js';
+import { TOKEN_ICON_CONFIG } from '../config/index.js';
 import { createLogger } from '../services/LogService.js';
 
 // Initialize logger

@@ -1,4 +1,6 @@
-import { getNetworkConfig, isDebugEnabled, TOKEN_ICON_CONFIG } from '../config.js';
+import { TOKEN_ICON_CONFIG } from '../config/index.js';
+import { isDebugEnabled } from '../config/debug.js';
+import { getNetworkConfig } from '../config/networks.js';
 import { createLogger } from './LogService.js';
 import { contractService } from './ContractService.js';
 

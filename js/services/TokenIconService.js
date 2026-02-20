@@ -1,5 +1,5 @@
 import { createLogger } from './LogService.js';
-import { TOKEN_ICON_CONFIG } from '../config.js';
+import { TOKEN_ICON_CONFIG } from '../config/index.js';
 
 // Simple ethers-like utilities for address validation
 const ethers = {
