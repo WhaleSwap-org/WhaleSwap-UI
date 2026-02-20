@@ -189,7 +189,7 @@
 }
 
 .account-address {
-  font-family: monospace;
+  font-family: var(--font-mono);
   font-size: 14px;
   color: var(--text-primary);
   margin-right: 0;
@@ -381,7 +381,7 @@
 }
 
 .wallet-popup-address {
-  font-family: monospace;
+  font-family: var(--font-mono);
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);

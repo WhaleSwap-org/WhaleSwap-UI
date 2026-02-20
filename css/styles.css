@@ -1,5 +1,9 @@
 /* At the top of styles.css */
 :root {
+  --font-ui: "Plus Jakarta Sans", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-accent: "Plus Jakarta Sans", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+
   /* Light theme (default) */
   --bg-primary: #e9edf4;
   --bg-secondary: rgba(255, 255, 255, 0.58);
@@ -108,8 +112,7 @@
 body {
   background: var(--app-background);
   color: var(--text-primary);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-ui);
   margin: 0;
   min-height: 100vh;
 }
@@ -151,11 +154,10 @@ body {
   margin: 0;
   font-size: 32px;
   color: #1a1a1a;
-  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
-  font-weight: 600;
-  letter-spacing: -0.5px;
-  line-height: 32px;
+  font-family: var(--font-accent);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
 }
 
 .header-right {
@@ -220,6 +222,9 @@ body {
 .tab-content-wrapper h2 {
   margin-bottom: 16px;
   color: #333;
+  font-family: var(--font-accent);
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .tab-content-wrapper p {
@@ -321,9 +326,6 @@ label {
 @-moz-document url-prefix() {
   /* Add Firefox-specific rules here */
 }
-
-/* Add Inter font */
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap");
 
 /* Status message styles */
 .status {
@@ -944,7 +946,7 @@ input {
 }
 
 .header-right .account-address {
-  font-family: monospace;
+  font-family: var(--font-mono);
   color: var(--text-primary);
   white-space: nowrap;
 }
