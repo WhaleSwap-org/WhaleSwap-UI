@@ -2264,3 +2264,11 @@
     min-width: 132px;
   }
 }
+
+/* Connected create-order shell should not render as a card layer */
+#create-order .swap-section.swap-section--transparent-connected.wallet-connected {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+}
