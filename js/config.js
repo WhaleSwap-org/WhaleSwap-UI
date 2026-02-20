@@ -133,6 +133,10 @@ export const TOKEN_ICON_CONFIG = {
     KNOWN_TOKENS: {
         "0x2791bca1f2de4661ed88a30c99a7a9449aa84174": "usd-coin", // Polygon USDC
         "0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6": "wrapped-bitcoin", // Polygon WBTC
+        "0x0000000000000000000000000000000000001010": "polygon-ecosystem-token", // Polygon native POL
+        "0x3ba4c387f786bfee076a58914f5bd38d668b42c3": "binancecoin", // Polygon BNB (PoS)
+        "0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39": "chainlink", // Polygon LINK
+        "0xb0897686c545045afc77cf20ec7a532e3120e0f1": "chainlink", // Polygon LINK legacy bridge
         "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d": "usd-coin", // BNB USDC
         "0x0555e30da8f98308edb960aa94c0db47230d2b9c": "wrapped-bitcoin", // BNB WBTC
         "0x7ceb23fd6bc0add59e62ac25578270cff1b9f619": "weth", // WETH
