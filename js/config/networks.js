@@ -1,6 +1,43 @@
 import { abi as CONTRACT_ABI } from '../abi/OTCSwap.js';
+import { localDeployment } from '../local-dev.deployment.js';
 
-const networkConfig = {
+const isLocalHostname = () => {
+    if (typeof window === 'undefined' || !window.location) {
+        return false;
+    }
+    const host = window.location.hostname;
+    return host === 'localhost' || host === '127.0.0.1';
+};
+
+const localNetworkConfig = {
+    "1337": {
+        slug: "local",
+        name: "Localhost",
+        displayName: "Localhost 8545",
+        logo: null,
+        isDefault: false,
+        contractAddress: localDeployment?.contracts?.otcSwap || "0x0000000000000000000000000000000000000000",
+        contractABI: CONTRACT_ABI,
+        explorer: "http://127.0.0.1:8545",
+        rpcUrl: "http://127.0.0.1:8545",
+        fallbackRpcUrls: [
+            "http://localhost:8545"
+        ],
+        chainId: "0x539",
+        nativeCurrency: {
+            name: "ETH",
+            symbol: "ETH",
+            decimals: 18
+        },
+        multicallAddress: null,
+        wsUrl: "ws://127.0.0.1:8545",
+        fallbackWsUrls: [
+            "ws://localhost:8545"
+        ]
+    },
+};
+
+const primaryNetworkConfig = {
     "56": {
         slug: "bnb",
         name: "BNB Chain",
@@ -60,6 +97,10 @@ const networkConfig = {
         ]
     },
 };
+
+const networkConfig = isLocalHostname()
+    ? { ...primaryNetworkConfig, ...localNetworkConfig }
+    : primaryNetworkConfig;
 
 const normalizeChainId = (chainId) => {
     if (chainId === null || chainId === undefined) {
