@@ -1741,11 +1741,16 @@ export class CreateOrder extends BaseComponent {
             return;
         }
 
-        const feeDisplay = document.querySelector('.fee-amount');
+        const feeDisplay = this.container?.querySelector('.fee-amount') || document.querySelector('.fee-amount');
         if (feeDisplay) {
             const formattedAmount = ethers.utils.formatUnits(this.feeToken.amount, this.feeToken.decimals);
             feeDisplay.textContent = `${formattedAmount} ${this.feeToken.symbol}`;
         }
+
+        const feeTokenSymbols = this.container?.querySelectorAll('.fee-token-symbol') || [];
+        feeTokenSymbols.forEach((element) => {
+            element.textContent = this.feeToken.symbol;
+        });
     }
 
     async handleTokenSelect(type, token) {
@@ -2287,7 +2292,7 @@ export class CreateOrder extends BaseComponent {
                                     <circle cx="12" cy="8" r="1" fill="currentColor" />
                                 </svg>
                                 <span class="tooltip-text">
-                                    <strong>Order Creation Fee:</strong> A small fee in USDC is required to create an order. 
+                                    <strong>Order Creation Fee:</strong> A small fee in <span class="fee-token-symbol">the configured fee token</span> is required to create an order.
                                     This helps prevent spam and incentivizes users who assist in cleaning up expired orders.
                                 </span>
                             </span>
