@@ -143,6 +143,7 @@ export class MyOrders extends BaseComponent {
             // Get all orders first
             const ws = this.ctx.getWebSocket();
             const wallet = this.ctx.getWallet();
+            await ws.ensureFreshChainTime();
             let ordersToDisplay = Array.from(ws.orderCache.values());
             
             // Filter for user's orders only
@@ -606,10 +607,14 @@ export class MyOrders extends BaseComponent {
             const sellPriceClass = (pricing && pricing.isPriceEstimated(order.sellToken)) ? 'price-estimate' : '';
             const buyPriceClass = (pricing && pricing.isPriceEstimated(order.buyToken)) ? 'price-estimate' : '';
 
-            const currentTime = Math.floor(Date.now() / 1000);
-            const timeUntilExpiry = order?.timings?.expiresAt ? order.timings.expiresAt - currentTime : 0;
+            const currentTime = ws.getCurrentTimestamp();
+            const timeUntilExpiry = Number.isFinite(currentTime) && order?.timings?.expiresAt
+                ? order.timings.expiresAt - currentTime
+                : 0;
             const orderStatusForExpiry = ws.getOrderStatus(order);
-            const expiryText = orderStatusForExpiry === 'Active' ? formatTimeDiff(timeUntilExpiry) : '';
+            const expiryText = orderStatusForExpiry === 'Active' && Number.isFinite(currentTime)
+                ? formatTimeDiff(timeUntilExpiry)
+                : '';
 
             // Get order status from WebSocket cache
             const orderStatus = ws.getOrderStatus(order);
