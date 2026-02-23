@@ -59,6 +59,31 @@ const networkConfig = {
             "wss://polygon.api.onfinality.io/public-ws"
         ]
     },
+    "80002": {
+        slug: "amoy",
+        name: "Polygon Amoy",
+        displayName: "Polygon Amoy",
+        logo: "img/token-logos/0x0000000000000000000000000000000000001010.png",
+        isDefault: false,
+        contractAddress: "0x0aB6ca718d12349B5477fD480a13F5e21a786222",
+        contractABI: CONTRACT_ABI,
+        explorer: "https://amoy.polygonscan.com",
+        rpcUrl: "https://rpc-amoy.polygon.technology",
+        fallbackRpcUrls: [
+            "https://polygon-amoy-bor-rpc.publicnode.com"
+        ],
+        chainId: "0x13882",
+        nativeCurrency: {
+            name: "POL",
+            symbol: "POL",
+            decimals: 18
+        },
+        multicallAddress: null,
+        wsUrl: "wss://polygon-amoy-bor-rpc.publicnode.com",
+        fallbackWsUrls: [
+            "wss://polygon-amoy.gateway.tenderly.co"
+        ]
+    },
 };
 
 const normalizeChainId = (chainId) => {
