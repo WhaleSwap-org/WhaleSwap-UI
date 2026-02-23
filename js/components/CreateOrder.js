@@ -45,6 +45,7 @@ export class CreateOrder extends BaseComponent {
         this.debug = logger.debug.bind(logger);
         this.error = logger.error.bind(logger);
         this.warn = logger.warn.bind(logger);
+        this.createOrderFlowCounter = 0;
     }
 
     // Add debounce as a class method
@@ -58,6 +59,47 @@ export class CreateOrder extends BaseComponent {
             clearTimeout(timeout);
             timeout = setTimeout(later, wait);
         };
+    }
+
+    nextCreateOrderFlowId() {
+        this.createOrderFlowCounter += 1;
+        return `co-${Date.now()}-${this.createOrderFlowCounter}`;
+    }
+
+    getWebSocketReconnectSnapshot() {
+        const ws = this.ctx?.getWebSocket?.();
+        if (!ws || typeof ws.getReconnectDebugState !== 'function') {
+            return {
+                available: false,
+                walletChainId: walletManager?.chainId || null
+            };
+        }
+        return {
+            available: true,
+            walletChainId: walletManager?.chainId || null,
+            ...ws.getReconnectDebugState()
+        };
+    }
+
+    async runCreateOrderStep(flowId, stepName, stepFn, timeoutMs = 20000) {
+        const startedAt = Date.now();
+        this.warn(`[CreateOrderFlow:${flowId}] ${stepName}:start`, this.getWebSocketReconnectSnapshot());
+        const timeout = setTimeout(() => {
+            this.warn(`[CreateOrderFlow:${flowId}] ${stepName}:pending>${timeoutMs}ms`, this.getWebSocketReconnectSnapshot());
+        }, timeoutMs);
+
+        try {
+            const result = await stepFn();
+            this.warn(`[CreateOrderFlow:${flowId}] ${stepName}:done`, {
+                durationMs: Date.now() - startedAt
+            });
+            return result;
+        } catch (error) {
+            this.error(`[CreateOrderFlow:${flowId}] ${stepName}:error`, error);
+            throw error;
+        } finally {
+            clearTimeout(timeout);
+        }
     }
 
     getDefaultTokenSelectorMarkup() {
@@ -576,11 +618,13 @@ export class CreateOrder extends BaseComponent {
         }
         
         const createOrderBtn = document.getElementById('createOrderBtn');
+        const flowId = this.nextCreateOrderFlowId();
         
         try {
             this.isSubmitting = true;
             createOrderBtn.disabled = true;
             createOrderBtn.classList.add('disabled');
+            this.warn(`[CreateOrderFlow:${flowId}] submission-start`, this.getWebSocketReconnectSnapshot());
 
             // Get fresh signer and reinitialize contract
             const signer = walletManager.getSigner();
@@ -719,8 +763,16 @@ export class CreateOrder extends BaseComponent {
             }
 
             // Convert amounts to wei
-            const sellTokenDecimals = await this.getTokenDecimals(this.sellToken.address);
-            const buyTokenDecimals = await this.getTokenDecimals(this.buyToken.address);
+            const sellTokenDecimals = await this.runCreateOrderStep(
+                flowId,
+                'load-sell-token-decimals',
+                () => this.getTokenDecimals(this.sellToken.address)
+            );
+            const buyTokenDecimals = await this.runCreateOrderStep(
+                flowId,
+                'load-buy-token-decimals',
+                () => this.getTokenDecimals(this.buyToken.address)
+            );
             const sellAmountWei = ethers.utils.parseUnits(sellAmount, sellTokenDecimals);
             const buyAmountWei = ethers.utils.parseUnits(buyAmount, buyTokenDecimals);
 
@@ -735,13 +787,33 @@ export class CreateOrder extends BaseComponent {
             while (retryCount <= maxRetries) {
                 try {
                     // Check and approve tokens
-                    const sellTokenApproved = await this.checkAndApproveToken(this.sellToken.address, sellAmountWei);
+                    const sellTokenApproved = await this.runCreateOrderStep(
+                        flowId,
+                        `approve-sell-token-attempt-${retryCount + 1}`,
+                        () => this.checkAndApproveToken(
+                            this.sellToken.address,
+                            sellAmountWei,
+                            { flowId, tokenLabel: 'sell-token' }
+                        ),
+                        45000
+                    );
                     if (!sellTokenApproved) {
+                        this.warn(`[CreateOrderFlow:${flowId}] sell-token-approval-returned-false`);
                         return;
                     }
 
-                    const feeTokenApproved = await this.checkAndApproveToken(this.feeToken.address, this.feeToken.amount);
+                    const feeTokenApproved = await this.runCreateOrderStep(
+                        flowId,
+                        `approve-fee-token-attempt-${retryCount + 1}`,
+                        () => this.checkAndApproveToken(
+                            this.feeToken.address,
+                            this.feeToken.amount,
+                            { flowId, tokenLabel: 'fee-token' }
+                        ),
+                        45000
+                    );
                     if (!feeTokenApproved) {
+                        this.warn(`[CreateOrderFlow:${flowId}] fee-token-approval-returned-false`);
                         return;
                     }
 
@@ -750,23 +822,29 @@ export class CreateOrder extends BaseComponent {
 
                     // Create order
                     this.showInfo('Creating order...');
-                    const tx = await this.contract.createOrder(
-                        taker,
-                        this.sellToken.address,
-                        sellAmountWei,
-                        this.buyToken.address,
-                        buyAmountWei
-                    ).catch(error => {
-                        if (error.code === 4001 || error.code === 'ACTION_REJECTED') {
-                            this.showWarning('Order creation declined');
-                            return null;
-                        }
-                        throw error;
-                    });
+                    const tx = await this.runCreateOrderStep(
+                        flowId,
+                        `send-create-order-attempt-${retryCount + 1}`,
+                        () => this.contract.createOrder(
+                            taker,
+                            this.sellToken.address,
+                            sellAmountWei,
+                            this.buyToken.address,
+                            buyAmountWei
+                        ).catch(error => {
+                            if (error.code === 4001 || error.code === 'ACTION_REJECTED') {
+                                this.showWarning('Order creation declined');
+                                return null;
+                            }
+                            throw error;
+                        }),
+                        45000
+                    );
 
                     if (!tx) return; // User rejected the transaction
 
                     this.showInfo('Waiting for confirmation...');
+                    this.warn(`[CreateOrderFlow:${flowId}] create-order-tx-hash`, { hash: tx.hash });
                     
                     // Add timeout handling for tx.wait()
                     const waitPromise = tx.wait();
@@ -774,7 +852,12 @@ export class CreateOrder extends BaseComponent {
                         setTimeout(() => reject(new Error('Transaction timeout - please check your wallet')), 30000)
                     );
                     
-                    const receipt = await Promise.race([waitPromise, timeoutPromise]);
+                    const receipt = await this.runCreateOrderStep(
+                        flowId,
+                        `wait-create-order-receipt-attempt-${retryCount + 1}`,
+                        () => Promise.race([waitPromise, timeoutPromise]),
+                        45000
+                    );
                     
                     // Verify transaction was actually successful
                     if (!receipt || receipt.status === 0) {
@@ -794,7 +877,12 @@ export class CreateOrder extends BaseComponent {
                     // Force a sync of all orders after successful creation
                     const ws = this.ctx.getWebSocket();
                     if (ws) {
-                        await ws.syncAllOrders(this.contract);
+                        await this.runCreateOrderStep(
+                            flowId,
+                            'post-create-sync-all-orders',
+                            () => ws.syncAllOrders(this.contract),
+                            45000
+                        );
                     }
 
                     // If we get here, the transaction was successful
@@ -803,6 +891,11 @@ export class CreateOrder extends BaseComponent {
                 } catch (error) {
                     retryCount++;
                     this.debug(`Create order attempt ${retryCount} failed:`, error);
+                    this.warn(`[CreateOrderFlow:${flowId}] create-order-attempt-failed`, {
+                        attempt: retryCount,
+                        message: error?.message || String(error),
+                        code: error?.code || null
+                    });
 
                     // Handle timeout specifically
                     if (error.message?.includes('Transaction timeout')) {
@@ -828,6 +921,7 @@ export class CreateOrder extends BaseComponent {
             }
 
             this.showSuccess('Order created successfully!');
+            this.warn(`[CreateOrderFlow:${flowId}] submission-success`);
             // this.resetForm();  // Commented out - not resetting form
             
             // Reload orders if needed
@@ -836,12 +930,17 @@ export class CreateOrder extends BaseComponent {
             }
         } catch (error) {
             this.debug('Create order error:', error);
+            this.warn(`[CreateOrderFlow:${flowId}] submission-error`, {
+                message: error?.message || String(error),
+                code: error?.code || null
+            });
             // Use utility function for consistent error handling
             handleTransactionError(error, this, 'order creation');
         } finally {
             this.isSubmitting = false;
             createOrderBtn.disabled = false;
             createOrderBtn.classList.remove('disabled');
+            this.warn(`[CreateOrderFlow:${flowId}] submission-finalized`);
         }
     }
 
@@ -1652,8 +1751,11 @@ export class CreateOrder extends BaseComponent {
         }
     }
 
-    async checkAndApproveToken(tokenAddress, amount) {
+    async checkAndApproveToken(tokenAddress, amount, options = {}) {
         try {
+            const flowId = options.flowId || 'n/a';
+            const tokenLabel = options.tokenLabel || tokenAddress;
+            const tokenStepPrefix = `token-approval-${tokenLabel}`;
             this.debug(`Checking allowance for token: ${tokenAddress}`);
             
             // Get signer and current address
@@ -1689,9 +1791,13 @@ export class CreateOrder extends BaseComponent {
             );
 
             // Get current allowance
-            const currentAllowance = await tokenContract.allowance(
-                currentAddress,
-                this.contract.address
+            const currentAllowance = await this.runCreateOrderStep(
+                flowId,
+                `${tokenStepPrefix}-read-allowance`,
+                () => tokenContract.allowance(
+                    currentAddress,
+                    this.contract.address
+                )
             );
             this.debug(`Current allowance: ${currentAllowance.toString()}`);
             this.debug(`Required amount: ${requiredAmount.toString()}`);
@@ -1701,13 +1807,28 @@ export class CreateOrder extends BaseComponent {
                 const additionalAmount = requiredAmount.sub(currentAllowance);
                 
                 this.showInfo(`Requesting additional token approval (${ethers.utils.formatUnits(additionalAmount, await this.getTokenDecimals(tokenAddress))} more needed)...`);
-                const approveTx = await tokenContract.approve(this.contract.address, requiredAmount);
+                const approveTx = await this.runCreateOrderStep(
+                    flowId,
+                    `${tokenStepPrefix}-send-approve`,
+                    () => tokenContract.approve(this.contract.address, requiredAmount),
+                    45000
+                );
+                this.warn(`[CreateOrderFlow:${flowId}] ${tokenStepPrefix}-approve-hash`, { hash: approveTx.hash });
                 this.showInfo('Please confirm the approval in your wallet...');
                 
-                await approveTx.wait();
+                await this.runCreateOrderStep(
+                    flowId,
+                    `${tokenStepPrefix}-wait-approve-receipt`,
+                    () => approveTx.wait(),
+                    45000
+                );
                 this.showSuccess('Token approved successfully');
 
-                const newAllowance = await tokenContract.allowance(currentAddress, this.contract.address);
+                const newAllowance = await this.runCreateOrderStep(
+                    flowId,
+                    `${tokenStepPrefix}-read-allowance-post-approve`,
+                    () => tokenContract.allowance(currentAddress, this.contract.address)
+                );
                 this.debug(`New allowance after approval: ${newAllowance.toString()}`);
             }
 

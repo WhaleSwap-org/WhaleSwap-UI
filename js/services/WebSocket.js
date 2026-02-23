@@ -219,7 +219,10 @@ export class WebSocketService {
             });
             
             this.provider.on("disconnect", (error) => {
-                this.debug('Provider disconnected:', error);
+                this.debug('Provider disconnected:', {
+                    error,
+                    state: this.getReconnectDebugState()
+                });
                 this.requestReconnect('provider-disconnect');
             });
 
@@ -249,7 +252,10 @@ export class WebSocketService {
             };
 
             this.provider._websocket.onclose = (event) => {
-                this.debug('WebSocket closed:', event);
+                this.debug('WebSocket closed:', {
+                    event,
+                    state: this.getReconnectDebugState()
+                });
                 // Attempt to reconnect if not manually closed
                 if (event.code !== 1000) {
                     this.debug('WebSocket closed unexpectedly, scheduling reconnect...');
@@ -721,7 +727,39 @@ export class WebSocketService {
         }
     }
 
+    getReconnectDebugState() {
+        const readyState = this.provider?._websocket?.readyState;
+        const readyStateLabelByCode = {
+            0: 'CONNECTING',
+            1: 'OPEN',
+            2: 'CLOSING',
+            3: 'CLOSED'
+        };
+
+        return {
+            isInitialized: this.isInitialized,
+            reconnectAttempts: this.reconnectAttempts,
+            maxReconnectAttempts: this.maxReconnectAttempts,
+            reconnectInProgress: this.reconnectInProgress,
+            reconnectScheduled: !!this.reconnectTimer,
+            hasReconnectPromise: !!this.reconnectPromise,
+            hasProvider: !!this.provider,
+            hasContract: !!this.contract,
+            websocketReadyState: readyState ?? null,
+            websocketReadyStateLabel: readyStateLabelByCode[readyState] || 'UNKNOWN',
+            activeRequests: this.activeRequests,
+            maxConcurrentRequests: this.maxConcurrentRequests,
+            syncInProgress: !!this.syncPromise,
+            orderCacheSize: this.orderCache.size
+        };
+    }
+
     requestReconnect(reason = 'unknown') {
+        this.debug('Reconnect requested', {
+            reason,
+            state: this.getReconnectDebugState()
+        });
+
         if (this.reconnectInProgress) {
             this.debug('Reconnect already in progress, skipping duplicate trigger', { reason });
             return this.reconnectPromise || Promise.resolve(false);
@@ -739,7 +777,10 @@ export class WebSocketService {
 
         const nextAttempt = this.reconnectAttempts + 1;
         const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts);
-        this.debug(`Reconnecting in ${delay}ms... (attempt ${nextAttempt}/${this.maxReconnectAttempts})`, { reason });
+        this.debug(`Reconnecting in ${delay}ms... (attempt ${nextAttempt}/${this.maxReconnectAttempts})`, {
+            reason,
+            state: this.getReconnectDebugState()
+        });
 
         this.reconnectPromise = new Promise((resolve) => {
             this.reconnectTimer = setTimeout(async () => {
@@ -768,7 +809,8 @@ export class WebSocketService {
             this.debug('Attempting websocket reconnect...', {
                 attempt: this.reconnectAttempts,
                 maxAttempts: this.maxReconnectAttempts,
-                reason
+                reason,
+                state: this.getReconnectDebugState()
             });
 
             if (this.provider) {
@@ -789,14 +831,18 @@ export class WebSocketService {
 
             const initialized = await this.initialize();
             if (!initialized) {
-                this.debug('Reconnect attempt failed during initialize');
+                this.debug('Reconnect attempt failed during initialize', {
+                    state: this.getReconnectDebugState()
+                });
                 if (!this.reconnectTimer) {
                     this.requestReconnect('reconnect-init-failed');
                 }
                 return false;
             }
 
-            this.debug('WebSocket reconnection successful');
+            this.debug('WebSocket reconnection successful', {
+                state: this.getReconnectDebugState()
+            });
             return true;
         } catch (error) {
             this.error('WebSocket reconnection failed:', error);
@@ -809,6 +855,10 @@ export class WebSocketService {
             if (!this.reconnectTimer) {
                 this.reconnectPromise = null;
             }
+            this.debug('Reconnect attempt finalized', {
+                reason,
+                state: this.getReconnectDebugState()
+            });
         }
     }
 
