@@ -46,6 +46,18 @@ export class WebSocketService {
         this.tokenCache = new Map();  // Add token cache
     }
 
+    hasContractEvent(contract, eventName) {
+        if (!contract?.interface?.getEvent) {
+            return false;
+        }
+        try {
+            contract.interface.getEvent(eventName);
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
+
     async queueRequest(callback) {
         while (this.activeRequests >= this.maxConcurrentRequests) {
             await new Promise(resolve => setTimeout(resolve, 100)); // Increase wait time
@@ -195,20 +207,8 @@ export class WebSocketService {
             
             // Clean up any existing event listeners first
             if (this.provider) {
-                this.provider.removeAllListeners("connect");
-                this.provider.removeAllListeners("disconnect");
                 this.provider.removeAllListeners("block");
             }
-            
-            // Add connection state tracking
-            this.provider.on("connect", () => {
-                this.debug('Provider connected');
-            });
-            
-            this.provider.on("disconnect", (error) => {
-                this.debug('Provider disconnected:', error);
-                this.reconnect();
-            });
 
             // Test event subscription
             const filter = contract.filters.OrderCreated();
@@ -231,6 +231,10 @@ export class WebSocketService {
             });
 
             // Add error handling for WebSocket connection
+            this.provider._websocket.onopen = () => {
+                this.debug('WebSocket connected');
+            };
+
             this.provider._websocket.onerror = (error) => {
                 this.debug('WebSocket error:', error);
             };
@@ -329,22 +333,26 @@ export class WebSocketService {
                 }
             });
             
-            contract.on("RetryOrder", (oldOrderId, newOrderId, maker, tries, timestamp) => {
-                const oldOrderIdNum = oldOrderId.toNumber();
-                const newOrderIdNum = newOrderId.toNumber();
-                
-                const order = this.orderCache.get(oldOrderIdNum);
-                if (order) {
-                    order.id = newOrderIdNum;
-                    order.tries = tries.toNumber();
-                    order.timestamp = timestamp.toNumber();
+            if (this.hasContractEvent(contract, "RetryOrder")) {
+                contract.on("RetryOrder", (oldOrderId, newOrderId, maker, tries, timestamp) => {
+                    const oldOrderIdNum = oldOrderId.toNumber();
+                    const newOrderIdNum = newOrderId.toNumber();
                     
-                    this.orderCache.delete(oldOrderIdNum);
-                    this.orderCache.set(newOrderIdNum, order);
-                    this.debug('Updated retried order:', {oldId: oldOrderIdNum, newId: newOrderIdNum, tries: tries.toString()});
-                    this.notifySubscribers("RetryOrder", order);
-                }
-            });
+                    const order = this.orderCache.get(oldOrderIdNum);
+                    if (order) {
+                        order.id = newOrderIdNum;
+                        order.tries = tries.toNumber();
+                        order.timestamp = timestamp.toNumber();
+                        
+                        this.orderCache.delete(oldOrderIdNum);
+                        this.orderCache.set(newOrderIdNum, order);
+                        this.debug('Updated retried order:', {oldId: oldOrderIdNum, newId: newOrderIdNum, tries: tries.toString()});
+                        this.notifySubscribers("RetryOrder", order);
+                    }
+                });
+            } else {
+                this.debug('RetryOrder event not found in ABI, skipping listener registration');
+            }
             
             this.debug('Event listeners setup complete');
         } catch (error) {
@@ -539,8 +547,6 @@ export class WebSocketService {
             
             // Remove provider event listeners
             if (this.provider) {
-                this.provider.removeAllListeners("connect");
-                this.provider.removeAllListeners("disconnect");
                 this.provider.removeAllListeners("block");
             }
             
@@ -550,7 +556,9 @@ export class WebSocketService {
                 this.contract.removeAllListeners("OrderFilled");
                 this.contract.removeAllListeners("OrderCanceled");
                 this.contract.removeAllListeners("OrderCleanedUp");
-                this.contract.removeAllListeners("RetryOrder");
+                if (this.hasContractEvent(this.contract, "RetryOrder")) {
+                    this.contract.removeAllListeners("RetryOrder");
+                }
             }
             
             // Clear cache
