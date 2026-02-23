@@ -1178,8 +1178,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 				// Access via window.app.ctx since app is now initialized
 				if (window.app?.ctx) {
 					const ws = window.app.ctx.getWebSocket();
-					if (ws && ws.reconnect) {
-						ws.reconnect();
+					if (ws && typeof ws.requestReconnect === 'function') {
+						ws.requestReconnect('global-callback-error');
+					} else if (ws && ws.reconnect) {
+						ws.reconnect('global-callback-error');
 					}
 				}
 			}

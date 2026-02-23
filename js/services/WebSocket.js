@@ -36,6 +36,16 @@ export class WebSocketService {
 
         // Throttle state for block logs
         this.lastBlockLogTime = 0;
+
+        // Reconnect guard rails to prevent reconnect storms.
+        this.reconnectInProgress = false;
+        this.reconnectPromise = null;
+        this.reconnectTimer = null;
+
+        // Sync guard rails to avoid repeated full-cache rebuilds.
+        this.syncPromise = null;
+        this.lastSyncAt = 0;
+        this.minSyncIntervalMs = 1500;
         
 
         const logger = createLogger('WEBSOCKET');
@@ -177,7 +187,10 @@ export class WebSocketService {
                 stack: error.stack
             });
             this.initializationPromise = null;
-            return this.reconnect();
+            if (!this.reconnectInProgress) {
+                this.requestReconnect('initialize-failed');
+            }
+            return false;
         }
     }
 
@@ -207,7 +220,7 @@ export class WebSocketService {
             
             this.provider.on("disconnect", (error) => {
                 this.debug('Provider disconnected:', error);
-                this.reconnect();
+                this.requestReconnect('provider-disconnect');
             });
 
             // Test event subscription
@@ -239,10 +252,8 @@ export class WebSocketService {
                 this.debug('WebSocket closed:', event);
                 // Attempt to reconnect if not manually closed
                 if (event.code !== 1000) {
-                    this.debug('WebSocket closed unexpectedly, attempting to reconnect...');
-                    setTimeout(() => {
-                        this.reconnect();
-                    }, 5000);
+                    this.debug('WebSocket closed unexpectedly, scheduling reconnect...');
+                    this.requestReconnect(`ws-close-${event.code}`);
                 }
             };
 
@@ -536,6 +547,12 @@ export class WebSocketService {
     cleanup() {
         try {
             this.debug('Cleaning up WebSocket service...');
+            if (this.reconnectTimer) {
+                clearTimeout(this.reconnectTimer);
+                this.reconnectTimer = null;
+            }
+            this.reconnectPromise = null;
+            this.reconnectInProgress = false;
             
             // Remove provider event listeners
             if (this.provider) {
@@ -552,6 +569,15 @@ export class WebSocketService {
                 this.contract.removeAllListeners("OrderCleanedUp");
                 this.contract.removeAllListeners("RetryOrder");
             }
+
+            // Best effort websocket close to avoid orphaned sockets.
+            if (this.provider?._websocket) {
+                try {
+                    this.provider._websocket.close(1000, 'cleanup');
+                } catch (error) {
+                    this.debug('Error closing websocket during cleanup:', error);
+                }
+            }
             
             // Clear cache
             this.orderCache.clear();
@@ -562,68 +588,87 @@ export class WebSocketService {
         }
     }
 
-        async syncAllOrders() {
-        this.debug('Starting order sync with existing contract...');
-        
-        if (!this.contract) {
-            throw new Error('Contract not initialized. Call initialize() first.');
+    async syncAllOrders() {
+        if (this.syncPromise) {
+            this.debug('Order sync already in progress, reusing pending sync');
+            return this.syncPromise;
         }
-        try {
-            this.debug('Starting order sync with contract:', this.contract.address);
+
+        if (this.orderCache.size > 0 && Date.now() - this.lastSyncAt < this.minSyncIntervalMs) {
+            this.debug('Skipping order sync (throttled)');
+            return;
+        }
+
+        this.syncPromise = (async () => {
+            this.debug('Starting order sync with existing contract...');
             
-            let nextOrderId = 0;
-            try {
-                nextOrderId = await this.contract.nextOrderId();
-                this.debug('nextOrderId result:', nextOrderId.toString());
-            } catch (error) {
-                this.debug('nextOrderId call failed, using default value:', error);
+            if (!this.contract) {
+                throw new Error('Contract not initialized. Call initialize() first.');
             }
-
-            // Clear existing cache before sync
-            this.orderCache.clear();
-
-            // Use optimized batched fetch (multicall with fallback)
-            const fetchedOrders = await this.fetchOrdersBatched(Number(nextOrderId), 50);
-
-            // Enrich with timings and populate cache
-            for (const o of fetchedOrders) {
-                const orderData = {
-                    ...o,
-                    timings: {
-                        createdAt: o.timestamp,
-                        expiresAt: o.timestamp + (this.orderExpiry ? this.orderExpiry.toNumber() : ORDER_CONSTANTS.DEFAULT_ORDER_EXPIRY_SECS),
-                        graceEndsAt: o.timestamp +
-                            (this.orderExpiry ? this.orderExpiry.toNumber() : ORDER_CONSTANTS.DEFAULT_ORDER_EXPIRY_SECS) +
-                            (this.gracePeriod ? this.gracePeriod.toNumber() : ORDER_CONSTANTS.DEFAULT_GRACE_PERIOD_SECS)
-                    }
-                };
-                // Calculate deal metrics for the order
+            try {
+                this.debug('Starting order sync with contract:', this.contract.address);
+            
+                let nextOrderId = 0;
                 try {
-                    const enrichedOrderData = await this.calculateDealMetrics(orderData);
-                    this.orderCache.set(o.id, enrichedOrderData);
-                    this.debug('Added order to cache with deal metrics:', enrichedOrderData);
+                    nextOrderId = await this.contract.nextOrderId();
+                    this.debug('nextOrderId result:', nextOrderId.toString());
                 } catch (error) {
-                    this.debug('Failed to calculate deal metrics for order', o.id, ':', error);
-                    // Still add the order without deal metrics as fallback
-                    this.orderCache.set(o.id, orderData);
-                    this.debug('Added order to cache without deal metrics:', orderData);
+                    this.debug('nextOrderId call failed, using default value:', error);
                 }
+
+                // Clear existing cache before sync
+                this.orderCache.clear();
+
+                // Use optimized batched fetch (multicall with fallback)
+                const fetchedOrders = await this.fetchOrdersBatched(Number(nextOrderId), 50);
+
+                // Enrich with timings and populate cache
+                for (const o of fetchedOrders) {
+                    const orderData = {
+                        ...o,
+                        timings: {
+                            createdAt: o.timestamp,
+                            expiresAt: o.timestamp + (this.orderExpiry ? this.orderExpiry.toNumber() : ORDER_CONSTANTS.DEFAULT_ORDER_EXPIRY_SECS),
+                            graceEndsAt: o.timestamp +
+                                (this.orderExpiry ? this.orderExpiry.toNumber() : ORDER_CONSTANTS.DEFAULT_ORDER_EXPIRY_SECS) +
+                                (this.gracePeriod ? this.gracePeriod.toNumber() : ORDER_CONSTANTS.DEFAULT_GRACE_PERIOD_SECS)
+                        }
+                    };
+                    // Calculate deal metrics for the order
+                    try {
+                        const enrichedOrderData = await this.calculateDealMetrics(orderData);
+                        this.orderCache.set(o.id, enrichedOrderData);
+                        this.debug('Added order to cache with deal metrics:', enrichedOrderData);
+                    } catch (error) {
+                        this.debug('Failed to calculate deal metrics for order', o.id, ':', error);
+                        // Still add the order without deal metrics as fallback
+                        this.orderCache.set(o.id, orderData);
+                        this.debug('Added order to cache without deal metrics:', orderData);
+                    }
+                }
+
+                // Validate and summarize order cache
+                try {
+                    this.validateOrderCache();
+                } catch (_) {}
+
+                this.debug('Order sync complete. Cache size:', this.orderCache.size);
+                this.notifySubscribers('orderSyncComplete', Object.fromEntries(this.orderCache));
+                this.debug('Setting up event listeners...');
+                await this.setupEventListeners(this.contract);
+
+            } catch (error) {
+                this.debug('Order sync failed:', error);
+                this.orderCache.clear();
+                this.notifySubscribers('orderSyncComplete', {});
             }
+        })();
 
-            // Validate and summarize order cache
-            try {
-                this.validateOrderCache();
-            } catch (_) {}
-
-            this.debug('Order sync complete. Cache size:', this.orderCache.size);
-            this.notifySubscribers('orderSyncComplete', Object.fromEntries(this.orderCache));
-            this.debug('Setting up event listeners...');
-            await this.setupEventListeners(this.contract);
-
-        } catch (error) {
-            this.debug('Order sync failed:', error);
-            this.orderCache.clear();
-            this.notifySubscribers('orderSyncComplete', {});
+        try {
+            return await this.syncPromise;
+        } finally {
+            this.lastSyncAt = Date.now();
+            this.syncPromise = null;
         }
     }
 
@@ -653,14 +698,16 @@ export class WebSocketService {
             this.debug('Getting orders with filter:', filterStatus);
             const orders = Array.from(this.orderCache.values());
             
-            // Add detailed logging of order cache
+            // Keep debug payload small to avoid large transient allocations.
+            const sample = orders.slice(0, 10).map(o => ({
+                id: o.id,
+                status: o.status,
+                timestamp: o.timestamp
+            }));
             this.debug('Current order cache:', {
                 size: this.orderCache.size,
-                orderStatuses: orders.map(o => ({
-                    id: o.id,
-                    status: o.status,
-                    timestamp: o.timestamp
-                }))
+                sampleOrderStatuses: sample,
+                truncated: orders.length > sample.length
             });
             
             if (filterStatus) {
@@ -674,18 +721,95 @@ export class WebSocketService {
         }
     }
 
-    async reconnect() {
+    requestReconnect(reason = 'unknown') {
+        if (this.reconnectInProgress) {
+            this.debug('Reconnect already in progress, skipping duplicate trigger', { reason });
+            return this.reconnectPromise || Promise.resolve(false);
+        }
+
+        if (this.reconnectTimer) {
+            this.debug('Reconnect already scheduled, skipping duplicate trigger', { reason });
+            return this.reconnectPromise || Promise.resolve(false);
+        }
+
+        if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+            this.debug('Max reconnection attempts reached');
+            return Promise.resolve(false);
+        }
+
+        const nextAttempt = this.reconnectAttempts + 1;
+        const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts);
+        this.debug(`Reconnecting in ${delay}ms... (attempt ${nextAttempt}/${this.maxReconnectAttempts})`, { reason });
+
+        this.reconnectPromise = new Promise((resolve) => {
+            this.reconnectTimer = setTimeout(async () => {
+                this.reconnectTimer = null;
+                const success = await this.reconnect(reason);
+                resolve(success);
+            }, delay);
+        });
+
+        return this.reconnectPromise;
+    }
+
+    async reconnect(reason = 'manual') {
+        if (this.reconnectInProgress) {
+            return this.reconnectPromise || false;
+        }
         if (this.reconnectAttempts >= this.maxReconnectAttempts) {
             this.debug('Max reconnection attempts reached');
             return false;
         }
 
+        this.reconnectInProgress = true;
         this.reconnectAttempts++;
-        const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
-        this.debug(`Reconnecting in ${delay}ms... (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
-        
-        await new Promise(resolve => setTimeout(resolve, delay));
-        return this.initialize();
+
+        try {
+            this.debug('Attempting websocket reconnect...', {
+                attempt: this.reconnectAttempts,
+                maxAttempts: this.maxReconnectAttempts,
+                reason
+            });
+
+            if (this.provider) {
+                try {
+                    this.provider.removeAllListeners();
+                    if (this.provider._websocket) {
+                        this.provider._websocket.close(1000, 'reconnect');
+                    }
+                } catch (error) {
+                    this.debug('Error cleaning up old connection:', error);
+                }
+            }
+
+            this.isInitialized = false;
+            this.initializationPromise = null;
+            this.provider = null;
+            this.contract = null;
+
+            const initialized = await this.initialize();
+            if (!initialized) {
+                this.debug('Reconnect attempt failed during initialize');
+                if (!this.reconnectTimer) {
+                    this.requestReconnect('reconnect-init-failed');
+                }
+                return false;
+            }
+
+            this.debug('WebSocket reconnection successful');
+            return true;
+        } catch (error) {
+            this.error('WebSocket reconnection failed:', error);
+            if (!this.reconnectTimer) {
+                this.requestReconnect('reconnect-error');
+            }
+            return false;
+        } finally {
+            this.reconnectInProgress = false;
+            if (!this.reconnectTimer) {
+                this.reconnectPromise = null;
+            }
+        }
     }
 
     subscribe(eventName, callback) {
@@ -933,41 +1057,4 @@ export class WebSocketService {
         return 'Active';
     }
 
-    // Reconnect method for handling WebSocket disconnections
-    async reconnect() {
-        try {
-            this.debug('Attempting to reconnect WebSocket...');
-            
-            // Clean up existing connection
-            if (this.provider) {
-                try {
-                    this.provider.removeAllListeners();
-                    if (this.provider._websocket) {
-                        this.provider._websocket.close();
-                    }
-                } catch (error) {
-                    this.debug('Error cleaning up old connection:', error);
-                }
-            }
-
-            // Reset state
-            this.isInitialized = false;
-            this.provider = null;
-            this.contract = null;
-
-            // Wait a bit before reconnecting
-            await new Promise(resolve => setTimeout(resolve, 2000));
-
-            // Reinitialize
-            await this.initialize();
-            
-            this.debug('WebSocket reconnection successful');
-        } catch (error) {
-            this.error('WebSocket reconnection failed:', error);
-            // Try again after a longer delay
-            setTimeout(() => {
-                this.reconnect();
-            }, 10000);
-        }
-    }
 }
