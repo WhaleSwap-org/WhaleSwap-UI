@@ -37,13 +37,6 @@ export class WebSocketService {
         // Throttle state for block logs
         this.lastBlockLogTime = 0;
         
-        // Chain-time cache (authoritative source for expiry/grace checks)
-        this.lastKnownChainTimestamp = null;
-        this.lastKnownChainBlock = null;
-        this.chainTimeSyncedAtMonotonicMs = null;
-        this.chainTimeSyncPromise = null;
-        this.chainTimeMaxAgeMs = 30000;
-        
 
         const logger = createLogger('WEBSOCKET');
         this.debug = logger.debug.bind(logger);
@@ -63,179 +56,6 @@ export class WebSocketService {
         } catch (_) {
             return false;
         }
-    }
-
-    /**
-     * Monotonic clock helper for elapsed-time calculations.
-     * Uses `performance.now()` when available and falls back to `Date.now()`.
-     * @returns {number} Milliseconds since an arbitrary monotonic origin.
-     */
-    getMonotonicNowMs() {
-        if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
-            return performance.now();
-        }
-        return Date.now();
-    }
-
-    /**
-     * Check whether chain time has been initialized.
-     * @returns {boolean} True when chain timestamp and sync time are both present.
-     */
-    hasChainTime() {
-        return Number.isFinite(this.lastKnownChainTimestamp) &&
-            Number.isFinite(this.chainTimeSyncedAtMonotonicMs);
-    }
-
-    /**
-     * Age of the cached chain timestamp.
-     * @returns {number} Milliseconds since last chain-time sync, or `Infinity` if unavailable.
-     */
-    getChainTimeAgeMs() {
-        if (!this.hasChainTime()) {
-            return Infinity;
-        }
-        return Math.max(0, this.getMonotonicNowMs() - this.chainTimeSyncedAtMonotonicMs);
-    }
-
-    /**
-     * Synchronize local chain-time cache from the provider.
-     * @param {string|number} [blockRef='latest'] - Block tag or number to query.
-     * @returns {Promise<number|null>} Synced chain timestamp in seconds, or `null` on failure.
-     */
-    async syncChainTime(blockRef = 'latest') {
-        if (!this.provider) {
-            return null;
-        }
-
-        if (this.chainTimeSyncPromise) {
-            return this.chainTimeSyncPromise;
-        }
-
-        this.chainTimeSyncPromise = (async () => {
-            try {
-                const block = await this.provider.getBlock(blockRef);
-                const blockTimestamp = Number(block?.timestamp);
-                const blockNumber = Number(block?.number);
-
-                if (!Number.isFinite(blockTimestamp)) {
-                    return null;
-                }
-
-                if (Number.isFinite(this.lastKnownChainBlock) &&
-                    Number.isFinite(blockNumber) &&
-                    blockNumber < this.lastKnownChainBlock) {
-                    return this.lastKnownChainTimestamp;
-                }
-
-                this.lastKnownChainTimestamp = blockTimestamp;
-                this.lastKnownChainBlock = Number.isFinite(blockNumber)
-                    ? blockNumber
-                    : this.lastKnownChainBlock;
-                this.chainTimeSyncedAtMonotonicMs = this.getMonotonicNowMs();
-
-                return this.lastKnownChainTimestamp;
-            } catch (error) {
-                this.debug('Failed to sync chain time:', error);
-                return null;
-            } finally {
-                this.chainTimeSyncPromise = null;
-            }
-        })();
-
-        return this.chainTimeSyncPromise;
-    }
-
-    /**
-     * Get best-known current chain timestamp by extrapolating from last synced block time.
-     * @returns {number|null} Current chain time in seconds, or `null` if unknown.
-     */
-    getCurrentTimestamp() {
-        if (this.hasChainTime()) {
-            const elapsedSecs = Math.floor(
-                (this.getMonotonicNowMs() - this.chainTimeSyncedAtMonotonicMs) / 1000
-            );
-            return this.lastKnownChainTimestamp + Math.max(0, elapsedSecs);
-        }
-
-        return null;
-    }
-
-    /**
-     * Ensure cached chain time exists and is recent enough for UI/eligibility checks.
-     * @param {number} [maxAgeMs=this.chainTimeMaxAgeMs] - Maximum tolerated cache age in ms.
-     * @returns {Promise<number|null>} Current chain timestamp in seconds, or `null` if sync failed.
-     */
-    async ensureFreshChainTime(maxAgeMs = this.chainTimeMaxAgeMs) {
-        const requestedMaxAgeMs = Number(maxAgeMs);
-        const effectiveMaxAgeMs = Number.isFinite(requestedMaxAgeMs) && requestedMaxAgeMs >= 0
-            ? requestedMaxAgeMs
-            : this.chainTimeMaxAgeMs;
-
-        if (!this.hasChainTime() || this.getChainTimeAgeMs() > effectiveMaxAgeMs) {
-            await this.syncChainTime();
-        }
-
-        return this.getCurrentTimestamp();
-    }
-
-    /**
-     * Compare a timestamp against best-known current chain time.
-     * @param {number|string|null|undefined} targetTimestamp - Target unix timestamp (seconds).
-     * @returns {boolean} True when current chain time is known and greater than target.
-     */
-    isPastTimestamp(targetTimestamp) {
-        const timestamp = Number(targetTimestamp);
-        const currentTime = this.getCurrentTimestamp();
-        return Number.isFinite(timestamp) &&
-            Number.isFinite(currentTime) &&
-            currentTime > timestamp;
-    }
-
-    /**
-     * Build derived timing fields for an order using configured expiry and grace constants.
-     * @param {number|string|null|undefined} createdAtInput - Order creation unix timestamp (seconds).
-     * @returns {{createdAt:number|null, expiresAt:number|null, graceEndsAt:number|null}} Derived timings.
-     */
-    buildOrderTimings(createdAtInput) {
-        const createdAt = Number(createdAtInput);
-        if (!Number.isFinite(createdAt)) {
-            return {
-                createdAt: null,
-                expiresAt: null,
-                graceEndsAt: null
-            };
-        }
-
-        const orderExpirySecs = this.orderExpiry
-            ? this.orderExpiry.toNumber()
-            : ORDER_CONSTANTS.DEFAULT_ORDER_EXPIRY_SECS;
-        const gracePeriodSecs = this.gracePeriod
-            ? this.gracePeriod.toNumber()
-            : ORDER_CONSTANTS.DEFAULT_GRACE_PERIOD_SECS;
-
-        return {
-            createdAt,
-            expiresAt: createdAt + orderExpirySecs,
-            graceEndsAt: createdAt + orderExpirySecs + gracePeriodSecs
-        };
-    }
-
-    /**
-     * Resolve order grace-end timestamp from cached timings or base order timestamp.
-     * @param {Object} order - Order-like object from cache.
-     * @returns {number|null} Grace-end unix timestamp (seconds), or `null` when unavailable.
-     */
-    getOrderGraceEndTime(order) {
-        const graceEndsAt = Number(order?.timings?.graceEndsAt);
-        if (Number.isFinite(graceEndsAt)) {
-            return graceEndsAt;
-        }
-
-        if (Number.isFinite(Number(order?.timestamp))) {
-            return this.buildOrderTimings(order.timestamp).graceEndsAt;
-        }
-
-        return null;
     }
 
     async queueRequest(callback) {
@@ -304,8 +124,6 @@ export class WebSocketService {
                 if (!connected) {
                     throw new Error('Failed to connect to any WebSocket URL');
                 }
-
-                await this.syncChainTime();
 
                 // Initialize contract before fetching constants
                 this.debug('Initializing contract...');
@@ -399,11 +217,12 @@ export class WebSocketService {
             // Listen for new blocks to ensure connection is alive (throttled logging)
             this.provider.on("block", async (blockNumber) => {
                 try {
-                    await this.syncChainTime(blockNumber);
                     const now = Date.now();
                     if (now - this.lastBlockLogTime >= 5000) { // log at most every 5s
                         this.lastBlockLogTime = now;
-                        this.debug('New block received:', blockNumber);
+                        await this.queueRequest(async () => {
+                            this.debug('New block received:', blockNumber);
+                        });
                     }
                 } catch (error) {
                     this.debug('Error processing block event:', error);
@@ -438,7 +257,6 @@ export class WebSocketService {
                         return;
                     }
                     const [orderId, maker, taker, sellToken, sellAmount, buyToken, buyAmount, timestamp, fee, event] = args;
-                    const createdAt = timestamp.toNumber();
                     
                     let orderData = {
                         id: orderId.toNumber(),
@@ -448,8 +266,11 @@ export class WebSocketService {
                         sellAmount,
                         buyToken,
                         buyAmount,
-                        timestamp: createdAt,
-                        timings: this.buildOrderTimings(createdAt),
+                        timings: {
+                            createdAt: timestamp.toNumber(),
+                            expiresAt: timestamp.toNumber() + this.orderExpiry.toNumber(),
+                            graceEndsAt: timestamp.toNumber() + this.orderExpiry.toNumber() + this.gracePeriod.toNumber()
+                        },
                         status: 'Active',
                         orderCreationFee: fee,
                         tries: 0
@@ -519,11 +340,9 @@ export class WebSocketService {
                     
                     const order = this.orderCache.get(oldOrderIdNum);
                     if (order) {
-                        const createdAt = timestamp.toNumber();
                         order.id = newOrderIdNum;
                         order.tries = tries.toNumber();
-                        order.timestamp = createdAt;
-                        order.timings = this.buildOrderTimings(createdAt);
+                        order.timestamp = timestamp.toNumber();
                         
                         this.orderCache.delete(oldOrderIdNum);
                         this.orderCache.set(newOrderIdNum, order);
@@ -744,10 +563,6 @@ export class WebSocketService {
             
             // Clear cache
             this.orderCache.clear();
-            this.lastKnownChainTimestamp = null;
-            this.lastKnownChainBlock = null;
-            this.chainTimeSyncedAtMonotonicMs = null;
-            this.chainTimeSyncPromise = null;
             
             this.debug('WebSocket service cleanup complete');
         } catch (error) {
@@ -763,7 +578,6 @@ export class WebSocketService {
         }
         try {
             this.debug('Starting order sync with contract:', this.contract.address);
-            await this.syncChainTime();
             
             let nextOrderId = 0;
             try {
@@ -783,7 +597,13 @@ export class WebSocketService {
             for (const o of fetchedOrders) {
                 const orderData = {
                     ...o,
-                    timings: this.buildOrderTimings(o.timestamp)
+                    timings: {
+                        createdAt: o.timestamp,
+                        expiresAt: o.timestamp + (this.orderExpiry ? this.orderExpiry.toNumber() : ORDER_CONSTANTS.DEFAULT_ORDER_EXPIRY_SECS),
+                        graceEndsAt: o.timestamp +
+                            (this.orderExpiry ? this.orderExpiry.toNumber() : ORDER_CONSTANTS.DEFAULT_ORDER_EXPIRY_SECS) +
+                            (this.gracePeriod ? this.gracePeriod.toNumber() : ORDER_CONSTANTS.DEFAULT_GRACE_PERIOD_SECS)
+                    }
                 };
                 // Calculate deal metrics for the order
                 try {
@@ -862,6 +682,20 @@ export class WebSocketService {
         }
     }
 
+    async reconnect() {
+        if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+            this.debug('Max reconnection attempts reached');
+            return false;
+        }
+
+        this.reconnectAttempts++;
+        const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+        this.debug(`Reconnecting in ${delay}ms... (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+        
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return this.initialize();
+    }
+
     subscribe(eventName, callback) {
         if (!this.subscribers.has(eventName)) {
             this.subscribers.set(eventName, new Set());
@@ -934,8 +768,15 @@ export class WebSocketService {
 
     isOrderExpired(order) {
         try {
-            const expiryTime = this.getOrderExpiryTime(order);
-            return this.isPastTimestamp(expiryTime);
+            if (!this.orderExpiry) {
+                this.debug('Order expiry not initialized');
+                return false;
+            }
+
+            const currentTime = Math.floor(Date.now() / 1000);
+            const expiryTime = order.timestamp + this.orderExpiry.toNumber();
+            
+            return currentTime > expiryTime;
         } catch (error) {
             this.debug('Error checking order expiry:', error);
             return false;
@@ -943,17 +784,10 @@ export class WebSocketService {
     }
 
     getOrderExpiryTime(order) {
-        const expiresAt = Number(order?.timings?.expiresAt);
-        if (Number.isFinite(expiresAt)) {
-            return expiresAt;
+        if (!this.orderExpiry) {
+            return null;
         }
-
-        const createdAt = Number(order?.timestamp);
-        if (Number.isFinite(createdAt)) {
-            return this.buildOrderTimings(createdAt).expiresAt;
-        }
-
-        return null;
+        return order.timestamp + this.orderExpiry.toNumber();
     }
 
     //TODO: calculate deal metric based on buy value / sell value where buy value is the amount of buy tokens * token price and sell value is the amount of sell tokens * token price
@@ -1068,7 +902,7 @@ export class WebSocketService {
     // Use this to determine to provide a fill button in the UI
     canFillOrder(order, currentAccount) {
         if (order.status !== 'Active') return false;
-        if (this.isPastTimestamp(this.getOrderExpiryTime(order))) return false;
+        if (order.timings?.expiresAt && Date.now()/1000 > order.timings.expiresAt) return false;
         if (order.maker?.toLowerCase() === currentAccount?.toLowerCase()) return false;
         return order.taker === ethers.constants.AddressZero || 
                order.taker?.toLowerCase() === currentAccount?.toLowerCase();
@@ -1078,7 +912,7 @@ export class WebSocketService {
     // Use this to determine to provide a cancel button in the UI
     canCancelOrder(order, currentAccount) {
         if (order.status !== 'Active') return false;
-        if (this.isPastTimestamp(this.getOrderGraceEndTime(order))) return false;
+        if (order.timings?.graceEndsAt && Date.now()/1000 > order.timings.graceEndsAt) return false;
         return order.maker?.toLowerCase() === currentAccount?.toLowerCase();
     }
 
@@ -1090,17 +924,15 @@ export class WebSocketService {
         if (order.status === 'Filled') return 'Filled';
 
         // Then check timing using cached timings
-        const currentTime = this.getCurrentTimestamp();
-        const expiresAt = this.getOrderExpiryTime(order);
-        const graceEndsAt = this.getOrderGraceEndTime(order);
+        const currentTime = Math.floor(Date.now() / 1000);
 
-        this.debug(`Checking order ${order.id} status: currentTime=${currentTime}, expiresAt=${expiresAt}, graceEndsAt=${graceEndsAt}`);
+        this.debug(`Checking order ${order.id} status: currentTime=${currentTime}, expiresAt=${order.timings?.expiresAt}, graceEndsAt=${order.timings?.graceEndsAt}`);
 
-        if (this.isPastTimestamp(graceEndsAt)) {
+        if (order.timings?.graceEndsAt && currentTime > order.timings.graceEndsAt) {
             this.debug(`Order ${order.id} status: Expired (past grace period)`);
             return 'Expired';
         }
-        if (this.isPastTimestamp(expiresAt)) {
+        if (order.timings?.expiresAt && currentTime > order.timings.expiresAt) {
             this.debug(`Order ${order.id} status: Expired (past expiry time)`);
             return 'Expired';
         }
@@ -1111,38 +943,39 @@ export class WebSocketService {
 
     // Reconnect method for handling WebSocket disconnections
     async reconnect() {
-        if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-            this.debug('Max reconnection attempts reached');
-            return false;
-        }
-
-        this.reconnectAttempts++;
-        const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
-        this.debug(`Reconnecting in ${delay}ms... (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
-
-        // Clean up existing connection
-        if (this.provider) {
-            try {
-                this.provider.removeAllListeners();
-                if (this.provider._websocket) {
-                    this.provider._websocket.close();
+        try {
+            this.debug('Attempting to reconnect WebSocket...');
+            
+            // Clean up existing connection
+            if (this.provider) {
+                try {
+                    this.provider.removeAllListeners();
+                    if (this.provider._websocket) {
+                        this.provider._websocket.close();
+                    }
+                } catch (error) {
+                    this.debug('Error cleaning up old connection:', error);
                 }
-            } catch (error) {
-                this.debug('Error cleaning up old connection:', error);
             }
+
+            // Reset state
+            this.isInitialized = false;
+            this.provider = null;
+            this.contract = null;
+
+            // Wait a bit before reconnecting
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            // Reinitialize
+            await this.initialize();
+            
+            this.debug('WebSocket reconnection successful');
+        } catch (error) {
+            this.error('WebSocket reconnection failed:', error);
+            // Try again after a longer delay
+            setTimeout(() => {
+                this.reconnect();
+            }, 10000);
         }
-
-        // Reset state
-        this.isInitialized = false;
-        this.provider = null;
-        this.contract = null;
-        this.initializationPromise = null;
-        this.lastKnownChainTimestamp = null;
-        this.lastKnownChainBlock = null;
-        this.chainTimeSyncedAtMonotonicMs = null;
-        this.chainTimeSyncPromise = null;
-
-        await new Promise(resolve => setTimeout(resolve, delay));
-        return this.initialize();
     }
 }

@@ -93,7 +93,6 @@ export class TakerOrders extends BaseComponent {
 
             // Get all orders and filter for taker
             const ws = this.ctx.getWebSocket();
-            await ws.ensureFreshChainTime();
             let ordersToDisplay = Array.from(ws.orderCache.values())
                 .filter(order => 
                     order?.taker && 
@@ -333,10 +332,8 @@ export class TakerOrders extends BaseComponent {
 
             const orderStatus = ws.getOrderStatus(order);
             const expiryEpoch = order?.timings?.expiresAt;
-            const currentTime = ws.getCurrentTimestamp();
             const expiryText = orderStatus === 'Active' && typeof expiryEpoch === 'number' 
-                && Number.isFinite(currentTime)
-                ? formatTimeDiff(expiryEpoch - currentTime) 
+                ? formatTimeDiff(expiryEpoch - Math.floor(Date.now() / 1000)) 
                 : '';
 
             // Get counterparty address for display

@@ -441,16 +441,11 @@ export class OrdersTableRenderer {
             const order = ws.orderCache.get(Number(orderId));
             if (!order) return;
 
-            await ws.ensureFreshChainTime();
-            const currentTime = ws.getCurrentTimestamp();
+            const currentTime = Math.floor(Date.now() / 1000);
             const expiresAt = order?.timings?.expiresAt;
-            const timeDiff = Number.isFinite(currentTime) && typeof expiresAt === 'number'
-                ? expiresAt - currentTime
-                : null;
+            const timeDiff = typeof expiresAt === 'number' ? expiresAt - currentTime : 0;
             const orderStatusForExpiry = ws.getOrderStatus(order);
-            const newExpiryText = orderStatusForExpiry === 'Active' && Number.isFinite(timeDiff)
-                ? formatTimeDiff(timeDiff)
-                : '';
+            const newExpiryText = orderStatusForExpiry === 'Active' ? formatTimeDiff(timeDiff) : '';
             
             if (expiresCell.textContent !== newExpiryText) {
                 expiresCell.textContent = newExpiryText;

@@ -117,7 +117,6 @@ export class ViewOrders extends BaseComponent {
             // Get all orders first
             const ws = this.ctx.getWebSocket();
             const wallet = this.ctx.getWallet();
-            await ws.ensureFreshChainTime();
             let ordersToDisplay = Array.from(ws.orderCache.values());
             
             // Apply token filters
@@ -142,7 +141,10 @@ export class ViewOrders extends BaseComponent {
 
             // Filter orders based on status and fillable flag
             ordersToDisplay = ordersToDisplay.filter(order => {
-                const isActive = order.status === 'Active' && !ws.isPastTimestamp(ws.getOrderExpiryTime(order));
+                const currentTime = Math.floor(Date.now() / 1000);
+                const expiresAt = order?.timings?.expiresAt;
+                const isExpired = typeof expiresAt === 'number' ? currentTime > expiresAt : false;
+                const isActive = order.status === 'Active' && !isExpired;
                 const canFill = ws.canFillOrder(order, wallet?.getAccount());
                 const isUserOrder = order.maker?.toLowerCase() === wallet?.getAccount()?.toLowerCase();
 
@@ -312,11 +314,11 @@ export class ViewOrders extends BaseComponent {
             }
 
             // Check expiry
-            await ws.ensureFreshChainTime(0);
-            const now = ws.getCurrentTimestamp();
-            const expiryTime = ws.getOrderExpiryTime(order);
+            const now = Math.floor(Date.now() / 1000);
+            const orderExpiry = await contract.ORDER_EXPIRY();
+            const expiryTime = Number(order.timestamp) + orderExpiry.toNumber();
             
-            if (Number.isFinite(expiryTime) && now > expiryTime) {
+            if (now >= expiryTime) {
                 throw new Error('Order has expired');
             }
 
@@ -561,10 +563,8 @@ export class ViewOrders extends BaseComponent {
 
             const orderStatus = ws.getOrderStatus(order);
             const expiryEpoch = order?.timings?.expiresAt;
-            const currentTime = ws.getCurrentTimestamp();
             const expiryText = orderStatus === 'Active' && typeof expiryEpoch === 'number' 
-                && Number.isFinite(currentTime)
-                ? formatTimeDiff(expiryEpoch - currentTime) 
+                ? formatTimeDiff(expiryEpoch - Math.floor(Date.now() / 1000)) 
                 : '';
 
             tr.innerHTML = `
