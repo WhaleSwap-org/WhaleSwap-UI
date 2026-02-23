@@ -181,14 +181,21 @@ export class WebSocketService {
     /**
      * Compare a timestamp against best-known current chain time.
      * @param {number|string|null|undefined} targetTimestamp - Target unix timestamp (seconds).
-     * @returns {boolean} True when current chain time is known and greater than target.
+     * @returns {boolean} True when current time is greater than target.
+     * Falls back to local wall-clock time if chain time is temporarily unavailable.
      */
     isPastTimestamp(targetTimestamp) {
         const timestamp = Number(targetTimestamp);
-        const currentTime = this.getCurrentTimestamp();
-        return Number.isFinite(timestamp) &&
-            Number.isFinite(currentTime) &&
-            currentTime > timestamp;
+        if (!Number.isFinite(timestamp)) {
+            return false;
+        }
+
+        const chainTime = this.getCurrentTimestamp();
+        if (Number.isFinite(chainTime)) {
+            return chainTime > timestamp;
+        }
+
+        return Math.floor(Date.now() / 1000) > timestamp;
     }
 
     /**
