@@ -72,65 +72,77 @@ export async function getClaimableSnapshot({
         return [];
     }
 
-    try {
-        const tokens = await contract.getClaimableTokens(normalizedUser);
-        if (!Array.isArray(tokens) || tokens.length === 0) {
-            return [];
+    const tokens = await contract.getClaimableTokens(normalizedUser);
+    if (!Array.isArray(tokens)) {
+        throw new Error('Invalid getClaimableTokens response');
+    }
+    if (tokens.length === 0) {
+        return [];
+    }
+
+    const normalizedTokens = [...new Set(
+        tokens
+            .map(normalizeAddress)
+            .filter(Boolean)
+            .map((address) => address.toLowerCase())
+    )].map((address) => ethers.utils.getAddress(address));
+    if (normalizedTokens.length === 0) {
+        throw new Error('No valid claimable token addresses found');
+    }
+
+    let hasSuccessfulRead = false;
+    let lastReadError = null;
+
+    const rows = await Promise.all(normalizedTokens.map(async (token) => {
+        let rawAmount;
+        try {
+            rawAmount = toBigNumber(await contract.claimable(normalizedUser, token));
+            hasSuccessfulRead = true;
+        } catch (error) {
+            lastReadError = error;
+            return null;
         }
 
-        const normalizedTokens = [...new Set(
-            tokens
-                .map(normalizeAddress)
-                .filter(Boolean)
-                .map((address) => address.toLowerCase())
-        )].map((address) => ethers.utils.getAddress(address));
+        if (rawAmount.isZero()) {
+            return null;
+        }
 
-        const rows = await Promise.all(normalizedTokens.map(async (token) => {
-            let rawAmount;
-            try {
-                rawAmount = toBigNumber(await contract.claimable(normalizedUser, token));
-            } catch (_) {
-                return null;
-            }
-
-            if (rawAmount.isZero()) {
-                return null;
-            }
-
-            if (!includeMetadata) {
-                return {
-                    token,
-                    tokenLower: token.toLowerCase(),
-                    rawAmount,
-                    amount: rawAmount.toString(),
-                    formattedAmount: formatUnits(rawAmount, 18),
-                    symbol: `${token.slice(0, 6)}...${token.slice(-4)}`,
-                    name: token,
-                    decimals: 18,
-                    iconUrl: 'fallback'
-                };
-            }
-
-            const metadata = await getTokenMetadata(ws, token);
+        if (!includeMetadata) {
             return {
                 token,
                 tokenLower: token.toLowerCase(),
                 rawAmount,
                 amount: rawAmount.toString(),
-                formattedAmount: formatUnits(rawAmount, metadata.decimals),
-                symbol: metadata.symbol,
-                name: metadata.name,
-                decimals: metadata.decimals,
-                iconUrl: metadata.iconUrl
+                formattedAmount: formatUnits(rawAmount, 18),
+                symbol: `${token.slice(0, 6)}...${token.slice(-4)}`,
+                name: token,
+                decimals: 18,
+                iconUrl: 'fallback'
             };
-        }));
+        }
 
-        return rows
-            .filter(Boolean)
-            .sort((a, b) => a.symbol.localeCompare(b.symbol));
-    } catch (_) {
-        return [];
+        const metadata = await getTokenMetadata(ws, token);
+        return {
+            token,
+            tokenLower: token.toLowerCase(),
+            rawAmount,
+            amount: rawAmount.toString(),
+            formattedAmount: formatUnits(rawAmount, metadata.decimals),
+            symbol: metadata.symbol,
+            name: metadata.name,
+            decimals: metadata.decimals,
+            iconUrl: metadata.iconUrl
+        };
+    }));
+
+    // If every token read failed, surface an error so UI can show a failure state.
+    if (!hasSuccessfulRead) {
+        throw lastReadError || new Error('Failed to read claimable balances');
     }
+
+    return rows
+        .filter(Boolean)
+        .sort((a, b) => a.symbol.localeCompare(b.symbol));
 }
 
 export async function hasAnyClaimables({ contract, userAddress }) {
