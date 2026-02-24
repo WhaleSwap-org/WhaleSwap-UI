@@ -86,17 +86,6 @@ export class ContractParams extends BaseComponent {
                 this.debug('Error fetching network info:', e);
             }
 
-            // accumulatedFees is now tracked per token in accumulatedFeesByToken(token)
-            if (params.feeToken && typeof contract.accumulatedFeesByToken === 'function') {
-                try {
-                    params.accumulatedFees = await ws.queueRequest(
-                        async () => contract.accumulatedFeesByToken(params.feeToken)
-                    );
-                } catch (e) {
-                    this.debug('Error fetching accumulatedFeesByToken:', e);
-                }
-            }
-
             // Use WebSocket's token info cache for fee token details
             if (params.feeToken) {
                 try {
@@ -110,6 +99,69 @@ export class ContractParams extends BaseComponent {
                     params.tokenDecimals = 18;
                 }
             }
+
+            // Build fee-token set from current fee token + loaded orders feeToken snapshots
+            const feeTokenSet = new Set();
+            const normalizeAddress = (value) => {
+                try {
+                    return ethers.utils.getAddress(value);
+                } catch (_) {
+                    return null;
+                }
+            };
+
+            const currentFeeToken = normalizeAddress(params.feeToken);
+            if (currentFeeToken) {
+                feeTokenSet.add(currentFeeToken);
+            }
+
+            try {
+                const orders = typeof ws.getOrders === 'function'
+                    ? ws.getOrders()
+                    : Array.from(ws.orderCache?.values?.() || []);
+
+                for (const order of orders) {
+                    const orderFeeToken = normalizeAddress(order?.feeToken);
+                    if (!orderFeeToken || (currentFeeToken && orderFeeToken === currentFeeToken)) {
+                        continue;
+                    }
+                    feeTokenSet.add(orderFeeToken);
+                }
+            } catch (e) {
+                this.debug('Error collecting fee tokens from loaded orders:', e);
+            }
+
+            params.accumulatedFeeRows = [];
+            if (typeof contract.accumulatedFeesByToken === 'function') {
+                await Promise.all(
+                    Array.from(feeTokenSet).map(async (tokenAddress) => {
+                        try {
+                            const [amount, tokenInfo] = await Promise.all([
+                                ws.queueRequest(async () => contract.accumulatedFeesByToken(tokenAddress)),
+                                ws.getTokenInfo(tokenAddress)
+                            ]);
+                            params.accumulatedFeeRows.push({
+                                tokenAddress,
+                                amount,
+                                symbol: tokenInfo?.symbol || 'Unknown',
+                                decimals: tokenInfo?.decimals ?? 18,
+                                isCurrent: currentFeeToken === tokenAddress
+                            });
+                        } catch (e) {
+                            this.debug(`Error fetching accumulated fee data for ${tokenAddress}:`, e);
+                        }
+                    })
+                );
+            }
+
+            // Keep current token first, then alphabetical by symbol/address
+            params.accumulatedFeeRows.sort((a, b) => {
+                if (a.isCurrent && !b.isCurrent) return -1;
+                if (!a.isCurrent && b.isCurrent) return 1;
+                const left = `${a.symbol || ''}:${a.tokenAddress}`.toLowerCase();
+                const right = `${b.symbol || ''}:${b.tokenAddress}`.toLowerCase();
+                return left.localeCompare(right);
+            });
 
             // Update UI with available parameters
             const paramsContainer = this.container.querySelector('.params-container');
@@ -166,8 +218,8 @@ export class ContractParams extends BaseComponent {
                         <p>${safe(params.feeToken)}</p>
                     </div>
                     <div class="param-item">
-                        <h4>Accumulated Fees (Current Fee Token)</h4>
-                        <p>${safe(params.accumulatedFees, (v) => this.formatTokenAmount(v, params.tokenDecimals))} ${safe(params.tokenSymbol)}</p>
+                        <h4>Accumulated Fees (By Fee Token)</h4>
+                        ${this.renderAccumulatedFees(params)}
                     </div>
                     <div class="param-item">
                         <h4>New Orders</h4>
@@ -238,6 +290,18 @@ export class ContractParams extends BaseComponent {
 
     formatTokenAmount(amount, decimals = 18) {
         return ethers.utils.formatUnits(amount, decimals);
+    }
+
+    renderAccumulatedFees(params) {
+        const rows = Array.isArray(params.accumulatedFeeRows) ? params.accumulatedFeeRows : [];
+        if (rows.length === 0) {
+            return '<p>N/A</p>';
+        }
+
+        return rows.map((row) => {
+            const label = `${this.formatTokenAmount(row.amount, row.decimals)} ${row.symbol}${row.isCurrent ? ' (current)' : ''}`;
+            return `<p>${label}<br><small>${row.tokenAddress}</small></p>`;
+        }).join('');
     }
 
     cleanup() {
