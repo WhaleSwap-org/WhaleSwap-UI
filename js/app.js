@@ -475,29 +475,27 @@ class App {
 		return !!(walletNetwork && selectedNetwork && walletNetwork.slug === selectedNetwork.slug);
 	}
 
-	handleNetworkSwitchFailure(error, targetNetwork, walletNetworkForMessage = null) {
+	handleNetworkSwitchFailure(error, targetNetwork) {
 		this.warn('Wallet network switch rejected/failed:', error);
 		if (isNetworkAddRequiredError(error)) {
-			this.showWarning(`${targetNetwork.displayName || targetNetwork.name} is not in your wallet yet. Click Add Network.`);
+			this.showWarning(`Wallet does not have ${targetNetwork.displayName || targetNetwork.name} added. Press Add Network.`);
 			return;
 		}
-		if (walletNetworkForMessage) {
-			const walletName = walletNetworkForMessage.displayName || walletNetworkForMessage.name || 'unsupported network';
-			this.showWarning(`Wallet is on ${walletName}. Please switch to ${targetNetwork.displayName || targetNetwork.name}.`);
+		if (isWalletUserRejectedError(error)) {
+			this.showWarning('Wallet request was cancelled.');
 			return;
 		}
 		this.showWarning(`Could not switch wallet to ${targetNetwork.displayName || targetNetwork.name}.`);
 	}
 
-	async switchWalletToNetworkWithReload(targetNetwork, options = {}) {
-		const { walletNetworkForMessage = null } = options;
+	async switchWalletToNetworkWithReload(targetNetwork) {
 		setNetworkSwitchInProgress(true);
 		try {
 			await walletManager.switchToNetwork(targetNetwork);
 			triggerPageReloadWithSwitchFallback();
 			return true;
 		} catch (error) {
-			this.handleNetworkSwitchFailure(error, targetNetwork, walletNetworkForMessage);
+			this.handleNetworkSwitchFailure(error, targetNetwork);
 			setNetworkSwitchInProgress(false);
 			return false;
 		}
@@ -694,15 +692,13 @@ class App {
 							}
 							this.ctx.setWalletChainId(walletChainId);
 							syncNetworkBadgeFromState();
-							if (shouldAttemptSwitch) {
-								this.updateTabVisibility(false);
-								await this.refreshAdminTabVisibility();
-								await this.refreshClaimTabVisibility();
-								await this.switchWalletToNetworkWithReload(selectedNetwork, {
-									walletNetworkForMessage: walletNetwork
-								});
-								break;
-							}
+								if (shouldAttemptSwitch) {
+									this.updateTabVisibility(false);
+									await this.refreshAdminTabVisibility();
+									await this.refreshClaimTabVisibility();
+									await this.switchWalletToNetworkWithReload(selectedNetwork);
+									break;
+								}
 
 							this.debug('Wallet connected on selected chain, reinitializing components...');
 							this.updateTabVisibility(true);
@@ -736,13 +732,9 @@ class App {
 							syncNetworkBadgeFromState();
 
 								if (!this.isWalletOnSelectedNetwork()) {
-									const selectedNetwork = this.getSelectedNetwork();
-									const walletNetwork = getNetworkById(this.ctx.getWalletChainId());
 									this.updateTabVisibility(false);
 									await this.refreshAdminTabVisibility();
 									await this.refreshClaimTabVisibility();
-									const walletName = walletNetwork?.displayName || walletNetwork?.name || 'unsupported network';
-									this.showWarning(`Wallet is on ${walletName}. Please switch to ${selectedNetwork.displayName || selectedNetwork.name}.`);
 									break;
 								}
 
@@ -778,8 +770,6 @@ class App {
 								this.updateTabVisibility(false);
 								await this.refreshAdminTabVisibility();
 								await this.refreshClaimTabVisibility();
-								const walletName = walletNetwork?.displayName || walletNetwork?.name || 'unsupported network';
-								this.showWarning(`Wallet is on ${walletName}. Please switch to ${selectedNetwork.displayName || selectedNetwork.name}.`);
 							}
 						} catch (error) {
 							console.error('[App] Error handling chainChanged:', error);
@@ -1550,6 +1540,14 @@ function isNetworkAddRequiredError(error) {
 
 	const message = String(error.message || '').toLowerCase();
 	return message.includes('unrecognized chain') || message.includes('unknown chain');
+}
+
+function isWalletUserRejectedError(error) {
+	if (!error) return false;
+	if (error.code === 4001 || error?.originalSwitchError?.code === 4001) return true;
+
+	const message = String(error.message || '').toLowerCase();
+	return message.includes('user rejected') || message.includes('rejected the request');
 }
 
 function setNetworkSwitchInProgress(isInProgress) {
