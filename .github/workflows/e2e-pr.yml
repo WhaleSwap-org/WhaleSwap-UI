@@ -1,0 +1,49 @@
+name: E2E (UI)
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  workflow_dispatch:
+    inputs:
+      ui_ref:
+        description: "UI ref to test (branch, tag, or SHA). Defaults to current branch."
+        required: false
+        default: ""
+        type: string
+      playwright_args:
+        description: "Optional Playwright args (example: tests/specs/create-order.spec.ts --project=chromium)"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  e2e-pr:
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+    uses: WhaleSwap-org/WhaleSwap-E2E/.github/workflows/manual-e2e.yml@main
+    with:
+      e2e_ref: main
+      contract_ref: main
+      ui_repository: ${{ github.event.pull_request.head.repo.full_name }}
+      ui_ref: ${{ github.event.pull_request.head.sha }}
+      playwright_args: ""
+      headless: true
+
+  e2e-manual:
+    if: github.event_name == 'workflow_dispatch'
+    uses: WhaleSwap-org/WhaleSwap-E2E/.github/workflows/manual-e2e.yml@main
+    with:
+      e2e_ref: main
+      contract_ref: main
+      ui_repository: WhaleSwap-org/WhaleSwap-UI
+      ui_ref: ${{ inputs.ui_ref != '' && inputs.ui_ref || github.ref_name }}
+      playwright_args: ${{ inputs.playwright_args }}
+      headless: true
