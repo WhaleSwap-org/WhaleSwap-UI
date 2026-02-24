@@ -475,6 +475,34 @@ class App {
 		return !!(walletNetwork && selectedNetwork && walletNetwork.slug === selectedNetwork.slug);
 	}
 
+	handleNetworkSwitchFailure(error, targetNetwork, walletNetworkForMessage = null) {
+		this.warn('Wallet network switch rejected/failed:', error);
+		if (isNetworkAddRequiredError(error)) {
+			this.showWarning(`${targetNetwork.displayName || targetNetwork.name} is not in your wallet yet. Click Add Network.`);
+			return;
+		}
+		if (walletNetworkForMessage) {
+			const walletName = walletNetworkForMessage.displayName || walletNetworkForMessage.name || 'unsupported network';
+			this.showWarning(`Wallet is on ${walletName}. Please switch to ${targetNetwork.displayName || targetNetwork.name}.`);
+			return;
+		}
+		this.showWarning(`Could not switch wallet to ${targetNetwork.displayName || targetNetwork.name}.`);
+	}
+
+	async switchWalletToNetworkWithReload(targetNetwork, options = {}) {
+		const { walletNetworkForMessage = null } = options;
+		setNetworkSwitchInProgress(true);
+		try {
+			await walletManager.switchToNetwork(targetNetwork);
+			triggerPageReloadWithSwitchFallback();
+			return true;
+		} catch (error) {
+			this.handleNetworkSwitchFailure(error, targetNetwork, walletNetworkForMessage);
+			setNetworkSwitchInProgress(false);
+			return false;
+		}
+	}
+
 	async handleNetworkSelectionCommit(network) {
 		if (!network) return;
 
@@ -482,6 +510,7 @@ class App {
 			setActiveNetwork(network);
 		} catch (error) {
 			this.error('Failed to set active network from selection:', error);
+			setNetworkSwitchInProgress(false);
 			return;
 		}
 
@@ -494,17 +523,11 @@ class App {
 
 		const walletNetwork = getNetworkById(this.ctx.getWalletChainId() || walletManager.chainId || null);
 		if (walletNetwork?.slug === network.slug) {
-			window.location.reload();
+			triggerPageReloadWithSwitchFallback();
 			return;
 		}
 
-		try {
-			await walletManager.switchToNetwork(network);
-			window.location.reload();
-		} catch (error) {
-			this.warn('Wallet network switch rejected/failed:', error);
-			this.showWarning(`Could not switch wallet to ${network.displayName || network.name}.`);
-		}
+		await this.switchWalletToNetworkWithReload(network);
 	}
 
 	async load () {
@@ -658,34 +681,32 @@ class App {
 				walletConnectBtn.addEventListener('click', this.handleConnectWallet);
 			}
 
-			// Add wallet connection state handler
-			walletManager.addListener(async (event, data) => {
-				switch (event) {
-					case 'connect': {
-						const walletChainId = data?.chainId || walletManager.chainId || null;
-						this.ctx.setWalletChainId(walletChainId);
-						syncNetworkBadgeFromState();
-
-						const selectedNetwork = this.getSelectedNetwork();
-						const walletNetwork = getNetworkById(walletChainId);
-						if (!walletNetwork || walletNetwork.slug !== selectedNetwork.slug) {
-							this.updateTabVisibility(false);
-							await this.refreshAdminTabVisibility();
-							await this.refreshClaimTabVisibility();
-							try {
-								await walletManager.switchToNetwork(selectedNetwork);
-								window.location.reload();
-							} catch (error) {
-								this.warn('Wallet connect on mismatched network and switch failed:', error);
-								const walletName = walletNetwork?.displayName || walletNetwork?.name || 'unsupported network';
-								this.showWarning(`Wallet is on ${walletName}. Please switch to ${selectedNetwork.displayName || selectedNetwork.name}.`);
+				// Add wallet connection state handler
+				walletManager.addListener(async (event, data) => {
+					switch (event) {
+						case 'connect': {
+							const walletChainId = data?.chainId || walletManager.chainId || null;
+							const selectedNetwork = this.getSelectedNetwork();
+							const walletNetwork = getNetworkById(walletChainId);
+							const shouldAttemptSwitch = !walletNetwork || walletNetwork.slug !== selectedNetwork.slug;
+							if (shouldAttemptSwitch) {
+								setNetworkSwitchInProgress(true);
 							}
-							break;
-						}
+							this.ctx.setWalletChainId(walletChainId);
+							syncNetworkBadgeFromState();
+							if (shouldAttemptSwitch) {
+								this.updateTabVisibility(false);
+								await this.refreshAdminTabVisibility();
+								await this.refreshClaimTabVisibility();
+								await this.switchWalletToNetworkWithReload(selectedNetwork, {
+									walletNetworkForMessage: walletNetwork
+								});
+								break;
+							}
 
-						this.debug('Wallet connected on selected chain, reinitializing components...');
-						this.updateTabVisibility(true);
-						await this.refreshAdminTabVisibility();
+							this.debug('Wallet connected on selected chain, reinitializing components...');
+							this.updateTabVisibility(true);
+							await this.refreshAdminTabVisibility();
 						await this.refreshClaimTabVisibility();
 						// Preserve WebSocket order cache to avoid clearing orders on connect
 						await this.reinitializeComponents(true);
@@ -1438,9 +1459,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // Network selector functionality
-let networkButton, networkDropdown, networkBadge;
+let addNetworkButton, networkButton, networkDropdown, networkBadge;
 let networkSelectorElement;
 let selectedNetworkSlug = null;
+let networkSwitchInProgress = false;
 
 function escapeHtml(value) {
 	return String(value)
@@ -1521,6 +1543,63 @@ function markSelectedNetworkOption(slug) {
 	});
 }
 
+function isNetworkAddRequiredError(error) {
+	if (!error) return false;
+	if (error.requiresWalletNetworkAddition === true) return true;
+	if (error.code === 4902 || error?.originalSwitchError?.code === 4902) return true;
+
+	const message = String(error.message || '').toLowerCase();
+	return message.includes('unrecognized chain') || message.includes('unknown chain');
+}
+
+function setNetworkSwitchInProgress(isInProgress) {
+	networkSwitchInProgress = Boolean(isInProgress);
+	syncAddNetworkButtonVisibility();
+}
+
+function triggerPageReloadWithSwitchFallback() {
+	try {
+		window.location.reload();
+	} catch (error) {
+		console.warn('[App] Reload failed after network switch:', error);
+		setNetworkSwitchInProgress(false);
+		return;
+	}
+
+	// In test/mocked environments reload can be a no-op, so always unlock after a delay.
+	const unlockSwitchState = () => {
+		if (networkSwitchInProgress) {
+			setNetworkSwitchInProgress(false);
+		}
+	};
+
+	window.setTimeout(unlockSwitchState, 1500);
+
+	// Also unlock as soon as the document becomes visible again.
+	if (document.visibilityState !== 'visible') {
+		document.addEventListener('visibilitychange', () => {
+			if (document.visibilityState === 'visible') {
+				unlockSwitchState();
+			}
+		}, { once: true });
+	}
+}
+
+function syncAddNetworkButtonVisibility() {
+	if (!addNetworkButton) return;
+
+	const selectedSlug = selectedNetworkSlug || window.app?.ctx?.getSelectedChainSlug?.() || getDefaultNetwork().slug;
+	const walletChainId = window.app?.ctx?.getWalletChainId?.();
+	const walletNetwork = walletChainId ? getNetworkById(walletChainId) : null;
+	const shouldShow = Boolean(
+		window.ethereum
+		&& walletChainId
+		&& !networkSwitchInProgress
+		&& (!walletNetwork || walletNetwork.slug !== selectedSlug)
+	);
+	addNetworkButton.classList.toggle('hidden', !shouldShow);
+}
+
 function syncNetworkBadgeFromState() {
 	if (!networkBadge) return;
 
@@ -1544,6 +1623,7 @@ function syncNetworkBadgeFromState() {
 		if (networkDropdown) {
 			networkDropdown.dataset.networkStatus = 'disconnected';
 		}
+		syncAddNetworkButtonVisibility();
 		return;
 	}
 
@@ -1565,6 +1645,8 @@ function syncNetworkBadgeFromState() {
 			networkDropdown.dataset.networkStatus = 'wrong-network';
 		}
 	}
+
+	syncAddNetworkButtonVisibility();
 }
 
 function applySelectedNetwork(network, { updateUrl = true } = {}) {
@@ -1622,11 +1704,21 @@ const populateNetworkOptions = () => {
 		const commitSelection = async () => {
 			const network = getNetworkBySlug(option.dataset.slug);
 			if (!network) return;
+			const previousSlug = selectedNetworkSlug || window.app?.ctx?.getSelectedChainSlug?.() || getDefaultNetwork().slug;
+			const hasWalletContext = Boolean(window.app?.ctx?.getWalletChainId?.());
+			const shouldSuppressAddButton = hasWalletContext && previousSlug !== network.slug;
+			if (shouldSuppressAddButton) {
+				setNetworkSwitchInProgress(true);
+			}
+
 			const hasChanged = applySelectedNetwork(network, { updateUrl: true });
 			toggleNetworkDropdown(false);
 			if (hasChanged && typeof window.app?.handleNetworkSelectionCommit === 'function') {
 				await window.app.handleNetworkSelectionCommit(network);
+				return;
 			}
+
+			setNetworkSwitchInProgress(false);
 		};
 
 		option.addEventListener('click', commitSelection);
@@ -1643,10 +1735,41 @@ const populateNetworkOptions = () => {
 
 // Initialize network dropdown when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
+	addNetworkButton = document.getElementById('addNetworkButton');
 	networkButton = document.querySelector('.network-button');
 	networkDropdown = document.querySelector('.network-dropdown');
 	networkBadge = document.querySelector('.network-badge');
 	networkSelectorElement = document.querySelector('.network-selector');
+
+	if (addNetworkButton) {
+		addNetworkButton.addEventListener('click', async (event) => {
+			event.preventDefault();
+
+			const selectedSlug = selectedNetworkSlug || window.app?.ctx?.getSelectedChainSlug?.() || getDefaultNetwork().slug;
+			const selectedNetwork = getNetworkBySlug(selectedSlug) || getDefaultNetwork();
+
+			if (!window.ethereum) {
+				window.app?.showWarning?.('No injected wallet detected.');
+				return;
+			}
+
+			if (!window.app?.ctx?.getWalletChainId?.()) {
+				window.app?.showWarning?.('Connect your wallet first.');
+				return;
+			}
+
+			const originalText = addNetworkButton.textContent;
+			addNetworkButton.disabled = true;
+			addNetworkButton.textContent = 'Switching...';
+
+			try {
+				await window.app?.switchWalletToNetworkWithReload?.(selectedNetwork);
+			} finally {
+				addNetworkButton.disabled = false;
+				addNetworkButton.textContent = originalText;
+			}
+		});
+	}
 
 	if (networkButton) {
 		networkButton.setAttribute('aria-haspopup', 'listbox');
