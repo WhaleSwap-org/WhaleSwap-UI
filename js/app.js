@@ -478,7 +478,7 @@ class App {
 	handleNetworkSwitchFailure(error, targetNetwork) {
 		this.warn('Wallet network switch rejected/failed:', error);
 		if (isNetworkAddRequiredError(error)) {
-			this.showWarning(`Wallet does not have ${targetNetwork.displayName || targetNetwork.name} added. Press Add Network.`);
+			this.showWarning(`Wallet does not have ${targetNetwork.displayName || targetNetwork.name} added. Add Network.`);
 			return;
 		}
 		if (isWalletUserRejectedError(error)) {
