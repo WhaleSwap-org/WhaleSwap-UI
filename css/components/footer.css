@@ -1,9 +1,10 @@
 .app-footer {
-  padding: 16px 24px;
+  padding: 16px 24px 32px;
   border-top: 1px solid var(--border-color, #e0e0e0);
   background: transparent;
   display: flex;
   justify-content: center;
+  margin-top: auto;
 }
 
 .footer-wrapper {

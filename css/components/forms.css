@@ -1,5 +1,5 @@
 .form-container {
-  max-width: 560px;
+  max-width: 395px;
   margin: 0 auto;
   padding: 0;
   background: transparent;
@@ -930,7 +930,7 @@
 .token-input-label {
   font-size: 14px;
   color: #666;
-  padding-left: 2px;
+  padding-left: 12px;
 }
 
 .token-amount-input {
@@ -2171,6 +2171,7 @@
 #create-order .token-amount-input {
   font-size: clamp(22px, 2vw, 28px);
   line-height: 1.08;
+  padding-left: 10px; 
 }
 
 #create-order .token-selector-group {
