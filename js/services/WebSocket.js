@@ -541,6 +541,50 @@ export class WebSocketService {
             } else {
                 this.debug('RetryOrder event not found in ABI, skipping listener registration');
             }
+
+            if (this.hasContractEvent(contract, "ClaimCredited")) {
+                contract.on("ClaimCredited", (beneficiary, token, amount, orderId, reason, timestamp) => {
+                    const creditedEvent = {
+                        beneficiary,
+                        token,
+                        amount: amount?.toString?.() ?? String(amount ?? '0'),
+                        orderId: orderId?.toString?.() ?? String(orderId ?? '0'),
+                        reason: reason || '',
+                        timestamp: timestamp?.toString?.() ?? String(timestamp ?? '0')
+                    };
+
+                    this.notifySubscribers("ClaimCredited", creditedEvent);
+                    this.notifySubscribers("claimsUpdated", {
+                        beneficiary,
+                        token,
+                        amount: creditedEvent.amount,
+                        source: "ClaimCredited"
+                    });
+                });
+            } else {
+                this.debug('ClaimCredited event not found in ABI, skipping listener registration');
+            }
+
+            if (this.hasContractEvent(contract, "ClaimWithdrawn")) {
+                contract.on("ClaimWithdrawn", (beneficiary, token, amount, timestamp) => {
+                    const withdrawnEvent = {
+                        beneficiary,
+                        token,
+                        amount: amount?.toString?.() ?? String(amount ?? '0'),
+                        timestamp: timestamp?.toString?.() ?? String(timestamp ?? '0')
+                    };
+
+                    this.notifySubscribers("ClaimWithdrawn", withdrawnEvent);
+                    this.notifySubscribers("claimsUpdated", {
+                        beneficiary,
+                        token,
+                        amount: withdrawnEvent.amount,
+                        source: "ClaimWithdrawn"
+                    });
+                });
+            } else {
+                this.debug('ClaimWithdrawn event not found in ABI, skipping listener registration');
+            }
             
             this.debug('Event listeners setup complete');
         } catch (error) {
@@ -744,6 +788,12 @@ export class WebSocketService {
                 this.contract.removeAllListeners("OrderFilled");
                 this.contract.removeAllListeners("OrderCanceled");
                 this.contract.removeAllListeners("OrderCleanedUp");
+                if (this.hasContractEvent(this.contract, "ClaimCredited")) {
+                    this.contract.removeAllListeners("ClaimCredited");
+                }
+                if (this.hasContractEvent(this.contract, "ClaimWithdrawn")) {
+                    this.contract.removeAllListeners("ClaimWithdrawn");
+                }
                 if (this.hasContractEvent(this.contract, "RetryOrder")) {
                     this.contract.removeAllListeners("RetryOrder");
                 }

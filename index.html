@@ -32,6 +32,7 @@
     <link rel="stylesheet" href="css/components/tabs.css" />
     <link rel="stylesheet" href="css/components/wallet.css" />
     <link rel="stylesheet" href="css/components/cleanup.css" />
+    <link rel="stylesheet" href="css/components/claim.css" />
     <link rel="stylesheet" href="css/components/contract-params.css" />
     <link rel="stylesheet" href="css/components/debug.css" />
     <link rel="stylesheet" href="css/components/toast.css" />
@@ -623,6 +624,13 @@
             </button>
             <button
               class="tab-button"
+              data-tab="claim"
+              style="display: none"
+            >
+              Claim
+            </button>
+            <button
+              class="tab-button"
               data-tab="taker-orders"
               style="display: none"
             >
@@ -659,6 +667,7 @@
           <div id="intro" class="tab-content card card--transparent"></div>
           <div id="view-orders" class="tab-content card card--transparent"></div>
           <div id="my-orders" class="tab-content card card--transparent"></div>
+          <div id="claim" class="tab-content card card--transparent"></div>
           <div id="taker-orders" class="tab-content card card--transparent"></div>
           <div id="cleanup-orders" class="tab-content card card--transparent">
             <div id="cleanup-container" class="cleanup-container"></div>
