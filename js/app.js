@@ -1566,12 +1566,23 @@ function triggerPageReloadWithSwitchFallback() {
 		return;
 	}
 
-	// In test/mocked environments reload can be a no-op, so unlock after a delay.
-	window.setTimeout(() => {
-		if (networkSwitchInProgress && document.visibilityState === 'visible') {
+	// In test/mocked environments reload can be a no-op, so always unlock after a delay.
+	const unlockSwitchState = () => {
+		if (networkSwitchInProgress) {
 			setNetworkSwitchInProgress(false);
 		}
-	}, 1500);
+	};
+
+	window.setTimeout(unlockSwitchState, 1500);
+
+	// Also unlock as soon as the document becomes visible again.
+	if (document.visibilityState !== 'visible') {
+		document.addEventListener('visibilitychange', () => {
+			if (document.visibilityState === 'visible') {
+				unlockSwitchState();
+			}
+		}, { once: true });
+	}
 }
 
 function syncAddNetworkButtonVisibility() {
