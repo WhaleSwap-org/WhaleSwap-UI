@@ -23,6 +23,7 @@ import { Admin } from './components/Admin.js';
 import { versionService } from './services/VersionService.js';
 import { createAppContext, setGlobalContext } from './services/AppContext.js';
 import { hasAnyClaimables } from './utils/claims.js';
+import { isUserRejection } from './utils/ui.js';
 
 class App {
 	constructor() {
@@ -1544,10 +1545,8 @@ function isNetworkAddRequiredError(error) {
 
 function isWalletUserRejectedError(error) {
 	if (!error) return false;
-	if (error.code === 4001 || error?.originalSwitchError?.code === 4001) return true;
-
-	const message = String(error.message || '').toLowerCase();
-	return message.includes('user rejected') || message.includes('rejected the request');
+	if (isUserRejection(error)) return true;
+	return Boolean(error?.originalSwitchError) && isUserRejection(error.originalSwitchError);
 }
 
 function setNetworkSwitchInProgress(isInProgress) {
