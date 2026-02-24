@@ -163,6 +163,11 @@ class App {
 		const fallbackVisible = this.claimTabVisibilityKnown
 			? this.claimTabLastVisible
 			: claimButton.style.display !== 'none';
+		const resolveVisibilityResult = (valueWhenCurrent) => (
+			isCurrentRequest()
+				? valueWhenCurrent
+				: (this.claimTabVisibilityKnown ? this.claimTabLastVisible : fallbackVisible)
+		);
 		const applyVisibility = async (
 			visible,
 			{ authoritative = true, allowRedirect = true } = {}
@@ -191,19 +196,42 @@ class App {
 			const isConnected = !!wallet?.isWalletConnected?.();
 			const userAddress = wallet?.getAccount?.();
 
-			if (!isConnected || !userAddress || !this.isWalletOnSelectedNetwork()) {
-				if (isCurrentRequest()) {
-					this.clearClaimVisibilityRetryTimer();
-					this.resetClaimVisibilityRetryBackoff();
+				if (!isConnected || !userAddress || !this.isWalletOnSelectedNetwork()) {
+					if (isCurrentRequest()) {
+						this.clearClaimVisibilityRetryTimer();
+						this.resetClaimVisibilityRetryBackoff();
+					}
+					await applyVisibility(false);
+					return resolveVisibilityResult(false);
 				}
-				await applyVisibility(false);
-				return false;
-			}
 
 			const ws = this.ctx?.getWebSocket?.();
 			await ws?.waitForInitialization?.();
 			const contract = ws?.contract;
-			if (!contract) {
+				if (!contract) {
+					await applyVisibility(fallbackVisible, {
+						authoritative: false,
+						allowRedirect: false
+					});
+					if (isCurrentRequest()) {
+						this.scheduleClaimVisibilityRetry();
+					}
+					return resolveVisibilityResult(fallbackVisible);
+				}
+
+			const hasClaims = await hasAnyClaimables({
+				contract,
+				userAddress
+			});
+
+				if (isCurrentRequest()) {
+					this.clearClaimVisibilityRetryTimer();
+					this.resetClaimVisibilityRetryBackoff();
+				}
+				await applyVisibility(hasClaims);
+				return resolveVisibilityResult(hasClaims);
+			} catch (error) {
+				this.debug('Claim tab visibility check failed:', error);
 				await applyVisibility(fallbackVisible, {
 					authoritative: false,
 					allowRedirect: false
@@ -211,32 +239,9 @@ class App {
 				if (isCurrentRequest()) {
 					this.scheduleClaimVisibilityRetry();
 				}
-				return fallbackVisible;
+				return resolveVisibilityResult(fallbackVisible);
 			}
-
-			const hasClaims = await hasAnyClaimables({
-				contract,
-				userAddress
-			});
-
-			if (isCurrentRequest()) {
-				this.clearClaimVisibilityRetryTimer();
-				this.resetClaimVisibilityRetryBackoff();
-			}
-			await applyVisibility(hasClaims);
-			return hasClaims;
-		} catch (error) {
-			this.debug('Claim tab visibility check failed:', error);
-			await applyVisibility(fallbackVisible, {
-				authoritative: false,
-				allowRedirect: false
-			});
-			if (isCurrentRequest()) {
-				this.scheduleClaimVisibilityRetry();
-			}
-			return fallbackVisible;
 		}
-	}
 
 	async refreshActiveOrdersTab() {
 		if (!this.isOrdersTab()) return;
