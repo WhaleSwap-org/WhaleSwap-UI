@@ -59,10 +59,9 @@ export class ContractParams extends BaseComponent {
                 isDisabled: 'isDisabled',
                 feeToken: 'feeToken',
                 owner: 'owner',
-                accumulatedFees: 'accumulatedFees',
                 gracePeriod: 'GRACE_PERIOD',
                 orderExpiry: 'ORDER_EXPIRY',
-                maxRetryAttempts: 'MAX_RETRY_ATTEMPTS'
+                allowedTokensCount: 'getAllowedTokensCount'
             };
 
             // Use WebSocket's queueRequest for rate limiting
@@ -85,6 +84,17 @@ export class ContractParams extends BaseComponent {
                 params.contractAddress = contract.address;
             } catch (e) {
                 this.debug('Error fetching network info:', e);
+            }
+
+            // accumulatedFees is now tracked per token in accumulatedFeesByToken(token)
+            if (params.feeToken && typeof contract.accumulatedFeesByToken === 'function') {
+                try {
+                    params.accumulatedFees = await ws.queueRequest(
+                        async () => contract.accumulatedFeesByToken(params.feeToken)
+                    );
+                } catch (e) {
+                    this.debug('Error fetching accumulatedFeesByToken:', e);
+                }
             }
 
             // Use WebSocket's token info cache for fee token details
@@ -156,7 +166,7 @@ export class ContractParams extends BaseComponent {
                         <p>${safe(params.feeToken)}</p>
                     </div>
                     <div class="param-item">
-                        <h4>Accumulated Fees</h4>
+                        <h4>Accumulated Fees (Current Fee Token)</h4>
                         <p>${safe(params.accumulatedFees, (v) => this.formatTokenAmount(v, params.tokenDecimals))} ${safe(params.tokenSymbol)}</p>
                     </div>
                     <div class="param-item">
@@ -199,8 +209,8 @@ export class ContractParams extends BaseComponent {
                         <p>${safe(params.orderExpiry, (v) => this.formatTime(v))}</p>
                     </div>
                     <div class="param-item">
-                        <h4>Max Retry Attempts</h4>
-                        <p>${safe(params.maxRetryAttempts)}</p>
+                        <h4>Allowed Tokens Count</h4>
+                        <p>${safe(params.allowedTokensCount)}</p>
                     </div>
                 </div>
 
@@ -236,4 +246,4 @@ export class ContractParams extends BaseComponent {
         this.isInitialized = false;
         this.isInitializing = false;
     }
-} 
+}
