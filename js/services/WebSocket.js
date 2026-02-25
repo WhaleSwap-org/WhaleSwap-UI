@@ -52,6 +52,8 @@ export class WebSocketService {
         this.contractDisabledCache = null;
         this.contractDisabledFetchedAt = 0;
         this.contractDisabledInFlight = null;
+        this.contractDisabledInFlightRequestId = 0;
+        this.contractDisabledRequestSeq = 0;
         this.contractDisabledReadError = false;
         
 
@@ -67,7 +69,14 @@ export class WebSocketService {
         this.contractDisabledCache = null;
         this.contractDisabledFetchedAt = 0;
         this.contractDisabledInFlight = null;
+        this.contractDisabledInFlightRequestId = 0;
         this.contractDisabledReadError = false;
+    }
+
+    markContractDisabledStateReadError() {
+        this.contractDisabledReadError = true;
+        this.contractDisabledCache = null;
+        this.contractDisabledFetchedAt = 0;
     }
 
     hasContractEvent(contract, eventName) {
@@ -326,6 +335,8 @@ export class WebSocketService {
         }
 
         if (!this.contractDisabledInFlight) {
+            const requestId = ++this.contractDisabledRequestSeq;
+            this.contractDisabledInFlightRequestId = requestId;
             const requestPromise = this.queueRequest(async () => {
                 if (!this.contract) {
                     throw new Error('Contract not initialized');
@@ -333,34 +344,48 @@ export class WebSocketService {
                 return Boolean(await this.contract.isDisabled());
             })
                 .then((isDisabled) => {
+                    // Ignore stale completions from older requests.
+                    if (this.contractDisabledInFlightRequestId !== requestId) {
+                        return isDisabled;
+                    }
                     this.contractDisabledCache = isDisabled;
                     this.contractDisabledFetchedAt = Date.now();
                     this.contractDisabledReadError = false;
                     return isDisabled;
                 })
                 .catch((error) => {
-                    this.contractDisabledReadError = true;
-                    this.contractDisabledCache = null;
-                    this.contractDisabledFetchedAt = 0;
+                    // Ignore stale completions from older requests.
+                    if (this.contractDisabledInFlightRequestId === requestId) {
+                        this.markContractDisabledStateReadError();
+                    }
                     throw error;
                 });
 
             this.contractDisabledInFlight = requestPromise.finally(() => {
-                this.contractDisabledInFlight = null;
+                if (this.contractDisabledInFlightRequestId === requestId) {
+                    this.contractDisabledInFlight = null;
+                    this.contractDisabledInFlightRequestId = 0;
+                }
             });
         }
 
+        const inFlightPromise = this.contractDisabledInFlight;
+        const inFlightRequestId = this.contractDisabledInFlightRequestId;
+
         try {
             return await this.withTimeout(
-                this.contractDisabledInFlight,
+                inFlightPromise,
                 timeoutMs,
                 'isDisabled timeout'
             );
         } catch (error) {
             if (error?.message === 'isDisabled timeout') {
-                this.contractDisabledReadError = true;
-                this.contractDisabledCache = null;
-                this.contractDisabledFetchedAt = 0;
+                // Ensure timed out in-flight reads do not block future refreshes.
+                if (this.contractDisabledInFlightRequestId === inFlightRequestId) {
+                    this.contractDisabledInFlight = null;
+                    this.contractDisabledInFlightRequestId = 0;
+                }
+                this.markContractDisabledStateReadError();
             }
             throw error;
         }
