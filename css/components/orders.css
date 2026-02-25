@@ -1183,7 +1183,7 @@ th[data-sort].active-sort .sort-icon {
   background: var(--bg-secondary);
 }
 
-/* Phase 1: keep horizontal overflow inside the table container only */
+/* Final responsive normalization for orders tabs */
 #view-orders,
 #my-orders,
 #taker-orders {
@@ -1202,14 +1202,293 @@ th[data-sort].active-sort .sort-icon {
   min-width: 42rem;
 }
 
+.refresh-container--mobile {
+  display: none;
+}
+
+/* Mobile card mode */
 @media (max-width: 768px) {
+  .filter-controls.bottom-controls {
+    display: none;
+  }
+
+  .filter-controls {
+    padding: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .filter-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+    padding: 0;
+  }
+
+  .filters-group {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 0.625rem;
+  }
+
+  .filter-toggle {
+    width: 100%;
+  }
+
+  .pagination-controls {
+    width: 100%;
+    margin-left: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.625rem;
+  }
+
+  .page-size-select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .pagination-buttons {
+    width: 100%;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .page-info {
+    min-width: 0;
+    flex: 1;
+    white-space: normal;
+    text-align: center;
+    line-height: 1.35;
+  }
+
+  .advanced-filters .filter-row {
+    padding: 0;
+  }
+
+  .token-filters {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.625rem;
+  }
+
+  .token-filter,
+  .order-sort {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .refresh-container--mobile {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    position: static;
+  }
+
+  .refresh-container--mobile .refresh-prices-button {
+    width: 100%;
+    min-height: 40px;
+  }
+
+  .refresh-container--mobile .refresh-status {
+    position: static;
+    transform: none;
+    margin-left: 0;
+    white-space: normal;
+  }
+
+  .refresh-container--mobile .last-updated {
+    margin-left: 0;
+    white-space: normal;
+  }
+
+  .table-container {
+    overflow-x: visible;
+    padding: 0.25rem;
+  }
+
   .orders-table {
-    min-width: 36rem;
+    width: 100%;
+    min-width: 0;
+    table-layout: auto;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .orders-table thead {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+  }
+
+  .orders-table,
+  .orders-table tbody,
+  .orders-table tr,
+  .orders-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .orders-table tbody {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .orders-table tbody tr.orders-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.625rem;
+    align-items: stretch;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: var(--bg-secondary);
+    padding: 0.75rem;
+    box-shadow: var(--card-shadow);
+  }
+
+  .orders-table tbody tr.orders-row:nth-child(even) {
+    background: var(--bg-secondary);
+  }
+
+  .orders-table tbody tr.orders-row:hover {
+    background: var(--bg-secondary);
+  }
+
+  .orders-table td.order-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 0.35rem;
+    width: auto;
+    min-width: 0;
+    padding: 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--bg-tertiary);
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    font-size: 0.875rem;
+  }
+
+  .orders-table td.order-cell::before {
+    content: attr(data-label);
+    display: block;
+    flex: 0 0 auto;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    padding-top: 0;
+  }
+
+  .orders-table td.order-cell > * {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .orders-table td.order-cell--id {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .orders-table td.order-cell--buy .token-info,
+  .orders-table td.order-cell--sell .token-info {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .orders-table td.order-cell--buy .token-symbol-row,
+  .orders-table td.order-cell--sell .token-symbol-row {
+    flex-wrap: wrap;
+    row-gap: 0.25rem;
+  }
+
+  .orders-table td.order-cell--buy .token-symbol,
+  .orders-table td.order-cell--sell .token-symbol {
+    max-width: none;
+  }
+
+  .orders-table td.order-cell--buy .token-amount,
+  .orders-table td.order-cell--sell .token-amount,
+  .orders-table td.order-cell--buy .token-price,
+  .orders-table td.order-cell--sell .token-price {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    text-align: left;
+  }
+
+  .orders-table td.order-cell--status .order-status {
+    align-items: flex-start;
+  }
+
+  .orders-table td.order-cell--action {
+    grid-column: 1 / -1;
+    padding-top: 0.625rem;
+  }
+
+  .orders-table td.order-cell--action .fill-button,
+  .orders-table td.order-cell--action .cancel-order-btn {
+    width: 100%;
+    min-height: 40px;
+    font-size: 0.875rem;
+  }
+
+  .orders-table td.order-cell--action .your-order,
+  .orders-table td.order-cell--action .mine-label {
+    display: block;
+    width: 100%;
+    text-align: center;
+    padding: 0.5rem 0.25rem;
+  }
+
+  .orders-table tbody tr.empty-message {
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: var(--bg-secondary);
+    box-shadow: var(--card-shadow);
+  }
+
+  .orders-table tbody tr.empty-message td {
+    padding: 1rem;
+    border: none;
+  }
+
+  .orders-table tbody tr.empty-message td::before {
+    content: none !important;
   }
 }
 
 @media (max-width: 480px) {
-  .orders-table {
-    min-width: 32rem;
+  .orders-table tbody tr.orders-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+    padding: 0.625rem;
+  }
+
+  .orders-table td.order-cell {
+    gap: 0.5rem;
+    font-size: 0.8125rem;
+  }
+
+  .orders-table td.order-cell::before {
+    font-size: 0.7rem;
+  }
+}
+
+@media (max-width: 360px) {
+  .orders-table tbody tr.orders-row {
+    grid-template-columns: 1fr;
   }
 }
