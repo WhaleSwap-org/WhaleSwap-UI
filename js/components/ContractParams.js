@@ -48,16 +48,16 @@ export class ContractParams extends BaseComponent {
                 throw new Error('Contract not initialized');
             }
 
-            // Ensure order cache is fully synced before deriving fee-token set from orders.
+            // Non-blocking read: only wait if a sync is already in flight.
+            // App.startInitialOrderSync() owns the first triggerIfNeeded:true call.
             try {
                 if (typeof ws.waitForOrderSync === 'function') {
-                    const syncOk = await ws.waitForOrderSync({ triggerIfNeeded: true });
-                    if (!syncOk) {
-                        this.warn('Order sync did not complete successfully; using available order cache');
-                    }
+                    void ws.waitForOrderSync({ triggerIfNeeded: false }).catch((e) => {
+                        this.debug('Failed while checking order sync state:', e);
+                    });
                 }
             } catch (e) {
-                this.debug('Failed while waiting for order sync:', e);
+                this.debug('Failed while checking order sync state:', e);
             }
 
             this.debug('Contract instance found, fetching parameters...');
