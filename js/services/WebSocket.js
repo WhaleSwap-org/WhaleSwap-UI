@@ -295,47 +295,75 @@ export class WebSocketService {
         }
     }
 
+    withTimeout(promise, timeoutMs, message) {
+        return new Promise((resolve, reject) => {
+            const timeoutId = setTimeout(() => {
+                reject(new Error(message));
+            }, timeoutMs);
+
+            promise.then(
+                (result) => {
+                    clearTimeout(timeoutId);
+                    resolve(result);
+                },
+                (error) => {
+                    clearTimeout(timeoutId);
+                    reject(error);
+                }
+            );
+        });
+    }
+
     async getContractDisabledState({ maxAgeMs = 10000, timeoutMs = 4000, force = false } = {}) {
         const now = Date.now();
         if (
             !force &&
+            !this.contractDisabledReadError &&
             this.contractDisabledCache !== null &&
             (now - this.contractDisabledFetchedAt) < maxAgeMs
         ) {
             return this.contractDisabledCache;
         }
 
-        if (this.contractDisabledInFlight) {
-            return this.contractDisabledInFlight;
-        }
-
-        const withTimeout = (promise, ms) => Promise.race([
-            promise,
-            new Promise((_, reject) => {
-                setTimeout(() => reject(new Error('isDisabled timeout')), ms);
+        if (!this.contractDisabledInFlight) {
+            const requestPromise = this.queueRequest(async () => {
+                if (!this.contract) {
+                    throw new Error('Contract not initialized');
+                }
+                return Boolean(await this.contract.isDisabled());
             })
-        ]);
+                .then((isDisabled) => {
+                    this.contractDisabledCache = isDisabled;
+                    this.contractDisabledFetchedAt = Date.now();
+                    this.contractDisabledReadError = false;
+                    return isDisabled;
+                })
+                .catch((error) => {
+                    this.contractDisabledReadError = true;
+                    this.contractDisabledCache = null;
+                    this.contractDisabledFetchedAt = 0;
+                    throw error;
+                });
 
-        this.contractDisabledInFlight = this.queueRequest(async () => {
-            if (!this.contract) {
-                throw new Error('Contract not initialized');
-            }
-
-            const isDisabled = Boolean(await withTimeout(this.contract.isDisabled(), timeoutMs));
-            this.contractDisabledCache = isDisabled;
-            this.contractDisabledFetchedAt = Date.now();
-            this.contractDisabledReadError = false;
-            return isDisabled;
-        })
-            .catch((error) => {
-                this.contractDisabledReadError = true;
-                throw error;
-            })
-            .finally(() => {
+            this.contractDisabledInFlight = requestPromise.finally(() => {
                 this.contractDisabledInFlight = null;
             });
+        }
 
-        return this.contractDisabledInFlight;
+        try {
+            return await this.withTimeout(
+                this.contractDisabledInFlight,
+                timeoutMs,
+                'isDisabled timeout'
+            );
+        } catch (error) {
+            if (error?.message === 'isDisabled timeout') {
+                this.contractDisabledReadError = true;
+                this.contractDisabledCache = null;
+                this.contractDisabledFetchedAt = 0;
+            }
+            throw error;
+        }
     }
 
     async initialize() {
