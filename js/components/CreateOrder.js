@@ -1909,8 +1909,11 @@ export class CreateOrder extends BaseComponent {
     async handleTokenItemClick(type, tokenItem) {
         try {
             if (this.contractStateReadError) {
-                this.showWarning('Unable to verify contract state right now. Please try again shortly.');
-                return;
+                await this.refreshContractDisabledState();
+                if (this.contractStateReadError) {
+                    this.showWarning('Unable to verify contract state right now. Please try again shortly.');
+                    return;
+                }
             }
 
             if (this.isContractDisabled) {
@@ -2091,6 +2094,15 @@ export class CreateOrder extends BaseComponent {
 
                 // Create new listener for opening modal
                 this.tokenSelectorListeners[type] = async () => {
+                    await this.refreshContractDisabledState();
+                    if (this.contractStateReadError) {
+                        this.showWarning('Unable to verify contract state right now. Please try again shortly.');
+                        return;
+                    }
+                    if (this.isContractDisabled) {
+                        this.showWarning('No new orders can be created because this contract is disabled.');
+                        return;
+                    }
                     modal.style.display = 'block';
                 };
 
