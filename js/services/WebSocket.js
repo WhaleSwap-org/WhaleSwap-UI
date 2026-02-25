@@ -43,6 +43,10 @@ export class WebSocketService {
         this.chainTimeSyncedAtMonotonicMs = null;
         this.chainTimeSyncPromise = null;
         this.chainTimeMaxAgeMs = 30000;
+
+        // Order sync lifecycle state
+        this.orderSyncPromise = null;
+        this.hasCompletedOrderSync = false;
         
 
         const logger = createLogger('WEBSOCKET');
@@ -805,6 +809,8 @@ export class WebSocketService {
             this.lastKnownChainBlock = null;
             this.chainTimeSyncedAtMonotonicMs = null;
             this.chainTimeSyncPromise = null;
+            this.orderSyncPromise = null;
+            this.hasCompletedOrderSync = false;
             
             this.debug('WebSocket service cleanup complete');
         } catch (error) {
@@ -812,64 +818,91 @@ export class WebSocketService {
         }
     }
 
-        async syncAllOrders() {
-        this.debug('Starting order sync with existing contract...');
-        
-        if (!this.contract) {
-            throw new Error('Contract not initialized. Call initialize() first.');
+    async waitForOrderSync({ triggerIfNeeded = true } = {}) {
+        if (this.orderSyncPromise) {
+            return this.orderSyncPromise;
         }
-        try {
-            this.debug('Starting order sync with contract:', this.contract.address);
-            await this.syncChainTime();
-            
-            let nextOrderId = 0;
+        if (this.hasCompletedOrderSync) {
+            return true;
+        }
+        if (!triggerIfNeeded) {
+            return false;
+        }
+        return this.syncAllOrders();
+    }
+
+    async syncAllOrders() {
+        if (this.orderSyncPromise) {
+            this.debug('Order sync already in progress; waiting for existing sync');
+            return this.orderSyncPromise;
+        }
+
+        this.orderSyncPromise = (async () => {
+            this.debug('Starting order sync with existing contract...');
+
             try {
-                nextOrderId = await this.contract.nextOrderId();
-                this.debug('nextOrderId result:', nextOrderId.toString());
-            } catch (error) {
-                this.debug('nextOrderId call failed, using default value:', error);
-            }
-
-            // Clear existing cache before sync
-            this.orderCache.clear();
-
-            // Use optimized batched fetch (multicall with fallback)
-            const fetchedOrders = await this.fetchOrdersBatched(Number(nextOrderId), 50);
-
-            // Enrich with timings and populate cache
-            for (const o of fetchedOrders) {
-                const orderData = {
-                    ...o,
-                    timings: this.buildOrderTimings(o.timestamp)
-                };
-                // Calculate deal metrics for the order
-                try {
-                    const enrichedOrderData = await this.calculateDealMetrics(orderData);
-                    this.orderCache.set(o.id, enrichedOrderData);
-                    this.debug('Added order to cache with deal metrics:', enrichedOrderData);
-                } catch (error) {
-                    this.debug('Failed to calculate deal metrics for order', o.id, ':', error);
-                    // Still add the order without deal metrics as fallback
-                    this.orderCache.set(o.id, orderData);
-                    this.debug('Added order to cache without deal metrics:', orderData);
+                if (!this.contract) {
+                    throw new Error('Contract not initialized. Call initialize() first.');
                 }
+                this.debug('Starting order sync with contract:', this.contract.address);
+                await this.syncChainTime();
+
+                let nextOrderId = 0;
+                try {
+                    nextOrderId = await this.contract.nextOrderId();
+                    this.debug('nextOrderId result:', nextOrderId.toString());
+                } catch (error) {
+                    this.debug('nextOrderId call failed, using default value:', error);
+                }
+
+                // Clear existing cache before sync
+                this.orderCache.clear();
+
+                // Use optimized batched fetch (multicall with fallback)
+                const fetchedOrders = await this.fetchOrdersBatched(Number(nextOrderId), 50);
+
+                // Enrich with timings and populate cache
+                for (const o of fetchedOrders) {
+                    const orderData = {
+                        ...o,
+                        timings: this.buildOrderTimings(o.timestamp)
+                    };
+                    // Calculate deal metrics for the order
+                    try {
+                        const enrichedOrderData = await this.calculateDealMetrics(orderData);
+                        this.orderCache.set(o.id, enrichedOrderData);
+                        this.debug('Added order to cache with deal metrics:', enrichedOrderData);
+                    } catch (error) {
+                        this.debug('Failed to calculate deal metrics for order', o.id, ':', error);
+                        // Still add the order without deal metrics as fallback
+                        this.orderCache.set(o.id, orderData);
+                        this.debug('Added order to cache without deal metrics:', orderData);
+                    }
+                }
+
+                // Validate and summarize order cache
+                try {
+                    this.validateOrderCache();
+                } catch (_) {}
+
+                this.debug('Order sync complete. Cache size:', this.orderCache.size);
+                this.notifySubscribers('orderSyncComplete', Object.fromEntries(this.orderCache));
+                this.debug('Setting up event listeners...');
+                await this.setupEventListeners(this.contract);
+                this.hasCompletedOrderSync = true;
+                return true;
+            } catch (error) {
+                this.debug('Order sync failed:', error);
+                this.orderCache.clear();
+                this.notifySubscribers('orderSyncComplete', {});
+                this.hasCompletedOrderSync = false;
+                return false;
+            } finally {
+                this.orderSyncPromise = null;
             }
+        })();
 
-            // Validate and summarize order cache
-            try {
-                this.validateOrderCache();
-            } catch (_) {}
-
-            this.debug('Order sync complete. Cache size:', this.orderCache.size);
-            this.notifySubscribers('orderSyncComplete', Object.fromEntries(this.orderCache));
-            this.debug('Setting up event listeners...');
-            await this.setupEventListeners(this.contract);
-
-        } catch (error) {
-            this.debug('Order sync failed:', error);
-            this.orderCache.clear();
-            this.notifySubscribers('orderSyncComplete', {});
-        }
+        return this.orderSyncPromise;
     }
 
     // Basic validation and summary for testing/diagnostics
