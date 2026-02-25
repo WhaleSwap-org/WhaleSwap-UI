@@ -3,7 +3,7 @@ import { ethers } from 'ethers';
 import { erc20Abi } from '../abi/erc20.js';
 import { createLogger } from '../services/LogService.js';
 import { handleTransactionError } from '../utils/ui.js';
-import { formatTimeDiff, getOrderStatusText, calculateTotalValue } from '../utils/orderUtils.js';
+import { formatTimeDiff, getOrderStatusText, calculateTotalValue, formatDealValue } from '../utils/orderUtils.js';
 import { OrdersComponentHelper } from '../services/OrdersComponentHelper.js';
 import { OrdersTableRenderer } from '../services/OrdersTableRenderer.js';
 
@@ -597,7 +597,7 @@ export class ViewOrders extends BaseComponent {
                         </div>
                     </div>
                 </td>
-                <td>${deal !== undefined ? (deal || 0).toFixed(6) : 'N/A'}</td>
+                <td>${formatDealValue(deal)}</td>
                 <td>${expiryText}</td>
                 <td class="order-status">${orderStatus}</td>
                 <td class="action-column"></td>`;
