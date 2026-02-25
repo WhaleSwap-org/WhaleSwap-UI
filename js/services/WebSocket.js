@@ -47,6 +47,12 @@ export class WebSocketService {
         // Order sync lifecycle state
         this.orderSyncPromise = null;
         this.hasCompletedOrderSync = false;
+
+        // Contract disabled-state cache
+        this.contractDisabledCache = null;
+        this.contractDisabledFetchedAt = 0;
+        this.contractDisabledInFlight = null;
+        this.contractDisabledReadError = false;
         
 
         const logger = createLogger('WEBSOCKET');
@@ -55,6 +61,13 @@ export class WebSocketService {
         this.warn = logger.warn.bind(logger);
         
         this.tokenCache = new Map();  // Add token cache
+    }
+
+    resetContractDisabledStateCache() {
+        this.contractDisabledCache = null;
+        this.contractDisabledFetchedAt = 0;
+        this.contractDisabledInFlight = null;
+        this.contractDisabledReadError = false;
     }
 
     hasContractEvent(contract, eventName) {
@@ -280,6 +293,49 @@ export class WebSocketService {
         } finally {
             this.activeRequests--;
         }
+    }
+
+    async getContractDisabledState({ maxAgeMs = 10000, timeoutMs = 4000, force = false } = {}) {
+        const now = Date.now();
+        if (
+            !force &&
+            this.contractDisabledCache !== null &&
+            (now - this.contractDisabledFetchedAt) < maxAgeMs
+        ) {
+            return this.contractDisabledCache;
+        }
+
+        if (this.contractDisabledInFlight) {
+            return this.contractDisabledInFlight;
+        }
+
+        const withTimeout = (promise, ms) => Promise.race([
+            promise,
+            new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('isDisabled timeout')), ms);
+            })
+        ]);
+
+        this.contractDisabledInFlight = this.queueRequest(async () => {
+            if (!this.contract) {
+                throw new Error('Contract not initialized');
+            }
+
+            const isDisabled = Boolean(await withTimeout(this.contract.isDisabled(), timeoutMs));
+            this.contractDisabledCache = isDisabled;
+            this.contractDisabledFetchedAt = Date.now();
+            this.contractDisabledReadError = false;
+            return isDisabled;
+        })
+            .catch((error) => {
+                this.contractDisabledReadError = true;
+                throw error;
+            })
+            .finally(() => {
+                this.contractDisabledInFlight = null;
+            });
+
+        return this.contractDisabledInFlight;
     }
 
     async initialize() {
@@ -522,6 +578,17 @@ export class WebSocketService {
                     this.notifySubscribers("OrderCleanedUp", { id: orderIdNum });
                 }
             });
+
+            if (this.hasContractEvent(contract, "ContractDisabled")) {
+                contract.on("ContractDisabled", () => {
+                    this.contractDisabledCache = true;
+                    this.contractDisabledFetchedAt = Date.now();
+                    this.contractDisabledReadError = false;
+                    this.notifySubscribers("ContractDisabled", { disabled: true });
+                });
+            } else {
+                this.debug('ContractDisabled event not found in ABI, skipping listener registration');
+            }
             
             if (this.hasContractEvent(contract, "RetryOrder")) {
                 contract.on("RetryOrder", (oldOrderId, newOrderId, maker, tries, timestamp) => {
@@ -792,6 +859,9 @@ export class WebSocketService {
                 this.contract.removeAllListeners("OrderFilled");
                 this.contract.removeAllListeners("OrderCanceled");
                 this.contract.removeAllListeners("OrderCleanedUp");
+                if (this.hasContractEvent(this.contract, "ContractDisabled")) {
+                    this.contract.removeAllListeners("ContractDisabled");
+                }
                 if (this.hasContractEvent(this.contract, "ClaimCredited")) {
                     this.contract.removeAllListeners("ClaimCredited");
                 }
@@ -811,6 +881,7 @@ export class WebSocketService {
             this.chainTimeSyncPromise = null;
             this.orderSyncPromise = null;
             this.hasCompletedOrderSync = false;
+            this.resetContractDisabledStateCache();
             
             this.debug('WebSocket service cleanup complete');
         } catch (error) {
@@ -1299,6 +1370,7 @@ export class WebSocketService {
         this.lastKnownChainBlock = null;
         this.chainTimeSyncedAtMonotonicMs = null;
         this.chainTimeSyncPromise = null;
+        this.resetContractDisabledStateCache();
 
         await new Promise(resolve => setTimeout(resolve, delay));
         return this.initialize();
