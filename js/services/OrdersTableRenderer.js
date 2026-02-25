@@ -22,7 +22,7 @@ export class OrdersTableRenderer {
                 { text: 'ID' },
                 { text: 'Buy' },
                 { text: 'Sell' },
-                { text: 'Deal', title: 'Deal = Buy Value / Sell Value\n\n• Higher deal number is better\n• Deal > 1: better deal based on market prices\n• Deal < 1: worse deal based on market prices' },
+                { text: 'Deal', title: 'Deal = Sell Value / Buy Value\n\n• Higher deal number is better\n• Deal > 1: better deal based on market prices\n• Deal < 1: worse deal based on market prices' },
                 { text: 'Expires' },
                 { text: 'Status' },
                 { text: 'Action' }
