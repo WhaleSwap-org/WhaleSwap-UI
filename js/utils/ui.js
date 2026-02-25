@@ -176,11 +176,7 @@ export function setupOrderTooltips(container = document) {
         trigger.addEventListener('click', (event) => {
             event.preventDefault();
             event.stopPropagation();
-            if (activeOrderTooltipTrigger === trigger) {
-                hideOrderTooltip();
-            } else {
-                showOrderTooltip(trigger);
-            }
+            showOrderTooltip(trigger);
         });
     });
 }
