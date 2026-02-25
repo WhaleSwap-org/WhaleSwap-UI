@@ -574,29 +574,89 @@
 @media (max-width: 480px) {
   .header-right .wallet-button,
   .header-right .wallet-info {
-    width: 100%;
+    width: auto;
   }
 
   .wallet-container {
-    flex-direction: column;
-    align-items: stretch;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    min-width: 0;
   }
 
   .network-selector,
+  .add-network-button {
+    min-width: 0;
+  }
+
+  .network-selector {
+    flex: 1 1 auto;
+    width: auto;
+  }
+
   .wallet-button,
   .wallet-info,
   .add-network-button {
-    width: 100%;
-    flex: 1 1 auto;
+    flex: 0 1 auto;
+    width: auto;
+    max-width: 42%;
+    min-width: 0;
   }
 
   .network-button,
   .wallet-button,
   .wallet-info,
   .add-network-button {
+    min-height: 36px;
+    padding: 6px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    line-height: 1.1;
+  }
+
+  .network-button {
     width: 100%;
-    min-height: 40px;
-    padding: 7px 10px;
+  }
+
+  .network-badge {
+    gap: 4px;
+    padding: 2px 4px;
+    margin-right: 2px;
+    font-size: 12px;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .network-badge::before {
+    width: 5px;
+    height: 5px;
+    margin-right: 4px;
+  }
+
+  .network-badge-logo {
+    width: 14px;
+    height: 14px;
+  }
+
+  .network-badge-label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .wallet-button-text,
+  .account-address {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .account-address {
+    max-width: clamp(84px, 23vw, 112px);
+    font-size: 12px;
   }
 
   .network-dropdown {
@@ -604,13 +664,6 @@
     right: 0;
     min-width: 0;
     width: 100%;
-  }
-
-  .network-badge-label {
-    max-width: calc(100vw - 170px);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 }
 
