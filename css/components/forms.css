@@ -1550,6 +1550,11 @@
   min-width: 156px; /* match selector min-width */
 }
 
+.balance-clickable--placeholder {
+  cursor: default;
+  pointer-events: none;
+}
+
 .balance-clickable:hover {
   background: var(--bg-tertiary);
 }
@@ -1582,8 +1587,7 @@
 }
 
 /* Explicitly hide balance USD chips by ID when present */
-#sellTokenBalanceUSD,
-#buyTokenBalanceUSD {
+#sellTokenBalanceUSD {
   display: none !important;
 }
 
@@ -2276,14 +2280,35 @@
 
 @media (max-width: 480px) {
   #create-order .token-selector-group {
-    width: 100%;
-    justify-content: stretch;
+    --selector-chip-width: clamp(136px, 40vw, 156px);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+    width: auto;
+  }
+
+  #create-order .token-selector,
+  #create-order .token-balance-display {
+    width: auto;
+    max-width: none;
+    min-width: 0;
+    padding: 0;
   }
 
   #create-order .token-selector-button,
-  #create-order .balance-clickable,
-  #create-order .token-balance-display {
-    width: 100%;
+  #create-order .balance-clickable {
+    width: var(--selector-chip-width);
+    min-width: var(--selector-chip-width);
+    max-width: var(--selector-chip-width);
+    box-sizing: border-box;
+  }
+
+  #create-order .token-selector-button {
+    justify-content: space-between;
+  }
+
+  #create-order .balance-clickable {
     justify-content: center;
   }
 }
