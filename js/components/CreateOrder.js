@@ -180,9 +180,11 @@ export class CreateOrder extends BaseComponent {
                 const sellUsd = document.getElementById('sellAmountUSD');
                 const buyUsd = document.getElementById('buyAmountUSD');
                 const sellBal = document.getElementById('sellTokenBalanceDisplay');
+                const buyBal = document.getElementById('buyTokenBalanceDisplay');
                 setVisibility(sellUsd, false);
                 setVisibility(buyUsd, false);
                 setVisibility(sellBal, false);
+                setVisibility(buyBal, false);
             }
             
             // Keep status area quiet in read-only mode, but continue initialization so
@@ -972,34 +974,25 @@ export class CreateOrder extends BaseComponent {
             tokenSelectorContainer.className = 'token-selector';
             tokenSelectorContainer.appendChild(tokenSelector);
 
-            // Keep selector rows structurally identical for sell/buy so button position stays aligned.
-            const isSellBalance = type === 'sell';
+            // Create balance display (hidden until a token is selected) AS A SIBLING UNDER THE SELECTOR
             const balanceDisplay = document.createElement('div');
+            balanceDisplay.id = `${type}TokenBalanceDisplay`;
             balanceDisplay.className = 'token-balance-display is-hidden';
             balanceDisplay.setAttribute('aria-hidden', 'true');
-            if (isSellBalance) {
-                balanceDisplay.id = `${type}TokenBalanceDisplay`;
-                balanceDisplay.innerHTML = `
-                    <button id="${type}TokenBalanceBtn" class="balance-clickable" aria-label="Click to fill ${type} amount with available balance">
-                        <span class="balance-amount" id="${type}TokenBalanceAmount">0.00</span>
-                        <span class="balance-usd" id="${type}TokenBalanceUSD">• $0.00</span>
-                    </button>
-                `;
-            } else {
-                balanceDisplay.classList.add('token-balance-display--placeholder');
-                balanceDisplay.innerHTML = `
-                    <span class="balance-clickable balance-clickable--placeholder" aria-hidden="true">
-                        <span class="balance-amount">0.00</span>
-                        <span class="balance-usd">• $0.00</span>
-                    </span>
-                `;
-            }
+            balanceDisplay.innerHTML = `
+                <button id="${type}TokenBalanceBtn" class="balance-clickable" aria-label="Click to fill ${type} amount with available balance">
+                    <span class="balance-amount" id="${type}TokenBalanceAmount">0.00</span>
+                    <span class="balance-usd" id="${type}TokenBalanceUSD">• $0.00</span>
+                </button>
+            `;
 
             // Group selector and balance vertically so balance sits under the button
             const selectorGroup = document.createElement('div');
             selectorGroup.className = 'token-selector-group';
             selectorGroup.appendChild(tokenSelectorContainer);
-            selectorGroup.appendChild(balanceDisplay);
+            if (type === 'sell') {
+                selectorGroup.appendChild(balanceDisplay);
+            }
 
             // Assemble the components
             container.appendChild(inputWrapper);
@@ -2258,12 +2251,6 @@ export class CreateOrder extends BaseComponent {
                             <div class="token-selector-content">
                                 <span>Select Token</span>
                             </div>
-                        </div>
-                        <div class="token-balance-display token-balance-display--placeholder is-hidden" aria-hidden="true">
-                            <span class="balance-clickable balance-clickable--placeholder" aria-hidden="true">
-                                <span class="balance-amount">0.00</span>
-                                <span class="balance-usd">• $0.00</span>
-                            </span>
                         </div>
                     </div>
 

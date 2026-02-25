@@ -1182,34 +1182,3 @@ th[data-sort].active-sort .sort-icon {
   padding: 2rem 1rem;
   background: var(--bg-secondary);
 }
-
-/* Phase 1: keep horizontal overflow inside the table container only */
-#view-orders,
-#my-orders,
-#taker-orders {
-  overflow-x: hidden;
-}
-
-.table-container {
-  width: 100%;
-  max-width: 100%;
-  min-width: 0 !important;
-  overflow-x: auto;
-  overflow-y: hidden;
-}
-
-.orders-table {
-  min-width: 42rem;
-}
-
-@media (max-width: 768px) {
-  .orders-table {
-    min-width: 36rem;
-  }
-}
-
-@media (max-width: 480px) {
-  .orders-table {
-    min-width: 32rem;
-  }
-}
