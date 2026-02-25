@@ -48,6 +48,20 @@ export class ContractParams extends BaseComponent {
                 throw new Error('Contract not initialized');
             }
 
+            // Ensure order cache is fully synced before deriving fee-token set from orders.
+            try {
+                if (typeof ws.waitForOrderSync === 'function') {
+                    const syncOk = await ws.waitForOrderSync({ triggerIfNeeded: true });
+                    if (!syncOk) {
+                        this.warn('Order sync did not complete successfully; using available order cache');
+                    }
+                } else if (typeof ws.syncAllOrders === 'function') {
+                    await ws.syncAllOrders();
+                }
+            } catch (e) {
+                this.debug('Failed while waiting for order sync:', e);
+            }
+
             this.debug('Contract instance found, fetching parameters...');
 
             // Fetch all parameters with individual error handling
@@ -140,6 +154,10 @@ export class ContractParams extends BaseComponent {
                                 ws.queueRequest(async () => contract.accumulatedFeesByToken(tokenAddress)),
                                 ws.getTokenInfo(tokenAddress)
                             ]);
+                            const keepRow = tokenAddress === currentFeeToken || !amount.isZero();
+                            if (!keepRow) {
+                                return;
+                            }
                             params.accumulatedFeeRows.push({
                                 tokenAddress,
                                 amount,
@@ -299,8 +317,8 @@ export class ContractParams extends BaseComponent {
         }
 
         return rows.map((row) => {
-            const label = `${this.formatTokenAmount(row.amount, row.decimals)} ${row.symbol}${row.isCurrent ? ' (current)' : ''}`;
-            return `<p>${label}<br><small>${row.tokenAddress}</small></p>`;
+            const label = `${this.formatTokenAmount(row.amount, row.decimals)} ${row.symbol}`;
+            return `<p>${label}</p>`;
         }).join('');
     }
 
