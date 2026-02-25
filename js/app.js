@@ -29,6 +29,8 @@ class App {
 	constructor() {
 		this.isInitializing = false;
 		this.globalLoader = null;
+		this.tabRail = null;
+		this.tabRailResizeHandler = null;
 		this.initialOrderSyncPromise = null;
 		this.tabReady = new Set();
 		this.activeTabRequestId = 0;
@@ -284,6 +286,44 @@ class App {
 			.finally(() => {
 				this.initialOrderSyncPromise = null;
 			});
+	}
+
+	initializeTabRail() {
+		this.tabRail = document.querySelector('[data-mobile-tab-rail="true"]');
+		if (!this.tabRail || this.tabRailResizeHandler) return;
+
+		this.tabRailResizeHandler = () => {
+			this.scrollActiveTabIntoView({ behavior: 'auto' });
+		};
+		window.addEventListener('resize', this.tabRailResizeHandler);
+	}
+
+	getVisibleActiveTabButton() {
+		if (!this.tabRail) return null;
+		const candidates = Array.from(this.tabRail.querySelectorAll('.tab-button.active'));
+		for (const button of candidates) {
+			const style = window.getComputedStyle(button);
+			if (style.display !== 'none' && style.visibility !== 'hidden') {
+				return button;
+			}
+		}
+		return null;
+	}
+
+	scrollActiveTabIntoView({ behavior = 'smooth' } = {}) {
+		if (!window.matchMedia('(max-width: 768px)').matches) return;
+		if (!this.tabRail) {
+			this.initializeTabRail();
+		}
+
+		const activeButton = this.getVisibleActiveTabButton();
+		if (!activeButton) return;
+
+		activeButton.scrollIntoView({
+			block: 'nearest',
+			inline: 'center',
+			behavior
+		});
 	}
 
 	getTabSkeletonVariant(tabId) {
@@ -887,6 +927,8 @@ class App {
 					}
 				}
 
+				this.scrollActiveTabIntoView({ behavior: 'auto' });
+
 				this.scheduleClaimTabVisibilityRefresh();
 			};
 
@@ -950,6 +992,8 @@ class App {
 				}
 			});
 		});
+
+		this.initializeTabRail();
 	}
 
 	initializeDebugPanel() {
@@ -1258,6 +1302,7 @@ class App {
 				}
 			});
 			this.currentTab = tabId;
+			this.scrollActiveTabIntoView();
 
 			// Show and initialize selected tab
 			if (tabContent) {
