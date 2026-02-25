@@ -600,11 +600,22 @@
       <main class="main-content">
         <div class="content-wrapper card card--transparent">
           <!-- Navigation tabs for different sections -->
-          <nav class="nav-tabs">
-            <button class="tab-button" data-tab="intro" style="display: block">
+          <nav
+            id="primary-tab-nav"
+            class="nav-tabs"
+            aria-label="Primary tabs"
+            data-mobile-tab-rail="true"
+          >
+            <button
+              type="button"
+              class="tab-button"
+              data-tab="intro"
+              style="display: block"
+            >
               Intro
             </button>
             <button
+              type="button"
               class="tab-button active"
               data-tab="create-order"
               style="display: none"
@@ -612,6 +623,7 @@
               Create Order
             </button>
             <button
+              type="button"
               class="tab-button"
               data-tab="view-orders"
               style="display: none"
@@ -619,6 +631,7 @@
               View Orders
             </button>
             <button
+              type="button"
               class="tab-button"
               data-tab="my-orders"
               style="display: none"
@@ -626,6 +639,7 @@
               My Orders
             </button>
             <button
+              type="button"
               class="tab-button"
               data-tab="claim"
               style="display: none"
@@ -633,6 +647,7 @@
               Claim
             </button>
             <button
+              type="button"
               class="tab-button"
               data-tab="taker-orders"
               style="display: none"
@@ -640,6 +655,7 @@
               Invited Orders
             </button>
             <button
+              type="button"
               class="tab-button"
               data-tab="cleanup-orders"
               style="display: none"
@@ -647,6 +663,7 @@
               Cleanup
             </button>
             <button
+              type="button"
               class="tab-button"
               data-tab="contract-params"
               style="display: none"
@@ -654,6 +671,7 @@
               Parameters
             </button>
             <button
+              type="button"
               class="tab-button"
               data-tab="admin"
               style="display: none"
