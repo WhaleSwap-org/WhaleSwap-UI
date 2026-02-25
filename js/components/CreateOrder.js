@@ -32,6 +32,7 @@ export class CreateOrder extends BaseComponent {
         this.sellToken = null;
         this.buyToken = null;
         this.isContractDisabled = false;
+        this.contractStateReadError = false;
         this.tokenSelectorListeners = {};  // Store listeners to prevent duplicates
         this.boundWindowClickHandler = null;
         this.amountInputListeners = {};
@@ -114,6 +115,8 @@ export class CreateOrder extends BaseComponent {
         this.allowedTokensLoadPromise = null;
         this.feeLoadPromise = null;
         this.feeToken = null;
+        this.isContractDisabled = false;
+        this.contractStateReadError = false;
         if (clearSelections) {
             this.clearSelectedTokens();
         }
@@ -381,8 +384,12 @@ export class CreateOrder extends BaseComponent {
 
     async refreshContractDisabledState() {
         try {
+            this.contractStateReadError = false;
             this.isContractDisabled = await this.contract.isDisabled();
         } catch (error) {
+            // Fail closed: if we can't verify state, block order creation paths.
+            this.contractStateReadError = true;
+            this.isContractDisabled = true;
             this.debug('Error fetching contract disabled state:', error);
         }
         this.updateCreateButtonState();
@@ -574,6 +581,10 @@ export class CreateOrder extends BaseComponent {
         
         try {
             const contractDisabled = await this.refreshContractDisabledState();
+            if (this.contractStateReadError) {
+                this.showError('Unable to verify contract state. Please check your network and try again.');
+                return;
+            }
             if (contractDisabled) {
                 this.showWarning('New orders are disabled on this contract.');
                 return;
@@ -1897,8 +1908,12 @@ export class CreateOrder extends BaseComponent {
 
     async handleTokenItemClick(type, tokenItem) {
         try {
-            const contractDisabled = await this.refreshContractDisabledState();
-            if (contractDisabled) {
+            if (this.contractStateReadError) {
+                this.showWarning('Unable to verify contract state right now. Please try again shortly.');
+                return;
+            }
+
+            if (this.isContractDisabled) {
                 this.showWarning('No new orders can be created because this contract is disabled.');
                 return;
             }
@@ -1978,6 +1993,7 @@ export class CreateOrder extends BaseComponent {
 
             const canCreateOrder =
                 isWalletConnected &&
+                !this.contractStateReadError &&
                 !this.isContractDisabled &&
                 !this.isSubmitting &&
                 hasTokens &&
@@ -1986,7 +2002,9 @@ export class CreateOrder extends BaseComponent {
             createButton.disabled = !canCreateOrder;
             createButton.classList.toggle('disabled', !canCreateOrder);
 
-            if (this.isContractDisabled) {
+            if (this.contractStateReadError) {
+                createButton.textContent = 'Unable to Verify Contract State';
+            } else if (this.isContractDisabled) {
                 createButton.textContent = 'New Orders Disabled';
             } else if (!isWalletConnected) {
                 createButton.textContent = 'Connect Wallet to Create Order';
