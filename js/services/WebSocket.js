@@ -384,8 +384,8 @@ export class WebSocketService {
                 if (this.contractDisabledInFlightRequestId === inFlightRequestId) {
                     this.contractDisabledInFlight = null;
                     this.contractDisabledInFlightRequestId = 0;
+                    this.markContractDisabledStateReadError();
                 }
-                this.markContractDisabledStateReadError();
             }
             throw error;
         }
