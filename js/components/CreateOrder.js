@@ -36,6 +36,9 @@ export class CreateOrder extends BaseComponent {
         this.tokenSelectorListeners = {};  // Store listeners to prevent duplicates
         this.boundWindowClickHandler = null;
         this.amountInputListeners = {};
+        this.boundTooltipOutsideClickHandler = null;
+        this.boundTooltipEscapeHandler = null;
+        this.tooltipCleanupCallbacks = [];
         
         // Initialize logger
         const logger = createLogger('CREATE_ORDER');
@@ -580,6 +583,158 @@ export class CreateOrder extends BaseComponent {
             });
         } else {
             this.debug('Taker toggle button not found');
+        }
+
+        this.setupInfoTooltipInteractions();
+    }
+
+    setTooltipExpanded(tooltipElement, isExpanded, persistState = null) {
+        if (!tooltipElement) return;
+
+        const trigger = tooltipElement.querySelector('.tooltip-trigger');
+        const tooltipText = tooltipElement.querySelector('.tooltip-text');
+
+        if (persistState !== null) {
+            tooltipElement.classList.toggle('is-open', persistState);
+        }
+        if (trigger) {
+            trigger.setAttribute('aria-expanded', String(isExpanded));
+        }
+        if (tooltipText) {
+            tooltipText.setAttribute('aria-hidden', String(!isExpanded));
+        }
+    }
+
+    setupInfoTooltipInteractions() {
+        this.clearInfoTooltipInteractions();
+
+        const tooltipElements = document.querySelectorAll('.info-tooltip');
+        if (!tooltipElements.length) {
+            return;
+        }
+
+        const syncTooltipFromState = (tooltipElement) => {
+            const shouldBeExpanded = tooltipElement.classList.contains('is-open')
+                || tooltipElement.matches(':hover')
+                || tooltipElement.matches(':focus-within');
+            this.setTooltipExpanded(tooltipElement, shouldBeExpanded);
+        };
+
+        const closeOtherTooltips = (activeTooltip = null) => {
+            tooltipElements.forEach((tooltipElement) => {
+                if (tooltipElement !== activeTooltip) {
+                    this.setTooltipExpanded(tooltipElement, false, false);
+                }
+            });
+        };
+
+        tooltipElements.forEach((tooltipElement, index) => {
+            const trigger = tooltipElement.querySelector('.tooltip-trigger');
+            const tooltipText = tooltipElement.querySelector('.tooltip-text');
+            if (!trigger || !tooltipText) {
+                return;
+            }
+
+            const fallbackId = `create-order-tooltip-${index + 1}`;
+            const tooltipId = tooltipText.id || fallbackId;
+            tooltipText.id = tooltipId;
+            tooltipText.setAttribute('role', 'tooltip');
+            tooltipText.setAttribute('aria-hidden', 'true');
+
+            trigger.setAttribute('role', 'button');
+            trigger.setAttribute('tabindex', '0');
+            trigger.setAttribute('aria-describedby', tooltipId);
+            trigger.setAttribute('aria-expanded', 'false');
+
+            const onTriggerPointerDown = (event) => {
+                event.stopPropagation();
+            };
+
+            const onTriggerClick = (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const shouldExpand = !tooltipElement.classList.contains('is-open');
+                closeOtherTooltips(shouldExpand ? tooltipElement : null);
+                this.setTooltipExpanded(tooltipElement, shouldExpand, shouldExpand);
+            };
+
+            const onTriggerKeyDown = (event) => {
+                if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const shouldExpand = !tooltipElement.classList.contains('is-open');
+                    closeOtherTooltips(shouldExpand ? tooltipElement : null);
+                    this.setTooltipExpanded(tooltipElement, shouldExpand, shouldExpand);
+                } else if (event.key === 'Escape') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    this.setTooltipExpanded(tooltipElement, false, false);
+                }
+            };
+
+            const onTooltipMouseEnter = () => syncTooltipFromState(tooltipElement);
+            const onTooltipMouseLeave = () => syncTooltipFromState(tooltipElement);
+            const onTooltipFocusIn = () => syncTooltipFromState(tooltipElement);
+            const onTooltipFocusOut = () => {
+                requestAnimationFrame(() => syncTooltipFromState(tooltipElement));
+            };
+
+            trigger.addEventListener('pointerdown', onTriggerPointerDown);
+            trigger.addEventListener('click', onTriggerClick);
+            trigger.addEventListener('keydown', onTriggerKeyDown);
+            tooltipElement.addEventListener('mouseenter', onTooltipMouseEnter);
+            tooltipElement.addEventListener('mouseleave', onTooltipMouseLeave);
+            tooltipElement.addEventListener('focusin', onTooltipFocusIn);
+            tooltipElement.addEventListener('focusout', onTooltipFocusOut);
+
+            this.tooltipCleanupCallbacks.push(() => {
+                trigger.removeEventListener('pointerdown', onTriggerPointerDown);
+                trigger.removeEventListener('click', onTriggerClick);
+                trigger.removeEventListener('keydown', onTriggerKeyDown);
+                tooltipElement.removeEventListener('mouseenter', onTooltipMouseEnter);
+                tooltipElement.removeEventListener('mouseleave', onTooltipMouseLeave);
+                tooltipElement.removeEventListener('focusin', onTooltipFocusIn);
+                tooltipElement.removeEventListener('focusout', onTooltipFocusOut);
+            });
+        });
+
+        this.boundTooltipOutsideClickHandler = (event) => {
+            tooltipElements.forEach((tooltipElement) => {
+                if (!tooltipElement.contains(event.target)) {
+                    this.setTooltipExpanded(tooltipElement, false, false);
+                }
+            });
+        };
+        document.addEventListener('click', this.boundTooltipOutsideClickHandler);
+
+        this.boundTooltipEscapeHandler = (event) => {
+            if (event.key === 'Escape') {
+                closeOtherTooltips(null);
+            }
+        };
+        document.addEventListener('keydown', this.boundTooltipEscapeHandler);
+    }
+
+    clearInfoTooltipInteractions() {
+        if (Array.isArray(this.tooltipCleanupCallbacks)) {
+            this.tooltipCleanupCallbacks.forEach((cleanupFn) => {
+                try {
+                    cleanupFn();
+                } catch (error) {
+                    this.debug('Tooltip listener cleanup failed:', error);
+                }
+            });
+            this.tooltipCleanupCallbacks = [];
+        }
+
+        if (this.boundTooltipOutsideClickHandler) {
+            document.removeEventListener('click', this.boundTooltipOutsideClickHandler);
+            this.boundTooltipOutsideClickHandler = null;
+        }
+
+        if (this.boundTooltipEscapeHandler) {
+            document.removeEventListener('keydown', this.boundTooltipEscapeHandler);
+            this.boundTooltipEscapeHandler = null;
         }
     }
 
@@ -1570,6 +1725,7 @@ export class CreateOrder extends BaseComponent {
             this.expiryTimers.forEach(timerId => clearInterval(timerId));
             this.expiryTimers.clear();
         }
+        this.clearInfoTooltipInteractions();
         // Remove global click handler for modals if present
         if (this.boundWindowClickHandler) {
             window.removeEventListener('click', this.boundWindowClickHandler);
@@ -2345,12 +2501,14 @@ export class CreateOrder extends BaseComponent {
                             <div class="taker-toggle-content">
                                 <span class="taker-toggle-text">Specify Taker Address</span>
                                 <span class="info-tooltip">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                                        <circle cx="12" cy="12" r="10" stroke-width="2" />
-                                        <path d="M12 16v-4" stroke-width="2" stroke-linecap="round" />
-                                        <circle cx="12" cy="8" r="1" fill="currentColor" />
-                                    </svg>
-                                    <span class="tooltip-text">
+                                    <span class="tooltip-trigger" aria-label="Show taker address help">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true" focusable="false">
+                                            <circle cx="12" cy="12" r="10" stroke-width="2" />
+                                            <path d="M12 16v-4" stroke-width="2" stroke-linecap="round" />
+                                            <circle cx="12" cy="8" r="1" fill="currentColor" />
+                                        </svg>
+                                    </span>
+                                    <span class="tooltip-text" id="takerAddressTooltip">
                                         Specify a wallet address that can take this order.
                                         Leave empty to allow anyone to take it.
                                     </span>
@@ -2371,12 +2529,14 @@ export class CreateOrder extends BaseComponent {
                         <label>
                             Order Creation Fee:
                             <span class="info-tooltip">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                                    <circle cx="12" cy="12" r="10" stroke-width="2" />
-                                    <path d="M12 16v-4" stroke-width="2" stroke-linecap="round" />
-                                    <circle cx="12" cy="8" r="1" fill="currentColor" />
-                                </svg>
-                                <span class="tooltip-text">
+                                <span class="tooltip-trigger" aria-label="Show order creation fee help">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true" focusable="false">
+                                        <circle cx="12" cy="12" r="10" stroke-width="2" />
+                                        <path d="M12 16v-4" stroke-width="2" stroke-linecap="round" />
+                                        <circle cx="12" cy="8" r="1" fill="currentColor" />
+                                    </svg>
+                                </span>
+                                <span class="tooltip-text" id="orderCreationFeeTooltip">
                                     <strong>Order Creation Fee:</strong> A small fee in <span class="fee-token-symbol">the configured fee token</span> is required to create an order.
                                     This helps prevent spam and incentivizes users who assist in cleaning up expired orders.
                                 </span>

@@ -456,6 +456,19 @@
   align-items: center;
 }
 
+.info-tooltip .tooltip-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: help;
+}
+
+.info-tooltip .tooltip-trigger:focus-visible {
+  outline: 2px solid #4b6bfb;
+  outline-offset: 2px;
+  border-radius: 9999px;
+}
+
 .info-tooltip .tooltip-text {
   visibility: hidden;
   position: absolute;
@@ -476,6 +489,11 @@
 }
 
 .info-tooltip:hover .tooltip-text {
+  visibility: visible;
+}
+
+.info-tooltip:focus-within .tooltip-text,
+.info-tooltip.is-open .tooltip-text {
   visibility: visible;
 }
 
