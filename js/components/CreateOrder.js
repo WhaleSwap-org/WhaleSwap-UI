@@ -379,12 +379,12 @@ export class CreateOrder extends BaseComponent {
         throw new Error('Contract not ready after timeout');
     }
 
-    isWalletConnected() {
-        return walletManager.isWalletConnected();
-    }
-
     async refreshContractDisabledState() {
-        this.isContractDisabled = await this.contract.isDisabled();
+        try {
+            this.isContractDisabled = await this.contract.isDisabled();
+        } catch (error) {
+            this.debug('Error fetching contract disabled state:', error);
+        }
         this.updateCreateButtonState();
         return this.isContractDisabled;
     }
@@ -568,6 +568,9 @@ export class CreateOrder extends BaseComponent {
             this.debug('Already processing a transaction');
             return;
         }
+
+        this.isSubmitting = true;
+        this.updateCreateButtonState();
         
         try {
             const contractDisabled = await this.refreshContractDisabledState();
@@ -575,9 +578,6 @@ export class CreateOrder extends BaseComponent {
                 this.showWarning('New orders are disabled on this contract.');
                 return;
             }
-
-            this.isSubmitting = true;
-            this.updateCreateButtonState();
 
             // Get fresh signer and reinitialize contract
             const signer = walletManager.getSigner();
@@ -1897,7 +1897,8 @@ export class CreateOrder extends BaseComponent {
 
     async handleTokenItemClick(type, tokenItem) {
         try {
-            if (this.isContractDisabled) {
+            const contractDisabled = await this.refreshContractDisabledState();
+            if (contractDisabled) {
                 this.showWarning('No new orders can be created because this contract is disabled.');
                 return;
             }
@@ -1967,7 +1968,7 @@ export class CreateOrder extends BaseComponent {
             if (!createButton) return;
 
             // Check if we have both tokens selected and valid amounts
-            const isWalletConnected = this.isWalletConnected();
+            const isWalletConnected = walletManager.isWalletConnected();
             const hasTokens = this.sellToken && this.buyToken;
             const sellAmount = document.getElementById('sellAmount')?.value;
             const buyAmount = document.getElementById('buyAmount')?.value;
