@@ -472,6 +472,7 @@
   width: 240px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   pointer-events: none;
+  overflow-wrap: anywhere;
 }
 
 .info-tooltip:hover .tooltip-text {
@@ -505,16 +506,20 @@
   color: #666;
 }
 
-/* Add arrow to tooltip */
-.tooltip-text::after {
-  content: "";
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  margin-left: -5px;
-  border-width: 5px;
-  border-style: solid;
-  border-color: #333 transparent transparent transparent;
+@media (max-width: 640px) {
+  #create-order .info-tooltip .tooltip-text {
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(240px, calc(100vw - 32px));
+    max-width: calc(100vw - 32px);
+  }
+
+  #create-order .info-tooltip .tooltip-text::after {
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%);
+  }
 }
 
 .token-select {
