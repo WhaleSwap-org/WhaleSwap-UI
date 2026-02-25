@@ -31,6 +31,7 @@ export class CreateOrder extends BaseComponent {
         this.feeLoadPromise = null;
         this.sellToken = null;
         this.buyToken = null;
+        this.isContractDisabled = false;
         this.tokenSelectorListeners = {};  // Store listeners to prevent duplicates
         this.boundWindowClickHandler = null;
         this.amountInputListeners = {};
@@ -244,6 +245,10 @@ export class CreateOrder extends BaseComponent {
             
             // Wait for contract to be ready
             await this.waitForContract();
+
+            if (!readOnlyMode) {
+                await this.refreshContractDisabledState();
+            }
             
             // Load fee/token data in background so initial tab render is not blocked.
             this.startBackgroundDataLoading();
@@ -377,20 +382,23 @@ export class CreateOrder extends BaseComponent {
         throw new Error('Contract not ready after timeout');
     }
 
+    isWalletConnected() {
+        return walletManager.isConnected();
+    }
+
+    async refreshContractDisabledState() {
+        this.isContractDisabled = await this.contract.isDisabled();
+        this.updateCreateButtonState();
+        return this.isContractDisabled;
+    }
+
     setReadOnlyMode() {
         this.debug('Setting read-only mode');
-        const createOrderBtn = document.getElementById('createOrderBtn');
-        const orderCreationFee = document.getElementById('orderCreationFee');
         
         // Ensure UI is hidden per styles by removing wallet-connected
         const swapSection = document.querySelector('.swap-section');
         if (swapSection) {
             swapSection.classList.remove('wallet-connected');
-        }
-
-        if (createOrderBtn) {
-            createOrderBtn.disabled = true;
-            createOrderBtn.textContent = 'Connect Wallet to Create Order';
         }
         
         // Disable input fields
@@ -398,21 +406,15 @@ export class CreateOrder extends BaseComponent {
             const element = document.getElementById(id);
             if (element) element.disabled = true;
         });
+
+        this.updateCreateButtonState();
     }
 
     setConnectedMode() {
-        const createOrderBtn = document.getElementById('createOrderBtn');
-        const orderCreationFee = document.getElementById('orderCreationFee');
-        
         // Make sure the swap section is marked as wallet-connected so CSS reveals inputs
         const swapSection = document.querySelector('.swap-section');
         if (swapSection) {
             swapSection.classList.add('wallet-connected');
-        }
-
-        if (createOrderBtn) {
-            createOrderBtn.disabled = false;
-            createOrderBtn.textContent = 'Create Order';
         }
         
         // Enable input fields
@@ -429,6 +431,8 @@ export class CreateOrder extends BaseComponent {
                 feeElement.textContent = `${formattedFee} ${this.feeToken.symbol}`;
             }
         }
+
+        this.updateCreateButtonState();
     }
 
     /**
@@ -568,12 +572,15 @@ export class CreateOrder extends BaseComponent {
             return;
         }
         
-        const createOrderBtn = document.getElementById('createOrderBtn');
-        
         try {
+            const contractDisabled = await this.refreshContractDisabledState();
+            if (contractDisabled) {
+                this.showWarning('New orders are disabled on this contract.');
+                return;
+            }
+
             this.isSubmitting = true;
-            createOrderBtn.disabled = true;
-            createOrderBtn.classList.add('disabled');
+            this.updateCreateButtonState();
 
             // Get fresh signer and reinitialize contract
             const signer = walletManager.getSigner();
@@ -821,8 +828,7 @@ export class CreateOrder extends BaseComponent {
             handleTransactionError(error, this, 'order creation');
         } finally {
             this.isSubmitting = false;
-            createOrderBtn.disabled = false;
-            createOrderBtn.classList.remove('disabled');
+            this.updateCreateButtonState();
         }
     }
 
@@ -1894,9 +1900,7 @@ export class CreateOrder extends BaseComponent {
 
     async handleTokenItemClick(type, tokenItem) {
         try {
-            const isWalletConnected = typeof walletManager.isConnected === 'function'
-                ? walletManager.isConnected()
-                : Boolean(walletManager.isConnected);
+            const isWalletConnected = walletManager.isConnected();
             if (!isWalletConnected) {
                 this.showWarning('Connect wallet to select a token.');
                 return;
@@ -1957,10 +1961,11 @@ export class CreateOrder extends BaseComponent {
 
     updateCreateButtonState() {
         try {
-            const createButton = document.getElementById('createOrderButton');
+            const createButton = document.getElementById('createOrderBtn');
             if (!createButton) return;
 
             // Check if we have both tokens selected and valid amounts
+            const isWalletConnected = this.isWalletConnected();
             const hasTokens = this.sellToken && this.buyToken;
             const sellAmount = document.getElementById('sellAmount')?.value;
             const buyAmount = document.getElementById('buyAmount')?.value;
@@ -1968,8 +1973,25 @@ export class CreateOrder extends BaseComponent {
                              Number(sellAmount) > 0 && 
                              Number(buyAmount) > 0;
 
-            // Enable button only if we have both tokens and valid amounts
-            createButton.disabled = !(hasTokens && hasAmounts);
+            const canCreateOrder =
+                isWalletConnected &&
+                !this.isContractDisabled &&
+                !this.isSubmitting &&
+                hasTokens &&
+                hasAmounts;
+
+            createButton.disabled = !canCreateOrder;
+            createButton.classList.toggle('disabled', !canCreateOrder);
+
+            if (!isWalletConnected) {
+                createButton.textContent = 'Connect Wallet to Create Order';
+            } else if (this.isContractDisabled) {
+                createButton.textContent = 'New Orders Disabled';
+            } else if (this.isSubmitting) {
+                createButton.textContent = 'Creating Order...';
+            } else {
+                createButton.textContent = 'Create Order';
+            }
         } catch (error) {
             this.debug('Error updating create button state:', error);
         }
