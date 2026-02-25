@@ -1046,27 +1046,95 @@ export class WebSocketService {
         return null;
     }
 
-    //TODO: calculate deal metric based on buy value / sell value where buy value is the amount of buy tokens * token price and sell value is the amount of sell tokens * token price
+    // Deal = buy USD value / sell USD value using token-normalized (decimal-adjusted) amounts.
     async calculateDealMetrics(orderData) {
-        const buyTokenInfo = await this.getTokenInfo(orderData.buyToken); // person who created order set this
-        const sellTokenInfo = await this.getTokenInfo(orderData.sellToken);// person who created order set this
+        const buyTokenInfo = await this.getTokenInfo(orderData.buyToken); // maker wants to receive this
+        const sellTokenInfo = await this.getTokenInfo(orderData.sellToken); // maker offers this
+
+        const buyTokenDecimals = Number.isInteger(buyTokenInfo?.decimals) ? buyTokenInfo.decimals : 18;
+        const sellTokenDecimals = Number.isInteger(sellTokenInfo?.decimals) ? sellTokenInfo.decimals : 18;
+
+        const formattedBuyAmount = ethers.utils.formatUnits(orderData.buyAmount || 0, buyTokenDecimals);
+        const formattedSellAmount = ethers.utils.formatUnits(orderData.sellAmount || 0, sellTokenDecimals);
+
+        const buyAmount = Number(formattedBuyAmount);
+        const sellAmount = Number(formattedSellAmount);
+
+        if (!Number.isFinite(buyAmount) || !Number.isFinite(sellAmount) || sellAmount <= 0) {
+            this.debug('Invalid normalized token amounts, skipping deal calculation for order:', orderData.id);
+            return {
+                ...orderData,
+                dealMetrics: {
+                    ...orderData.dealMetrics,
+                    formattedBuyAmount,
+                    formattedSellAmount
+                }
+            };
+        }
+
         const pricing = this.pricingService;
         if (!pricing) {
             this.debug('PricingService not available for deal calculation');
-            return orderData;
+            return {
+                ...orderData,
+                dealMetrics: {
+                    ...orderData.dealMetrics,
+                    formattedBuyAmount,
+                    formattedSellAmount
+                }
+            };
         }
+
         const buyTokenUsdPrice = pricing.getPrice(orderData.buyToken);
         const sellTokenUsdPrice = pricing.getPrice(orderData.sellToken);
-        if (buyTokenUsdPrice === undefined || sellTokenUsdPrice === undefined || buyTokenUsdPrice === 0 || sellTokenUsdPrice === 0) {
+        if (
+            buyTokenUsdPrice === undefined ||
+            sellTokenUsdPrice === undefined ||
+            buyTokenUsdPrice <= 0 ||
+            sellTokenUsdPrice <= 0
+        ) {
             this.debug('Missing price data, skipping deal calculation for order:', orderData.id);
-            return orderData;
+            return {
+                ...orderData,
+                dealMetrics: {
+                    ...orderData.dealMetrics,
+                    formattedBuyAmount,
+                    formattedSellAmount,
+                    buyTokenUsdPrice,
+                    sellTokenUsdPrice
+                }
+            };
         }
-        const buyValue = Number(orderData.buyAmount) * buyTokenUsdPrice;
-        const sellValue = Number(orderData.sellAmount) * sellTokenUsdPrice;
+
+        const buyValue = buyAmount * buyTokenUsdPrice;
+        const sellValue = sellAmount * sellTokenUsdPrice;
+
+        if (!Number.isFinite(buyValue) || !Number.isFinite(sellValue) || sellValue <= 0) {
+            this.debug('Invalid USD values, skipping deal calculation for order:', orderData.id);
+            return {
+                ...orderData,
+                dealMetrics: {
+                    ...orderData.dealMetrics,
+                    formattedBuyAmount,
+                    formattedSellAmount,
+                    buyTokenUsdPrice,
+                    sellTokenUsdPrice
+                }
+            };
+        }
+
         const deal = buyValue / sellValue;
+
         return {
             ...orderData,
             dealMetrics: {
+                ...orderData.dealMetrics,
+                formattedBuyAmount,
+                formattedSellAmount,
+                buyTokenUsdPrice,
+                sellTokenUsdPrice,
+                buyValue,
+                sellValue,
                 deal
             }
         };
