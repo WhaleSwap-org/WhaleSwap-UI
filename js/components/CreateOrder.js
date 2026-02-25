@@ -382,17 +382,25 @@ export class CreateOrder extends BaseComponent {
         throw new Error('Contract not ready after timeout');
     }
 
-    async refreshContractDisabledState() {
+    async refreshContractDisabledState(options = {}) {
         try {
+            const ws = this.ctx.getWebSocket();
+            if (!ws?.getContractDisabledState) {
+                throw new Error('Disabled-state accessor unavailable');
+            }
+
+            const contractDisabled = await ws.getContractDisabledState(options);
             this.contractStateReadError = false;
-            this.isContractDisabled = await this.contract.isDisabled();
+            this.isContractDisabled = Boolean(contractDisabled);
         } catch (error) {
-            // Fail closed: if we can't verify state, block order creation paths.
+            // Fail closed: if we cannot verify state, block order creation.
             this.contractStateReadError = true;
             this.isContractDisabled = true;
             this.debug('Error fetching contract disabled state:', error);
+        } finally {
+            this.updateCreateButtonState();
         }
-        this.updateCreateButtonState();
+
         return this.isContractDisabled;
     }
 
@@ -580,7 +588,7 @@ export class CreateOrder extends BaseComponent {
         this.updateCreateButtonState();
         
         try {
-            const contractDisabled = await this.refreshContractDisabledState();
+            const contractDisabled = await this.refreshContractDisabledState({ force: true });
             if (this.contractStateReadError) {
                 this.showError('Unable to verify contract state. Please check your network and try again.');
                 return;
@@ -1909,11 +1917,9 @@ export class CreateOrder extends BaseComponent {
     async handleTokenItemClick(type, tokenItem) {
         try {
             if (this.contractStateReadError) {
-                await this.refreshContractDisabledState();
-                if (this.contractStateReadError) {
-                    this.showWarning('Unable to verify contract state right now. Please try again shortly.');
-                    return;
-                }
+                this.showWarning('Unable to verify contract state right now. Please try again shortly.');
+                void this.refreshContractDisabledState();
+                return;
             }
 
             if (this.isContractDisabled) {
@@ -2093,10 +2099,11 @@ export class CreateOrder extends BaseComponent {
                 }
 
                 // Create new listener for opening modal
-                this.tokenSelectorListeners[type] = async () => {
-                    await this.refreshContractDisabledState();
+                this.tokenSelectorListeners[type] = () => {
+                    // Fast path: gate by known cached state to keep UI responsive.
                     if (this.contractStateReadError) {
                         this.showWarning('Unable to verify contract state right now. Please try again shortly.');
+                        void this.refreshContractDisabledState();
                         return;
                     }
                     if (this.isContractDisabled) {
@@ -2104,6 +2111,9 @@ export class CreateOrder extends BaseComponent {
                         return;
                     }
                     modal.style.display = 'block';
+
+                    // Keep state fresh without blocking modal open on network issues.
+                    void this.refreshContractDisabledState();
                 };
 
                 // Add new listener
