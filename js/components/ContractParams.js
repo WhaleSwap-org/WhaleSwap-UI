@@ -50,15 +50,9 @@ export class ContractParams extends BaseComponent {
 
             // Non-blocking read: only wait if a sync is already in flight.
             // App.startInitialOrderSync() owns the first triggerIfNeeded:true call.
-            try {
-                if (typeof ws.waitForOrderSync === 'function') {
-                    void ws.waitForOrderSync({ triggerIfNeeded: false }).catch((e) => {
-                        this.debug('Failed while checking order sync state:', e);
-                    });
-                }
-            } catch (e) {
+            void ws.waitForOrderSync({ triggerIfNeeded: false }).catch((e) => {
                 this.debug('Failed while checking order sync state:', e);
-            }
+            });
 
             this.debug('Contract instance found, fetching parameters...');
 

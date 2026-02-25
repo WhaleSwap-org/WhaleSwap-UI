@@ -275,11 +275,7 @@ class App {
 
 		this.initialOrderSyncPromise = (async () => {
 			this.debug('Starting background initial order sync...');
-			if (typeof ws.waitForOrderSync === 'function') {
-				await ws.waitForOrderSync({ triggerIfNeeded: true });
-			} else {
-				await ws.syncAllOrders();
-			}
+			await ws.waitForOrderSync({ triggerIfNeeded: true });
 			this.debug('Background initial order sync complete');
 		})()
 			.catch((error) => {
