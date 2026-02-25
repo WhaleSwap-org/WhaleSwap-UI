@@ -245,10 +245,7 @@ export class CreateOrder extends BaseComponent {
             
             // Wait for contract to be ready
             await this.waitForContract();
-
-            if (!readOnlyMode) {
-                await this.refreshContractDisabledState();
-            }
+            await this.refreshContractDisabledState();
             
             // Load fee/token data in background so initial tab render is not blocked.
             this.startBackgroundDataLoading();
@@ -383,7 +380,7 @@ export class CreateOrder extends BaseComponent {
     }
 
     isWalletConnected() {
-        return walletManager.isConnected();
+        return walletManager.isWalletConnected();
     }
 
     async refreshContractDisabledState() {
@@ -1900,7 +1897,12 @@ export class CreateOrder extends BaseComponent {
 
     async handleTokenItemClick(type, tokenItem) {
         try {
-            const isWalletConnected = walletManager.isConnected();
+            if (this.isContractDisabled) {
+                this.showWarning('No new orders can be created because this contract is disabled.');
+                return;
+            }
+
+            const isWalletConnected = walletManager.isWalletConnected();
             if (!isWalletConnected) {
                 this.showWarning('Connect wallet to select a token.');
                 return;
@@ -1983,10 +1985,10 @@ export class CreateOrder extends BaseComponent {
             createButton.disabled = !canCreateOrder;
             createButton.classList.toggle('disabled', !canCreateOrder);
 
-            if (!isWalletConnected) {
-                createButton.textContent = 'Connect Wallet to Create Order';
-            } else if (this.isContractDisabled) {
+            if (this.isContractDisabled) {
                 createButton.textContent = 'New Orders Disabled';
+            } else if (!isWalletConnected) {
+                createButton.textContent = 'Connect Wallet to Create Order';
             } else if (this.isSubmitting) {
                 createButton.textContent = 'Creating Order...';
             } else {
