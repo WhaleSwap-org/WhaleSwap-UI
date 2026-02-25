@@ -55,8 +55,6 @@ export class ContractParams extends BaseComponent {
                     if (!syncOk) {
                         this.warn('Order sync did not complete successfully; using available order cache');
                     }
-                } else if (typeof ws.syncAllOrders === 'function') {
-                    await ws.syncAllOrders();
                 }
             } catch (e) {
                 this.debug('Failed while waiting for order sync:', e);

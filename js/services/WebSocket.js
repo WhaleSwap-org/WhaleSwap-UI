@@ -46,7 +46,6 @@ export class WebSocketService {
 
         // Order sync lifecycle state
         this.orderSyncPromise = null;
-        this.orderSyncInProgress = false;
         this.hasCompletedOrderSync = false;
         
 
@@ -811,7 +810,6 @@ export class WebSocketService {
             this.chainTimeSyncedAtMonotonicMs = null;
             this.chainTimeSyncPromise = null;
             this.orderSyncPromise = null;
-            this.orderSyncInProgress = false;
             this.hasCompletedOrderSync = false;
             
             this.debug('WebSocket service cleanup complete');
@@ -840,7 +838,6 @@ export class WebSocketService {
         }
 
         this.orderSyncPromise = (async () => {
-            this.orderSyncInProgress = true;
             this.debug('Starting order sync with existing contract...');
 
             try {
@@ -901,7 +898,6 @@ export class WebSocketService {
                 this.hasCompletedOrderSync = false;
                 return false;
             } finally {
-                this.orderSyncInProgress = false;
                 this.orderSyncPromise = null;
             }
         })();
