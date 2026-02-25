@@ -265,7 +265,7 @@ export class TakerOrders extends BaseComponent {
                 <th>Sell</th>
                 <th>
                     Deal
-                    <span class="info-icon" title="Deal = Sell Value / Buy Value
+                    <span class="info-icon" title="Deal = Buy Value / Sell Value
 
 • Higher deal number is better
 • Deal > 1: better deal based on market prices
