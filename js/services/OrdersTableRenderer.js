@@ -1,5 +1,6 @@
 import { formatTimeDiff } from '../utils/orderUtils.js';
 import { createLogger } from './LogService.js';
+import { createInlineTooltipIcon, setupOrderTooltips } from '../utils/ui.js';
 
 /**
  * OrdersTableRenderer - Handles table structure, pagination, and expiry timers
@@ -84,6 +85,7 @@ export class OrdersTableRenderer {
         
         // Setup event listeners AFTER appending (so elements exist in DOM)
         this._setupTableEventListeners(onRefresh);
+        setupOrderTooltips(this.component.container);
     }
 
     /**
@@ -204,7 +206,11 @@ export class OrdersTableRenderer {
             const th = this.component.createElement('th');
             th.textContent = header.text;
             if (header.title) {
-                th.innerHTML = `${header.text} <span class="info-icon" title="${header.title}">ⓘ</span>`;
+                const tooltipIcon = createInlineTooltipIcon(header.title, {
+                    className: 'info-icon order-tooltip-icon',
+                    ariaLabel: `${header.text} information`
+                });
+                th.innerHTML = `${header.text} ${tooltipIcon}`;
             }
             headerRow.appendChild(th);
         });
@@ -574,6 +580,8 @@ export class OrdersTableRenderer {
                 this.error('Error rendering order row:', error);
             }
         }
+
+        setupOrderTooltips(this.component.container);
     }
 
     _applyRowCellMetadata(row) {

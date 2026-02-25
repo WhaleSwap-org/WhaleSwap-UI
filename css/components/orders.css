@@ -177,6 +177,73 @@
   z-index: 9998;
 }
 
+/* Shared tooltip icon styles for table and card layouts */
+button.info-icon.order-tooltip-icon {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+  line-height: 1;
+}
+
+.order-tooltip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.order-tooltip-icon:focus-visible {
+  outline: 2px solid var(--accent-color, #3b82f6);
+  outline-offset: 2px;
+  border-radius: 50%;
+}
+
+.deal-cell-content {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+.deal-card-label {
+  display: none;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.deal-value {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Viewport-clamped tooltip popover for deal info icons */
+.order-tooltip-popover {
+  position: fixed;
+  z-index: 10000;
+  max-width: min(22rem, calc(100vw - 1.5rem));
+  padding: 0.5rem 0.625rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  box-shadow: var(--card-shadow);
+  font-size: 0.75rem;
+  line-height: 1.35;
+  white-space: pre-line;
+  word-break: break-word;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+.order-tooltip-popover.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 /* Action column specific styles */
 .action-column {
   text-align: center;
@@ -577,6 +644,15 @@
   .orders-table td:nth-child(2),
   .orders-table td:nth-child(3) {
     padding: 0.25rem 0.25rem;
+  }
+
+  .deal-cell-content {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .deal-card-label {
+    display: inline-flex;
   }
 }
 
