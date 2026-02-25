@@ -233,7 +233,9 @@ export class WalletUI extends BaseComponent {
 
             // Let CreateOrder own its button state/messages.
             const createOrderComponent = window.app?.components?.['create-order'];
-            if (createOrderComponent?.updateCreateButtonState) {
+            if (createOrderComponent?.applyDisconnectedState) {
+                createOrderComponent.applyDisconnectedState();
+            } else if (createOrderComponent?.updateCreateButtonState) {
                 createOrderComponent.updateCreateButtonState();
             }
             

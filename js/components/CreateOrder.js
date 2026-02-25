@@ -124,6 +124,13 @@ export class CreateOrder extends BaseComponent {
         this.resetBalanceDisplays();
     }
 
+    applyDisconnectedState() {
+        this.contractStateReadError = false;
+        this.isContractDisabled = false;
+        this.isSubmitting = false;
+        this.updateCreateButtonState();
+    }
+
     async initializeContract() {
         try {
             this.debug('Initializing contract...');
@@ -2011,12 +2018,12 @@ export class CreateOrder extends BaseComponent {
             createButton.disabled = !canCreateOrder;
             createButton.classList.toggle('disabled', !canCreateOrder);
 
-            if (this.contractStateReadError) {
+            if (!isWalletConnected) {
+                createButton.textContent = 'Connect Wallet to Create Order';
+            } else if (this.contractStateReadError) {
                 createButton.textContent = 'Unable to Verify Contract State';
             } else if (this.isContractDisabled) {
                 createButton.textContent = 'New Orders Disabled';
-            } else if (!isWalletConnected) {
-                createButton.textContent = 'Connect Wallet to Create Order';
             } else if (this.isSubmitting) {
                 createButton.textContent = 'Creating Order...';
             } else {
