@@ -29,6 +29,14 @@ class App {
 	constructor() {
 		this.isInitializing = false;
 		this.globalLoader = null;
+		this.tabRail = null;
+		this.tabRailShell = null;
+		this.tabRailLeftArrow = null;
+		this.tabRailRightArrow = null;
+		this.tabRailResizeHandler = null;
+		this.tabRailScrollHandler = null;
+		this.tabRailLeftArrowHandler = null;
+		this.tabRailRightArrowHandler = null;
 		this.initialOrderSyncPromise = null;
 		this.tabReady = new Set();
 		this.activeTabRequestId = 0;
@@ -176,19 +184,20 @@ class App {
 			if (requestId !== this.claimTabVisibilityRequestId) return false;
 			claimButton.style.display = visible ? 'block' : 'none';
 
-				if (authoritative) {
-					this.claimTabVisibilityKnown = true;
-					this.claimTabLastVisible = visible;
-					if (isCurrentRequest()) {
-						this.claimVisibilityCheckedAtMs = Date.now();
-						this.claimVisibilityCacheKey = cacheKey;
-					}
+			if (authoritative) {
+				this.claimTabVisibilityKnown = true;
+				this.claimTabLastVisible = visible;
+				if (isCurrentRequest()) {
+					this.claimVisibilityCheckedAtMs = Date.now();
+					this.claimVisibilityCacheKey = cacheKey;
 				}
+			}
 
 			if (allowRedirect && !visible && this.currentTab === 'claim') {
 				await this.showTab('view-orders');
 			}
 
+			this.updateTabRailOverflowState();
 			return visible;
 		};
 
@@ -284,6 +293,109 @@ class App {
 			.finally(() => {
 				this.initialOrderSyncPromise = null;
 			});
+	}
+
+	initializeTabRail() {
+		this.tabRail = document.querySelector('[data-mobile-tab-rail="true"]');
+		this.tabRailShell = document.querySelector('[data-tab-rail-shell]');
+		this.tabRailLeftArrow = document.querySelector('[data-tab-rail-arrow="left"]');
+		this.tabRailRightArrow = document.querySelector('[data-tab-rail-arrow="right"]');
+		if (!this.tabRail) return;
+
+		if (!this.tabRailScrollHandler) {
+			this.tabRailScrollHandler = () => this.updateTabRailOverflowState();
+			this.tabRail.addEventListener('scroll', this.tabRailScrollHandler, { passive: true });
+		}
+
+		if (this.tabRailLeftArrow && !this.tabRailLeftArrowHandler) {
+			this.tabRailLeftArrowHandler = () => this.scrollTabRailBy(-1);
+			this.tabRailLeftArrow.addEventListener('click', this.tabRailLeftArrowHandler);
+		}
+
+		if (this.tabRailRightArrow && !this.tabRailRightArrowHandler) {
+			this.tabRailRightArrowHandler = () => this.scrollTabRailBy(1);
+			this.tabRailRightArrow.addEventListener('click', this.tabRailRightArrowHandler);
+		}
+
+		if (!this.tabRailResizeHandler) {
+			this.tabRailResizeHandler = () => {
+				this.scrollActiveTabIntoView({ behavior: 'auto' });
+				this.updateTabRailOverflowState();
+			};
+			window.addEventListener('resize', this.tabRailResizeHandler);
+		}
+
+		this.updateTabRailOverflowState();
+	}
+
+	scrollTabRailBy(direction = 1) {
+		if (!this.tabRail) return;
+		const distance = Math.max(Math.floor(this.tabRail.clientWidth * 0.7), 140);
+		this.tabRail.scrollBy({
+			left: distance * direction,
+			behavior: 'smooth'
+		});
+	}
+
+	updateTabRailOverflowState() {
+		if (!this.tabRail || !this.tabRailShell) return;
+
+		const isSmallScreen = window.matchMedia('(max-width: 768px)').matches;
+		const hasOverflow = this.tabRail.scrollWidth - this.tabRail.clientWidth > 6;
+		const shouldShowArrows = isSmallScreen && hasOverflow;
+		const wasShowingArrows = this.tabRailShell.classList.contains('is-overflowing');
+		const canScrollLeft = this.tabRail.scrollLeft > 4;
+		const canScrollRight = this.tabRail.scrollLeft + this.tabRail.clientWidth < this.tabRail.scrollWidth - 4;
+
+		this.tabRailShell.classList.toggle('is-overflowing', shouldShowArrows);
+
+		if (wasShowingArrows !== shouldShowArrows) {
+			window.requestAnimationFrame(() => this.updateTabRailOverflowState());
+			return;
+		}
+
+		if (this.tabRailLeftArrow) {
+			this.tabRailLeftArrow.disabled = !(shouldShowArrows && canScrollLeft);
+		}
+		if (this.tabRailRightArrow) {
+			this.tabRailRightArrow.disabled = !(shouldShowArrows && canScrollRight);
+		}
+	}
+
+	getVisibleActiveTabButton() {
+		if (!this.tabRail) return null;
+		const candidates = Array.from(this.tabRail.querySelectorAll('.tab-button.active'));
+		for (const button of candidates) {
+			const style = window.getComputedStyle(button);
+			if (style.display !== 'none' && style.visibility !== 'hidden') {
+				return button;
+			}
+		}
+		return null;
+	}
+
+	scrollActiveTabIntoView({ behavior = 'smooth' } = {}) {
+		if (!this.tabRail) {
+			this.initializeTabRail();
+		}
+		if (!window.matchMedia('(max-width: 768px)').matches) {
+			this.updateTabRailOverflowState();
+			return;
+		}
+
+		const activeButton = this.getVisibleActiveTabButton();
+		if (!activeButton) {
+			this.updateTabRailOverflowState();
+			return;
+		}
+
+		activeButton.scrollIntoView({
+			block: 'nearest',
+			inline: 'center',
+			behavior
+		});
+
+		window.setTimeout(() => this.updateTabRailOverflowState(), 140);
 	}
 
 	getTabSkeletonVariant(tabId) {
@@ -887,6 +999,8 @@ class App {
 					}
 				}
 
+				this.scrollActiveTabIntoView({ behavior: 'auto' });
+
 				this.scheduleClaimTabVisibilityRefresh();
 			};
 
@@ -950,6 +1064,8 @@ class App {
 				}
 			});
 		});
+
+		this.initializeTabRail();
 	}
 
 	initializeDebugPanel() {
@@ -1258,6 +1374,7 @@ class App {
 				}
 			});
 			this.currentTab = tabId;
+			this.scrollActiveTabIntoView();
 
 			// Show and initialize selected tab
 			if (tabContent) {

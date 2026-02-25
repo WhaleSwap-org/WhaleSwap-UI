@@ -600,67 +600,103 @@
       <main class="main-content">
         <div class="content-wrapper card card--transparent">
           <!-- Navigation tabs for different sections -->
-          <nav class="nav-tabs">
-            <button class="tab-button" data-tab="intro" style="display: block">
-              Intro
-            </button>
+          <div class="tab-rail-shell" data-tab-rail-shell>
             <button
-              class="tab-button active"
-              data-tab="create-order"
-              style="display: none"
+              type="button"
+              class="tab-rail-arrow tab-rail-arrow--left"
+              data-tab-rail-arrow="left"
+              aria-label="Scroll tabs left"
             >
-              Create Order
+              &lt;
             </button>
+            <nav
+              id="primary-tab-nav"
+              class="nav-tabs"
+              aria-label="Primary tabs"
+              data-mobile-tab-rail="true"
+            >
+              <button
+                type="button"
+                class="tab-button"
+                data-tab="intro"
+                style="display: block"
+              >
+                Intro
+              </button>
+              <button
+                type="button"
+                class="tab-button active"
+                data-tab="create-order"
+                style="display: none"
+              >
+                Create Order
+              </button>
+              <button
+                type="button"
+                class="tab-button"
+                data-tab="view-orders"
+                style="display: none"
+              >
+                View Orders
+              </button>
+              <button
+                type="button"
+                class="tab-button"
+                data-tab="my-orders"
+                style="display: none"
+              >
+                My Orders
+              </button>
+              <button
+                type="button"
+                class="tab-button"
+                data-tab="claim"
+                style="display: none"
+              >
+                Claim
+              </button>
+              <button
+                type="button"
+                class="tab-button"
+                data-tab="taker-orders"
+                style="display: none"
+              >
+                Invited Orders
+              </button>
+              <button
+                type="button"
+                class="tab-button"
+                data-tab="cleanup-orders"
+                style="display: none"
+              >
+                Cleanup
+              </button>
+              <button
+                type="button"
+                class="tab-button"
+                data-tab="contract-params"
+                style="display: none"
+              >
+                Parameters
+              </button>
+              <button
+                type="button"
+                class="tab-button"
+                data-tab="admin"
+                style="display: none"
+              >
+                Admin
+              </button>
+            </nav>
             <button
-              class="tab-button"
-              data-tab="view-orders"
-              style="display: none"
+              type="button"
+              class="tab-rail-arrow tab-rail-arrow--right"
+              data-tab-rail-arrow="right"
+              aria-label="Scroll tabs right"
             >
-              View Orders
+              &gt;
             </button>
-            <button
-              class="tab-button"
-              data-tab="my-orders"
-              style="display: none"
-            >
-              My Orders
-            </button>
-            <button
-              class="tab-button"
-              data-tab="claim"
-              style="display: none"
-            >
-              Claim
-            </button>
-            <button
-              class="tab-button"
-              data-tab="taker-orders"
-              style="display: none"
-            >
-              Invited Orders
-            </button>
-            <button
-              class="tab-button"
-              data-tab="cleanup-orders"
-              style="display: none"
-            >
-              Cleanup
-            </button>
-            <button
-              class="tab-button"
-              data-tab="contract-params"
-              style="display: none"
-            >
-              Parameters
-            </button>
-            <button
-              class="tab-button"
-              data-tab="admin"
-              style="display: none"
-            >
-              Admin
-            </button>
-          </nav>
+          </div>
 
           <!-- Create Order tab content -->
           <div id="create-order" class="tab-content active card card--transparent">
