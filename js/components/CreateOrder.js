@@ -35,8 +35,8 @@ export class CreateOrder extends BaseComponent {
         this.contractStateReadError = false;
         this.tokenSelectorListeners = {};  // Store listeners to prevent duplicates
         this.boundWindowClickHandler = null;
-        this.amountInputListeners = {};
         this.boundTooltipOutsideClickHandler = null;
+        this.amountInputListeners = {};
         this.boundTooltipEscapeHandler = null;
         this.tooltipCleanupCallbacks = [];
         
@@ -534,10 +534,13 @@ export class CreateOrder extends BaseComponent {
         }
     }
 
-
-
     setupCreateOrderListener() {
-        const createOrderBtn = document.getElementById('createOrderBtn');
+        const createOrderBtn = this.container?.querySelector('#createOrderBtn');
+        if (!createOrderBtn) {
+            this.warn('Create order button not found');
+            return;
+        }
+
         // Remove ALL existing listeners using clone technique
         const newButton = createOrderBtn.cloneNode(true);
         createOrderBtn.parentNode.replaceChild(newButton, createOrderBtn);
@@ -545,7 +548,7 @@ export class CreateOrder extends BaseComponent {
         newButton.addEventListener('click', this.boundCreateOrderHandler);
 
         // Setup taker toggle functionality
-        const takerToggle = document.querySelector('.taker-toggle');
+        const takerToggle = this.container?.querySelector('.taker-toggle');
         if (takerToggle) {
             this.debug('Setting up taker toggle functionality');
             // Remove existing listeners using clone technique
@@ -558,8 +561,10 @@ export class CreateOrder extends BaseComponent {
                 e.preventDefault();
                 e.stopPropagation();
                 
-                newTakerToggle.classList.toggle('active');
-                const takerInputContent = document.querySelector('.taker-input-content');
+                const isExpanded = newTakerToggle.classList.toggle('active');
+                newTakerToggle.setAttribute('aria-expanded', String(isExpanded));
+
+                const takerInputContent = this.container?.querySelector('.taker-input-content');
                 if (takerInputContent) {
                     takerInputContent.classList.toggle('hidden');
                 }
@@ -567,11 +572,11 @@ export class CreateOrder extends BaseComponent {
                 // Update chevron direction
                 const chevron = newTakerToggle.querySelector('.chevron-down');
                 if (chevron) {
-                    if (newTakerToggle.classList.contains('active')) {
+                    if (isExpanded) {
                         chevron.style.transform = 'rotate(180deg)';
                         // Focus on taker address input when toggle is activated
                         setTimeout(() => {
-                            const takerAddressInput = document.getElementById('takerAddress');
+                            const takerAddressInput = this.container?.querySelector('#takerAddress');
                             if (takerAddressInput) {
                                 takerAddressInput.focus();
                             }
@@ -591,7 +596,7 @@ export class CreateOrder extends BaseComponent {
     setTooltipExpanded(tooltipElement, isExpanded, persistState = null) {
         if (!tooltipElement) return;
 
-        const trigger = tooltipElement.querySelector('.tooltip-trigger');
+        const trigger = tooltipElement.querySelector('.info-tooltip-trigger');
         const tooltipText = tooltipElement.querySelector('.tooltip-text');
 
         if (persistState !== null) {
@@ -629,7 +634,7 @@ export class CreateOrder extends BaseComponent {
         };
 
         tooltipElements.forEach((tooltipElement, index) => {
-            const trigger = tooltipElement.querySelector('.tooltip-trigger');
+            const trigger = tooltipElement.querySelector('.info-tooltip-trigger');
             const tooltipText = tooltipElement.querySelector('.tooltip-text');
             if (!trigger || !tooltipText) {
                 return;
@@ -1731,6 +1736,11 @@ export class CreateOrder extends BaseComponent {
             window.removeEventListener('click', this.boundWindowClickHandler);
             this.boundWindowClickHandler = null;
         }
+
+        if (this.boundTooltipOutsideClickHandler) {
+            document.removeEventListener('click', this.boundTooltipOutsideClickHandler);
+            this.boundTooltipOutsideClickHandler = null;
+        }
     }
 
     // Add this method to the CreateOrder class
@@ -2497,29 +2507,37 @@ export class CreateOrder extends BaseComponent {
 
                     <!-- Optional taker address input -->
                     <div class="taker-input-container">
-                        <button class="taker-toggle">
-                            <div class="taker-toggle-content">
-                                <span class="taker-toggle-text">Specify Taker Address</span>
-                                <span class="info-tooltip">
-                                    <span class="tooltip-trigger" aria-label="Show taker address help">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true" focusable="false">
-                                            <circle cx="12" cy="12" r="10" stroke-width="2" />
-                                            <path d="M12 16v-4" stroke-width="2" stroke-linecap="round" />
-                                            <circle cx="12" cy="8" r="1" fill="currentColor" />
-                                        </svg>
-                                    </span>
-                                    <span class="tooltip-text" id="takerAddressTooltip">
-                                        Specify a wallet address that can take this order.
-                                        Leave empty to allow anyone to take it.
-                                    </span>
+                        <div class="taker-input-header">
+                            <button class="taker-toggle" type="button" aria-expanded="false" aria-controls="taker-input-content">
+                                <div class="taker-toggle-content">
+                                    <span class="taker-toggle-text">Specify Taker Address</span>
+                                    <span class="optional-text">(optional)</span>
+                                </div>
+                                <svg class="chevron-down" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                    <path d="M6 9l6 6 6-6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                                </svg>
+                            </button>
+                            <span class="info-tooltip">
+                                <button
+                                    type="button"
+                                    class="info-tooltip-trigger"
+                                    aria-label="Explain taker address"
+                                    aria-describedby="taker-address-tooltip"
+                                    aria-expanded="false"
+                                >
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                        <circle cx="12" cy="12" r="10" stroke-width="2" />
+                                        <path d="M12 16v-4" stroke-width="2" stroke-linecap="round" />
+                                        <circle cx="12" cy="8" r="1" fill="currentColor" />
+                                    </svg>
+                                </button>
+                                <span id="taker-address-tooltip" class="tooltip-text" role="tooltip">
+                                    Specify a wallet address that can take this order.
+                                    Leave empty to allow anyone to take it.
                                 </span>
-                                <span class="optional-text">(optional)</span>
-                            </div>
-                            <svg class="chevron-down" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                                <path d="M6 9l6 6 6-6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                            </svg>
-                        </button>
-                        <div class="taker-input-content hidden">
+                            </span>
+                        </div>
+                        <div id="taker-input-content" class="taker-input-content hidden">
                             <input type="text" id="takerAddress" class="taker-address-input" placeholder="0x..." />
                         </div>
                     </div>
@@ -2529,14 +2547,20 @@ export class CreateOrder extends BaseComponent {
                         <label>
                             Order Creation Fee:
                             <span class="info-tooltip">
-                                <span class="tooltip-trigger" aria-label="Show order creation fee help">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true" focusable="false">
+                                <button
+                                    type="button"
+                                    class="info-tooltip-trigger"
+                                    aria-label="Explain order creation fee"
+                                    aria-describedby="order-fee-tooltip"
+                                    aria-expanded="false"
+                                >
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                                         <circle cx="12" cy="12" r="10" stroke-width="2" />
                                         <path d="M12 16v-4" stroke-width="2" stroke-linecap="round" />
                                         <circle cx="12" cy="8" r="1" fill="currentColor" />
                                     </svg>
-                                </span>
-                                <span class="tooltip-text" id="orderCreationFeeTooltip">
+                                </button>
+                                <span id="order-fee-tooltip" class="tooltip-text" role="tooltip">
                                     <strong>Order Creation Fee:</strong> A small fee in <span class="fee-token-symbol">the configured fee token</span> is required to create an order.
                                     This helps prevent spam and incentivizes users who assist in cleaning up expired orders.
                                 </span>

@@ -1,8 +1,17 @@
 import { BaseComponent } from './BaseComponent.js';
 import { createLogger } from '../services/LogService.js';
 import { ethers } from 'ethers';
-import { handleTransactionError, processOrderAddress, generateStatusCellHTML, setupClickToCopy } from '../utils/ui.js';
-import { formatTimeDiff, calculateTotalValue, formatDealValue } from '../utils/orderUtils.js';
+import {
+    DEAL_TOOLTIP_TEXT,
+    createDealCellHTML,
+    createInlineTooltipIcon,
+    handleTransactionError,
+    processOrderAddress,
+    generateStatusCellHTML,
+    setupClickToCopy,
+    setupOrderTooltips
+} from '../utils/ui.js';
+import { formatTimeDiff, calculateTotalValue } from '../utils/orderUtils.js';
 import { OrdersComponentHelper } from '../services/OrdersComponentHelper.js';
 import { OrdersTableRenderer } from '../services/OrdersTableRenderer.js';
 
@@ -331,6 +340,11 @@ export class MyOrders extends BaseComponent {
             </div>
         `;
 
+        const dealTooltipIcon = createInlineTooltipIcon(DEAL_TOOLTIP_TEXT, {
+            className: 'info-icon order-tooltip-icon',
+            ariaLabel: 'Explain deal value'
+        });
+
         this.container.innerHTML = `
             <div class="table-container">
                 ${filterControls}
@@ -342,11 +356,7 @@ export class MyOrders extends BaseComponent {
                             <th>Buy</th>
                             <th>
                                 Deal
-                                <span class="info-icon" title="Deal = Buy Value / Sell Value
-
-• Higher deal number is better
-• Deal > 1: better deal based on market prices
-• Deal < 1: worse deal based on market prices">ⓘ</span>
+                                ${dealTooltipIcon}
                             </th>
                             <th>Expires</th>
                             <th>Status</th>
@@ -445,6 +455,7 @@ export class MyOrders extends BaseComponent {
             });
         });
 
+        setupOrderTooltips(this.container);
         this.setupEventListeners();
     }
 
@@ -654,6 +665,7 @@ export class MyOrders extends BaseComponent {
             const wallet = this.ctx.getWallet();
             const userAddress = wallet?.getAccount()?.toLowerCase();
             const { counterpartyAddress, isZeroAddr, formattedAddress } = processOrderAddress(order, userAddress);
+            const dealText = deal !== undefined ? (deal || 0).toFixed(6) : 'N/A';
             tr.innerHTML = `
                 <td>${order.id}</td>
                 <td>
@@ -680,7 +692,7 @@ export class MyOrders extends BaseComponent {
                         </div>
                     </div>
                 </td>
-                <td>${formatDealValue(deal)}</td>
+                <td class="deal-cell">${createDealCellHTML(dealText)}</td>
                 <td>${expiryText}</td>
                 <td class="order-status">
                     ${generateStatusCellHTML(orderStatus, counterpartyAddress, isZeroAddr, formattedAddress)}
