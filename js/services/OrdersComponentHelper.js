@@ -309,16 +309,29 @@ export class OrdersComponentHelper {
     }
 
     /**
-     * Fill an order using the connected wallet.
-     * Shared between ViewOrders and TakerOrders to keep transaction flow consistent.
-     * @param {number|string} orderId - The order id to fill
+     * Fill an active OTC order for the connected account.
+     *
+     * This is the shared fill path used by both View Orders and Invited Orders.
+     * It performs the required client-side checks (wallet/signer, status, expiry,
+     * balances, allowance), sends approval if needed, then executes `fillOrder`.
+     *
+     * Side effects:
+     * - Disables/enables the row button while the tx is in flight
+     * - Updates `component.isProcessingFill` as a re-entrancy guard
+     * - Shows success/error toasts
+     * - Refreshes the owning component's orders view on success
+     *
+     * @param {number|string} orderId - Order id to fill
+     * @returns {Promise<void>}
      */
     async fillOrder(orderId) {
+        // Prevent duplicate submissions while a fill tx is already in flight.
         if (this.component.isProcessingFill) {
             this.debug('Fill already in progress, ignoring duplicate request');
             return;
         }
 
+        // Capture button state so we can restore the exact label afterward.
         const normalizedOrderId = Number(orderId);
         const button = this.component.container.querySelector(
             `button[data-order-id="${normalizedOrderId}"]`
@@ -328,6 +341,7 @@ export class OrdersComponentHelper {
         this.component.isProcessingFill = true;
 
         try {
+            // Validate wallet/signer readiness before any contract calls.
             const provider = this.component.provider;
             if (!provider) {
                 throw new Error('MetaMask is not installed. Please install MetaMask to take orders.');
@@ -355,6 +369,7 @@ export class OrdersComponentHelper {
 
             this.debug('Starting fill order process for orderId:', normalizedOrderId);
 
+            // Load cached order and verify current on-chain status/time constraints.
             const ws = this.component.ctx.getWebSocket();
             const order = ws.orderCache.get(normalizedOrderId);
             this.debug('Order details:', order);
@@ -383,6 +398,7 @@ export class OrdersComponentHelper {
                 throw new Error('Order has expired');
             }
 
+            // Validate taker-side token prerequisites (balance and allowance).
             const buyToken = new ethers.Contract(order.buyToken, erc20Abi, signer);
             const sellToken = new ethers.Contract(order.sellToken, erc20Abi, signer);
             const currentAccount = await signer.getAddress();
@@ -422,6 +438,7 @@ export class OrdersComponentHelper {
                 this.component.showSuccess(`${buyTokenSymbol} approval granted`);
             }
 
+            // Ensure contract still holds maker-side sell liquidity.
             const contractSellBalance = await sellToken.balanceOf(contract.address);
             this.debug('Contract sell token balance:', {
                 balance: contractSellBalance.toString(),
@@ -443,6 +460,7 @@ export class OrdersComponentHelper {
                 );
             }
 
+            // Execute fill with a small gas buffer for estimator variance.
             const gasEstimate = await contractWithSigner.estimateGas.fillOrder(normalizedOrderId);
             this.debug('Gas estimate:', gasEstimate.toString());
 
@@ -465,6 +483,7 @@ export class OrdersComponentHelper {
             this.debug('Fill order error details:', error);
             handleTransactionError(error, this.component, 'fill order');
         } finally {
+            // Always restore UI state and clear the in-flight guard.
             if (button) {
                 button.disabled = false;
                 button.textContent = originalButtonLabel;
