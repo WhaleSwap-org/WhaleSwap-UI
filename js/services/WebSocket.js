@@ -341,7 +341,14 @@ export class WebSocketService {
                 if (!this.contract) {
                     throw new Error('Contract not initialized');
                 }
-                return Boolean(await this.contract.isDisabled());
+
+                // Timeout must apply to the queued RPC itself so queue slots are released.
+                const isDisabled = await this.withTimeout(
+                    Promise.resolve(this.contract.isDisabled()),
+                    timeoutMs,
+                    'isDisabled timeout'
+                );
+                return Boolean(isDisabled);
             })
                 .then((isDisabled) => {
                     // Ignore stale completions from older requests.
