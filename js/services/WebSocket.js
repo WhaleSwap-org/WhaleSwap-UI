@@ -377,25 +377,7 @@ export class WebSocketService {
         }
 
         const inFlightPromise = this.contractDisabledInFlight;
-        const inFlightRequestId = this.contractDisabledInFlightRequestId;
-
-        try {
-            return await this.withTimeout(
-                inFlightPromise,
-                timeoutMs,
-                'isDisabled timeout'
-            );
-        } catch (error) {
-            if (error?.message === 'isDisabled timeout') {
-                // Ensure timed out in-flight reads do not block future refreshes.
-                if (this.contractDisabledInFlightRequestId === inFlightRequestId) {
-                    this.contractDisabledInFlight = null;
-                    this.contractDisabledInFlightRequestId = 0;
-                    this.markContractDisabledStateReadError();
-                }
-            }
-            throw error;
-        }
+        return await inFlightPromise;
     }
 
     async initialize() {
