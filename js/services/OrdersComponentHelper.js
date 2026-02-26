@@ -1,8 +1,12 @@
 import { ContractError, CONTRACT_ERRORS } from '../errors/ContractErrors.js';
+import { ethers } from 'ethers';
 import { getNetworkConfig } from '../config/networks.js';
 import { tokenIconService } from './TokenIconService.js';
 import { generateTokenIconHTML } from '../utils/tokenIcons.js';
 import { createLogger } from './LogService.js';
+import { erc20Abi } from '../abi/erc20.js';
+import { getOrderStatusText } from '../utils/orderUtils.js';
+import { handleTransactionError } from '../utils/ui.js';
 
 /**
  * OrdersComponentHelper - Shared setup and utility logic for order components
@@ -301,6 +305,172 @@ export class OrdersComponentHelper {
         } else {
             element.textContent = 'No prices loaded yet';
             element.style.display = 'inline';
+        }
+    }
+
+    /**
+     * Fill an order using the connected wallet.
+     * Shared between ViewOrders and TakerOrders to keep transaction flow consistent.
+     * @param {number|string} orderId - The order id to fill
+     */
+    async fillOrder(orderId) {
+        if (this.component.isProcessingFill) {
+            this.debug('Fill already in progress, ignoring duplicate request');
+            return;
+        }
+
+        const normalizedOrderId = Number(orderId);
+        const button = this.component.container.querySelector(
+            `button[data-order-id="${normalizedOrderId}"]`
+        );
+        const originalButtonLabel = button?.textContent;
+
+        this.component.isProcessingFill = true;
+
+        try {
+            const provider = this.component.provider;
+            if (!provider) {
+                throw new Error('MetaMask is not installed. Please install MetaMask to take orders.');
+            }
+
+            const wallet = this.component.ctx.getWallet();
+            const connectedAccount = wallet?.getAccount();
+            if (!connectedAccount) {
+                throw new Error('Please sign in to fill order');
+            }
+
+            let signer;
+            try {
+                signer = provider.getSigner();
+                await signer.getAddress();
+            } catch (_) {
+                throw new Error('Please sign in to fill order');
+            }
+
+            if (button) {
+                button.disabled = true;
+                button.textContent = 'Filling...';
+                button.classList.add('disabled');
+            }
+
+            this.debug('Starting fill order process for orderId:', normalizedOrderId);
+
+            const ws = this.component.ctx.getWebSocket();
+            const order = ws.orderCache.get(normalizedOrderId);
+            this.debug('Order details:', order);
+
+            if (!order) {
+                throw new Error('Order not found');
+            }
+
+            const contract = await this.component.getContract();
+            if (!contract) {
+                throw new Error('Contract not available');
+            }
+
+            const contractWithSigner = contract.connect(signer);
+
+            const currentOrder = await contractWithSigner.orders(normalizedOrderId);
+            const currentOrderStatus = Number(currentOrder.status);
+            if (currentOrderStatus !== 0) {
+                throw new Error(`Order is not active (status: ${getOrderStatusText(currentOrderStatus)})`);
+            }
+
+            await ws.ensureFreshChainTime(0);
+            const now = ws.getCurrentTimestamp();
+            const expiryTime = ws.getOrderExpiryTime(order);
+            if (Number.isFinite(expiryTime) && now > expiryTime) {
+                throw new Error('Order has expired');
+            }
+
+            const buyToken = new ethers.Contract(order.buyToken, erc20Abi, signer);
+            const sellToken = new ethers.Contract(order.sellToken, erc20Abi, signer);
+            const currentAccount = await signer.getAddress();
+
+            const [buyTokenDecimals, buyTokenSymbol, buyTokenBalance] = await Promise.all([
+                buyToken.decimals(),
+                buyToken.symbol(),
+                buyToken.balanceOf(currentAccount)
+            ]);
+
+            this.debug('Buy token balance:', {
+                balance: buyTokenBalance.toString(),
+                required: order.buyAmount.toString()
+            });
+
+            if (buyTokenBalance.lt(order.buyAmount)) {
+                const formattedBalance = ethers.utils.formatUnits(buyTokenBalance, buyTokenDecimals);
+                const formattedRequired = ethers.utils.formatUnits(order.buyAmount, buyTokenDecimals);
+
+                throw new Error(
+                    `Insufficient ${buyTokenSymbol} balance.\n` +
+                    `Required: ${Number(formattedRequired).toLocaleString()} ${buyTokenSymbol}\n` +
+                    `Available: ${Number(formattedBalance).toLocaleString()} ${buyTokenSymbol}`
+                );
+            }
+
+            const buyTokenAllowance = await buyToken.allowance(currentAccount, contract.address);
+            this.debug('Buy token allowance:', {
+                current: buyTokenAllowance.toString(),
+                required: order.buyAmount.toString()
+            });
+
+            if (buyTokenAllowance.lt(order.buyAmount)) {
+                this.debug('Requesting buy token approval');
+                const approveTx = await buyToken.approve(contract.address, order.buyAmount);
+                await approveTx.wait();
+                this.component.showSuccess(`${buyTokenSymbol} approval granted`);
+            }
+
+            const contractSellBalance = await sellToken.balanceOf(contract.address);
+            this.debug('Contract sell token balance:', {
+                balance: contractSellBalance.toString(),
+                required: order.sellAmount.toString()
+            });
+
+            if (contractSellBalance.lt(order.sellAmount)) {
+                const [sellTokenSymbol, sellTokenDecimals] = await Promise.all([
+                    sellToken.symbol(),
+                    sellToken.decimals()
+                ]);
+                const formattedBalance = ethers.utils.formatUnits(contractSellBalance, sellTokenDecimals);
+                const formattedRequired = ethers.utils.formatUnits(order.sellAmount, sellTokenDecimals);
+
+                throw new Error(
+                    `Contract has insufficient ${sellTokenSymbol} balance.\n` +
+                    `Required: ${Number(formattedRequired).toLocaleString()} ${sellTokenSymbol}\n` +
+                    `Available: ${Number(formattedBalance).toLocaleString()} ${sellTokenSymbol}`
+                );
+            }
+
+            const gasEstimate = await contractWithSigner.estimateGas.fillOrder(normalizedOrderId);
+            this.debug('Gas estimate:', gasEstimate.toString());
+
+            const gasLimit = gasEstimate.mul(120).div(100);
+            const tx = await contractWithSigner.fillOrder(normalizedOrderId, { gasLimit });
+            this.debug('Transaction sent:', tx.hash);
+
+            const receipt = await tx.wait();
+            this.debug('Transaction receipt:', receipt);
+
+            if (receipt.status === 0) {
+                throw new Error('Transaction reverted by contract');
+            }
+
+            order.status = 'Filled';
+            await this.component.refreshOrdersView();
+
+            this.component.showSuccess(`Order ${normalizedOrderId} filled successfully!`);
+        } catch (error) {
+            this.debug('Fill order error details:', error);
+            handleTransactionError(error, this.component, 'fill order');
+        } finally {
+            if (button) {
+                button.disabled = false;
+                button.textContent = originalButtonLabel;
+                button.classList.remove('disabled');
+            }
+            this.component.isProcessingFill = false;
         }
     }
 
