@@ -1559,6 +1559,10 @@ th[data-sort].active-sort .sort-icon {
     grid-area: deal;
   }
 
+  .orders-table td.order-cell--deal::before {
+    content: none;
+  }
+
   .orders-table td.order-cell--sell {
     grid-area: sell;
   }
