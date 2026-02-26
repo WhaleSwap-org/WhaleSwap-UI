@@ -47,6 +47,14 @@ export class WebSocketService {
         // Order sync lifecycle state
         this.orderSyncPromise = null;
         this.hasCompletedOrderSync = false;
+
+        // Contract disabled-state cache
+        this.contractDisabledCache = null;
+        this.contractDisabledFetchedAt = 0;
+        this.contractDisabledInFlight = null;
+        this.contractDisabledInFlightRequestId = 0;
+        this.contractDisabledRequestSeq = 0;
+        this.contractDisabledReadError = false;
         
 
         const logger = createLogger('WEBSOCKET');
@@ -55,6 +63,20 @@ export class WebSocketService {
         this.warn = logger.warn.bind(logger);
         
         this.tokenCache = new Map();  // Add token cache
+    }
+
+    resetContractDisabledStateCache() {
+        this.contractDisabledCache = null;
+        this.contractDisabledFetchedAt = 0;
+        this.contractDisabledInFlight = null;
+        this.contractDisabledInFlightRequestId = 0;
+        this.contractDisabledReadError = false;
+    }
+
+    markContractDisabledStateReadError() {
+        this.contractDisabledReadError = true;
+        this.contractDisabledCache = null;
+        this.contractDisabledFetchedAt = 0;
     }
 
     hasContractEvent(contract, eventName) {
@@ -280,6 +302,82 @@ export class WebSocketService {
         } finally {
             this.activeRequests--;
         }
+    }
+
+    withTimeout(promise, timeoutMs, message) {
+        return new Promise((resolve, reject) => {
+            const timeoutId = setTimeout(() => {
+                reject(new Error(message));
+            }, timeoutMs);
+
+            promise.then(
+                (result) => {
+                    clearTimeout(timeoutId);
+                    resolve(result);
+                },
+                (error) => {
+                    clearTimeout(timeoutId);
+                    reject(error);
+                }
+            );
+        });
+    }
+
+    async getContractDisabledState({ maxAgeMs = 10000, timeoutMs = 4000, force = false } = {}) {
+        const now = Date.now();
+        if (
+            !force &&
+            !this.contractDisabledReadError &&
+            this.contractDisabledCache !== null &&
+            (now - this.contractDisabledFetchedAt) < maxAgeMs
+        ) {
+            return this.contractDisabledCache;
+        }
+
+        if (!this.contractDisabledInFlight) {
+            const requestId = ++this.contractDisabledRequestSeq;
+            this.contractDisabledInFlightRequestId = requestId;
+            const requestPromise = this.queueRequest(async () => {
+                if (!this.contract) {
+                    throw new Error('Contract not initialized');
+                }
+
+                // Timeout must apply to the queued RPC itself so queue slots are released.
+                const isDisabled = await this.withTimeout(
+                    Promise.resolve(this.contract.isDisabled()),
+                    timeoutMs,
+                    'isDisabled timeout'
+                );
+                return Boolean(isDisabled);
+            })
+                .then((isDisabled) => {
+                    // Ignore stale completions from older requests.
+                    if (this.contractDisabledInFlightRequestId !== requestId) {
+                        return isDisabled;
+                    }
+                    this.contractDisabledCache = isDisabled;
+                    this.contractDisabledFetchedAt = Date.now();
+                    this.contractDisabledReadError = false;
+                    return isDisabled;
+                })
+                .catch((error) => {
+                    // Ignore stale completions from older requests.
+                    if (this.contractDisabledInFlightRequestId === requestId) {
+                        this.markContractDisabledStateReadError();
+                    }
+                    throw error;
+                });
+
+            this.contractDisabledInFlight = requestPromise.finally(() => {
+                if (this.contractDisabledInFlightRequestId === requestId) {
+                    this.contractDisabledInFlight = null;
+                    this.contractDisabledInFlightRequestId = 0;
+                }
+            });
+        }
+
+        const inFlightPromise = this.contractDisabledInFlight;
+        return await inFlightPromise;
     }
 
     async initialize() {
@@ -522,6 +620,17 @@ export class WebSocketService {
                     this.notifySubscribers("OrderCleanedUp", { id: orderIdNum });
                 }
             });
+
+            if (this.hasContractEvent(contract, "ContractDisabled")) {
+                contract.on("ContractDisabled", () => {
+                    this.contractDisabledCache = true;
+                    this.contractDisabledFetchedAt = Date.now();
+                    this.contractDisabledReadError = false;
+                    this.notifySubscribers("ContractDisabled", { disabled: true });
+                });
+            } else {
+                this.debug('ContractDisabled event not found in ABI, skipping listener registration');
+            }
             
             if (this.hasContractEvent(contract, "RetryOrder")) {
                 contract.on("RetryOrder", (oldOrderId, newOrderId, maker, tries, timestamp) => {
@@ -792,6 +901,9 @@ export class WebSocketService {
                 this.contract.removeAllListeners("OrderFilled");
                 this.contract.removeAllListeners("OrderCanceled");
                 this.contract.removeAllListeners("OrderCleanedUp");
+                if (this.hasContractEvent(this.contract, "ContractDisabled")) {
+                    this.contract.removeAllListeners("ContractDisabled");
+                }
                 if (this.hasContractEvent(this.contract, "ClaimCredited")) {
                     this.contract.removeAllListeners("ClaimCredited");
                 }
@@ -811,6 +923,7 @@ export class WebSocketService {
             this.chainTimeSyncPromise = null;
             this.orderSyncPromise = null;
             this.hasCompletedOrderSync = false;
+            this.resetContractDisabledStateCache();
             
             this.debug('WebSocket service cleanup complete');
         } catch (error) {
@@ -1299,6 +1412,7 @@ export class WebSocketService {
         this.lastKnownChainBlock = null;
         this.chainTimeSyncedAtMonotonicMs = null;
         this.chainTimeSyncPromise = null;
+        this.resetContractDisabledStateCache();
 
         await new Promise(resolve => setTimeout(resolve, delay));
         return this.initialize();
