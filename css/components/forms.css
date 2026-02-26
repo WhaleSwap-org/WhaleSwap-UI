@@ -2027,6 +2027,9 @@
   font-size: 0.95rem;
   opacity: 0.9;
   text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .admin-panel .admin-token-rows {
