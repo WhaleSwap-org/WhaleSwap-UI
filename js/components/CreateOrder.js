@@ -534,65 +534,6 @@ export class CreateOrder extends BaseComponent {
         }
     }
 
-    setInfoTooltipOpenState(tooltipElement, isOpen) {
-        if (!tooltipElement) return;
-
-        tooltipElement.classList.toggle('is-open', isOpen);
-
-        const trigger = tooltipElement.querySelector('.info-tooltip-trigger');
-        if (trigger) {
-            trigger.setAttribute('aria-expanded', String(isOpen));
-        }
-    }
-
-    closeAllInfoTooltips(exceptElement = null) {
-        const tooltipElements = this.container?.querySelectorAll('.info-tooltip');
-        if (!tooltipElements) return;
-
-        tooltipElements.forEach((tooltipElement) => {
-            if (tooltipElement !== exceptElement) {
-                this.setInfoTooltipOpenState(tooltipElement, false);
-            }
-        });
-    }
-
-    setupInfoTooltips() {
-        const tooltipElements = this.container?.querySelectorAll('.info-tooltip');
-        if (!tooltipElements?.length) return;
-
-        tooltipElements.forEach((tooltipElement) => {
-            const trigger = tooltipElement.querySelector('.info-tooltip-trigger');
-            if (!trigger || trigger.dataset.tooltipBound === 'true') return;
-
-            trigger.dataset.tooltipBound = 'true';
-            trigger.addEventListener('click', (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-
-                const shouldOpen = !tooltipElement.classList.contains('is-open');
-                this.closeAllInfoTooltips(tooltipElement);
-                this.setInfoTooltipOpenState(tooltipElement, shouldOpen);
-            });
-
-            trigger.addEventListener('keydown', (event) => {
-                if (event.key === 'Escape') {
-                    this.setInfoTooltipOpenState(tooltipElement, false);
-                    trigger.blur();
-                }
-            });
-        });
-
-        if (!this.boundTooltipOutsideClickHandler) {
-            this.boundTooltipOutsideClickHandler = (event) => {
-                if (event.target?.closest?.('.info-tooltip')) return;
-                this.closeAllInfoTooltips();
-            };
-            document.addEventListener('click', this.boundTooltipOutsideClickHandler);
-        }
-    }
-
-
-
     setupCreateOrderListener() {
         const createOrderBtn = this.container?.querySelector('#createOrderBtn');
         if (!createOrderBtn) {

@@ -739,18 +739,20 @@ export class WebSocketService {
             }
 
             // Try once, then retry once on failure before falling back
-            // Apply a simple timeout wrapper to multicall
-            const withTimeout = (p, ms) => Promise.race([
-                p,
-                new Promise((_, rej) => setTimeout(() => rej(new Error('multicall timeout')), ms))
-            ]);
-
-            let results = await withTimeout(multicallTryAggregate(calls, { requireSuccess: false }), 5000);
+            let results = await this.withTimeout(
+                multicallTryAggregate(calls, { requireSuccess: false }),
+                5000,
+                'multicall timeout'
+            );
             if (!results) {
                 this.debug('Multicall returned null, retrying once after short delay...');
                 await new Promise(r => setTimeout(r, 150));
                 try {
-                    results = await withTimeout(multicallTryAggregate(calls, { requireSuccess: false }), 5000);
+                    results = await this.withTimeout(
+                        multicallTryAggregate(calls, { requireSuccess: false }),
+                        5000,
+                        'multicall timeout'
+                    );
                 } catch (_) {
                     results = null;
                 }
