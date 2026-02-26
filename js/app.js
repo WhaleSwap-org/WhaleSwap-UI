@@ -1672,7 +1672,7 @@ function syncAddNetworkButtonVisibility() {
 	const walletChainId = window.app?.ctx?.getWalletChainId?.();
 	const walletNetwork = walletChainId ? getNetworkById(walletChainId) : null;
 	const shouldShow = Boolean(
-		window.ethereum
+		walletManager.hasInjectedProvider()
 		&& walletChainId
 		&& !networkSwitchInProgress
 		&& (!walletNetwork || walletNetwork.slug !== selectedSlug)
@@ -1828,8 +1828,8 @@ document.addEventListener('DOMContentLoaded', () => {
 			const selectedSlug = selectedNetworkSlug || window.app?.ctx?.getSelectedChainSlug?.() || getDefaultNetwork().slug;
 			const selectedNetwork = getNetworkBySlug(selectedSlug) || getDefaultNetwork();
 
-			if (!window.ethereum) {
-				window.app?.showWarning?.('No injected wallet detected.');
+			if (!walletManager.hasInjectedProvider()) {
+				window.app?.showWarning?.('MetaMask is required. Phantom is not supported.');
 				return;
 			}
 
