@@ -18,6 +18,7 @@ export class ContractParams extends BaseComponent {
         this.lastFetchTime = 0;
         this.CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
         this.REQUEST_TIMEOUT_MS = 7000;
+        this.RECONNECT_TIMEOUT_MS = 45000;
         this.RECONNECT_RETRY_LIMIT = 1;
     }
 
@@ -92,9 +93,7 @@ export class ContractParams extends BaseComponent {
 
                 let reconnected = false;
                 try {
-                    reconnected = ws.isInitialized
-                        ? await ws.reconnect()
-                        : await ws.waitForInitialization();
+                    reconnected = await this.waitForWsRecovery(ws);
                 } catch (reconnectError) {
                     lastError = reconnectError;
                     this.debug('WebSocket reconnect failed while retrying contract params:', reconnectError);
@@ -259,6 +258,18 @@ export class ContractParams extends BaseComponent {
         });
 
         return params;
+    }
+
+    async waitForWsRecovery(ws) {
+        const recoveryPromise = ws.isInitialized
+            ? ws.reconnect()
+            : ws.waitForInitialization();
+
+        return await this.withTimeout(
+            Promise.resolve(recoveryPromise),
+            this.RECONNECT_TIMEOUT_MS,
+            'WebSocket recovery timeout'
+        );
     }
 
     async readWithTimeout(callback, label) {
