@@ -30,6 +30,7 @@ export class CreateOrder extends BaseComponent {
         this.allowedTokensLoadPromise = null;
         this.feeLoadPromise = null;
         this.feeConfigUpdatedHandler = null;
+        this.contractDisabledHandler = null;
         this.pendingFeeConfigRefresh = false;
         this.sellToken = null;
         this.buyToken = null;
@@ -261,6 +262,7 @@ export class CreateOrder extends BaseComponent {
             
             // Wait for contract to be ready
             await this.waitForContract();
+            this.subscribeToContractDisabledUpdates();
             await this.refreshContractDisabledState();
             this.subscribeToFeeConfigUpdates();
             
@@ -354,6 +356,26 @@ export class CreateOrder extends BaseComponent {
         };
 
         ws.subscribe('FeeConfigUpdated', this.feeConfigUpdatedHandler);
+    }
+
+    subscribeToContractDisabledUpdates() {
+        const ws = this.ctx.getWebSocket();
+        if (!ws?.subscribe) {
+            return;
+        }
+
+        if (this.contractDisabledHandler && ws.unsubscribe) {
+            ws.unsubscribe('ContractDisabled', this.contractDisabledHandler);
+        }
+
+        this.contractDisabledHandler = () => {
+            this.debug('ContractDisabled event received, disabling new orders');
+            this.contractStateReadError = false;
+            this.isContractDisabled = true;
+            this.updateCreateButtonState();
+        };
+
+        ws.subscribe('ContractDisabled', this.contractDisabledHandler);
     }
 
     async loadOrderCreationFee() {
@@ -1791,7 +1813,11 @@ export class CreateOrder extends BaseComponent {
         if (ws?.unsubscribe && this.feeConfigUpdatedHandler) {
             ws.unsubscribe('FeeConfigUpdated', this.feeConfigUpdatedHandler);
         }
+        if (ws?.unsubscribe && this.contractDisabledHandler) {
+            ws.unsubscribe('ContractDisabled', this.contractDisabledHandler);
+        }
         this.feeConfigUpdatedHandler = null;
+        this.contractDisabledHandler = null;
         this.pendingFeeConfigRefresh = false;
     }
 
