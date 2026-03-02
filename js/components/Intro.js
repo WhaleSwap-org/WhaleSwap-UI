@@ -183,7 +183,7 @@ export class Intro extends BaseComponent {
 								<ul>
 										<li>Non-refundable fee: <span class="intro-fee-full">the configured order creation fee</span></li>
 									<li>Orders expire after 7 days</li>
-									<li>You can cancel any active order until it is cleaned up</li>
+									<li>Cancel before cleanup</li>
 									<li>Cleanup after 14 days</li>
 							</ul>
 						</div>
