@@ -5,6 +5,7 @@ export class Intro extends BaseComponent {
 	constructor() {
 		super('intro');
 		this.initialized = false;
+		this.feeConfigUpdatedHandler = null;
 	}
 
 	async initialize(readOnly = true) {
@@ -74,6 +75,18 @@ export class Intro extends BaseComponent {
 				faqText.textContent = isExpanded ? 'Show Detailed FAQ' : 'Hide Detailed FAQ';
 			});
 		}
+
+		const ws = this.ctx.getWebSocket();
+		if (!ws?.subscribe) return;
+
+		if (this.feeConfigUpdatedHandler && ws.unsubscribe) {
+			ws.unsubscribe('FeeConfigUpdated', this.feeConfigUpdatedHandler);
+		}
+
+		this.feeConfigUpdatedHandler = () => {
+			this.refreshOrderFeeCopy();
+		};
+		ws.subscribe('FeeConfigUpdated', this.feeConfigUpdatedHandler);
 	}
 
 	render() {

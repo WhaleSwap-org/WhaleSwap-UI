@@ -29,6 +29,7 @@ export class CreateOrder extends BaseComponent {
         this.tokensLoading = false;
         this.allowedTokensLoadPromise = null;
         this.feeLoadPromise = null;
+        this.feeConfigUpdatedHandler = null;
         this.sellToken = null;
         this.buyToken = null;
         this.isContractDisabled = false;
@@ -259,6 +260,7 @@ export class CreateOrder extends BaseComponent {
             // Wait for contract to be ready
             await this.waitForContract();
             await this.refreshContractDisabledState();
+            this.subscribeToFeeConfigUpdates();
             
             // Load fee/token data in background so initial tab render is not blocked.
             this.startBackgroundDataLoading();
@@ -309,6 +311,36 @@ export class CreateOrder extends BaseComponent {
                     this.allowedTokensLoadPromise = null;
                 });
         }
+    }
+
+    subscribeToFeeConfigUpdates() {
+        const ws = this.ctx.getWebSocket();
+        if (!ws?.subscribe) {
+            return;
+        }
+
+        if (this.feeConfigUpdatedHandler && ws.unsubscribe) {
+            ws.unsubscribe('FeeConfigUpdated', this.feeConfigUpdatedHandler);
+        }
+
+        this.feeConfigUpdatedHandler = () => {
+            this.debug('FeeConfigUpdated event received, refreshing fee display');
+            this.feeToken = null;
+            if (this.feeLoadPromise) {
+                return;
+            }
+
+            this.feeLoadPromise = this.loadOrderCreationFee()
+                .then(() => this.updateFeeDisplay())
+                .catch((error) => {
+                    this.debug('Fee refresh after FeeConfigUpdated failed:', error);
+                })
+                .finally(() => {
+                    this.feeLoadPromise = null;
+                });
+        };
+
+        ws.subscribe('FeeConfigUpdated', this.feeConfigUpdatedHandler);
     }
 
     async loadOrderCreationFee() {
@@ -1741,6 +1773,12 @@ export class CreateOrder extends BaseComponent {
             document.removeEventListener('click', this.boundTooltipOutsideClickHandler);
             this.boundTooltipOutsideClickHandler = null;
         }
+
+        const ws = this.ctx.getWebSocket();
+        if (ws?.unsubscribe && this.feeConfigUpdatedHandler) {
+            ws.unsubscribe('FeeConfigUpdated', this.feeConfigUpdatedHandler);
+        }
+        this.feeConfigUpdatedHandler = null;
     }
 
     // Add this method to the CreateOrder class

@@ -631,6 +631,18 @@ export class WebSocketService {
             } else {
                 this.debug('ContractDisabled event not found in ABI, skipping listener registration');
             }
+
+            if (this.hasContractEvent(contract, "FeeConfigUpdated")) {
+                contract.on("FeeConfigUpdated", (feeToken, feeAmount, timestamp) => {
+                    this.notifySubscribers("FeeConfigUpdated", {
+                        feeToken,
+                        feeAmount: feeAmount?.toString?.() ?? String(feeAmount ?? '0'),
+                        timestamp: timestamp?.toString?.() ?? String(timestamp ?? '0')
+                    });
+                });
+            } else {
+                this.debug('FeeConfigUpdated event not found in ABI, skipping listener registration');
+            }
             
             if (this.hasContractEvent(contract, "RetryOrder")) {
                 contract.on("RetryOrder", (oldOrderId, newOrderId, maker, tries, timestamp) => {
@@ -905,6 +917,9 @@ export class WebSocketService {
                 this.contract.removeAllListeners("OrderCleanedUp");
                 if (this.hasContractEvent(this.contract, "ContractDisabled")) {
                     this.contract.removeAllListeners("ContractDisabled");
+                }
+                if (this.hasContractEvent(this.contract, "FeeConfigUpdated")) {
+                    this.contract.removeAllListeners("FeeConfigUpdated");
                 }
                 if (this.hasContractEvent(this.contract, "ClaimCredited")) {
                     this.contract.removeAllListeners("ClaimCredited");
