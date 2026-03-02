@@ -632,29 +632,6 @@ export class WebSocketService {
                 this.debug('ContractDisabled event not found in ABI, skipping listener registration');
             }
             
-            if (this.hasContractEvent(contract, "RetryOrder")) {
-                contract.on("RetryOrder", (oldOrderId, newOrderId, maker, tries, timestamp) => {
-                    const oldOrderIdNum = oldOrderId.toNumber();
-                    const newOrderIdNum = newOrderId.toNumber();
-                    
-                    const order = this.orderCache.get(oldOrderIdNum);
-                    if (order) {
-                        const createdAt = timestamp.toNumber();
-                        order.id = newOrderIdNum;
-                        order.tries = tries.toNumber();
-                        order.timestamp = createdAt;
-                        order.timings = this.buildOrderTimings(createdAt);
-                        
-                        this.orderCache.delete(oldOrderIdNum);
-                        this.orderCache.set(newOrderIdNum, order);
-                        this.debug('Updated retried order:', {oldId: oldOrderIdNum, newId: newOrderIdNum, tries: tries.toString()});
-                        this.notifySubscribers("RetryOrder", order);
-                    }
-                });
-            } else {
-                this.debug('RetryOrder event not found in ABI, skipping listener registration');
-            }
-
             if (this.hasContractEvent(contract, "ClaimCredited")) {
                 contract.on("ClaimCredited", (beneficiary, token, amount, orderId, reason, timestamp) => {
                     const creditedEvent = {
@@ -911,9 +888,6 @@ export class WebSocketService {
                 }
                 if (this.hasContractEvent(this.contract, "ClaimWithdrawn")) {
                     this.contract.removeAllListeners("ClaimWithdrawn");
-                }
-                if (this.hasContractEvent(this.contract, "RetryOrder")) {
-                    this.contract.removeAllListeners("RetryOrder");
                 }
             }
             
