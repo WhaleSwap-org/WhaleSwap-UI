@@ -20,6 +20,33 @@ export class ContractParams extends BaseComponent {
         this.REQUEST_TIMEOUT_MS = 7000;
         this.RECONNECT_TIMEOUT_MS = 45000;
         this.RECONNECT_RETRY_LIMIT = 1;
+        this.feeConfigUpdatedHandler = null;
+    }
+
+    setupFeeConfigSubscription(ws) {
+        if (!ws?.subscribe) {
+            return;
+        }
+
+        if (!this.feeConfigUpdatedHandler) {
+            this.feeConfigUpdatedHandler = () => {
+                this.debug('FeeConfigUpdated received, invalidating cached contract parameters');
+                this.cachedParams = null;
+                this.lastFetchTime = 0;
+
+                // If this tab is visible, refresh immediately so UI reflects the new fee config.
+                if (this.container?.classList?.contains('active') && !this.isInitializing) {
+                    this.initialize().catch((error) => {
+                        this.debug('Failed to refresh contract parameters after FeeConfigUpdated:', error);
+                    });
+                }
+            };
+        }
+
+        if (ws.unsubscribe) {
+            ws.unsubscribe('FeeConfigUpdated', this.feeConfigUpdatedHandler);
+        }
+        ws.subscribe('FeeConfigUpdated', this.feeConfigUpdatedHandler);
     }
 
     async initialize(readOnlyMode = true) {
@@ -31,6 +58,9 @@ export class ContractParams extends BaseComponent {
         this.isInitializing = true;
 
         try {
+            const ws = this.ctx.getWebSocket();
+            this.setupFeeConfigSubscription(ws);
+
             const now = Date.now();
             if (this.cachedParams && (now - this.lastFetchTime) < this.CACHE_DURATION) {
                 this.debug('Using cached parameters');
@@ -458,6 +488,10 @@ export class ContractParams extends BaseComponent {
 
     cleanup() {
         this.debug('Cleaning up ContractParams component');
+        const ws = this.ctx.getWebSocket();
+        if (ws?.unsubscribe && this.feeConfigUpdatedHandler) {
+            ws.unsubscribe('FeeConfigUpdated', this.feeConfigUpdatedHandler);
+        }
         // Don't clear the cache on cleanup
         this.isInitialized = false;
         this.isInitializing = false;
