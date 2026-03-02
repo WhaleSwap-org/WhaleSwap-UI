@@ -92,10 +92,9 @@ export class ContractParams extends BaseComponent {
 
                 let reconnected = false;
                 try {
-                    reconnected = await this.readWithTimeout(
-                        () => ws.reconnect(),
-                        'WebSocket reconnect'
-                    );
+                    reconnected = ws.isInitialized
+                        ? await ws.reconnect()
+                        : await ws.waitForInitialization();
                 } catch (reconnectError) {
                     lastError = reconnectError;
                     this.debug('WebSocket reconnect failed while retrying contract params:', reconnectError);
@@ -151,7 +150,7 @@ export class ContractParams extends BaseComponent {
             Object.entries(paramMethods).map(async ([key, method]) => {
                 try {
                     params[key] = await this.readWithTimeout(
-                        () => contract[method](),
+                        () => ws.queueRequest(() => contract[method]()),
                         method
                     );
                     successCount++;
