@@ -581,6 +581,31 @@ class App {
 		return getNetworkBySlug(selectedSlug) || getDefaultNetwork();
 	}
 
+	alignSelectedNetworkToRestoredWallet() {
+		const requestedSlug = getChainSlugFromUrl();
+		if (requestedSlug) {
+			return false;
+		}
+
+		const walletChainId = this.ctx?.getWalletChainId?.() ?? walletManager.chainId ?? null;
+		if (!walletChainId) {
+			return false;
+		}
+
+		const walletNetwork = getNetworkById(walletChainId);
+		const selectedNetwork = this.getSelectedNetwork();
+		if (!walletNetwork || walletNetwork.slug === selectedNetwork.slug) {
+			return false;
+		}
+
+		this.debug(
+			'No chain requested in URL; aligning selected network to restored wallet chain:',
+			walletNetwork.slug
+		);
+		applySelectedNetwork(walletNetwork, { updateUrl: true });
+		return true;
+	}
+
 	isWalletOnSelectedNetwork(chainId = null) {
 		const walletChainId = chainId ?? this.ctx?.getWalletChainId?.() ?? walletManager.chainId ?? null;
 		const walletNetwork = getNetworkById(walletChainId);
@@ -692,6 +717,7 @@ class App {
 
 			this.updateGlobalLoaderText('Initializing wallet...');
 			await this.initializeWalletManager();
+			this.alignSelectedNetworkToRestoredWallet();
 			this.updateGlobalLoaderText('Initializing pricing...');
 			await this.initializePricingService();
 			this.updateGlobalLoaderText('Connecting to order feed...');
