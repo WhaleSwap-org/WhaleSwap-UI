@@ -499,11 +499,13 @@ export class WebSocketService {
             return await this.initializationPromise;
         }
 
+        let initializationPromise = null;
+
         try {
             this.debug('Starting initialization...');
             this.clearReconnectTimer();
             const initializationGeneration = this.connectionGeneration;
-            const initializationPromise = (async () => {
+            initializationPromise = (async () => {
                 // Wait for provider connection
                 const config = getNetworkConfig();
                 
