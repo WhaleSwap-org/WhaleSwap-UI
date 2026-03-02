@@ -13,6 +13,11 @@ export class WebSocketService {
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 5;
         this.reconnectDelay = 1000;
+        this.reconnectPromise = null;
+        this.reconnectTimer = null;
+        this.reconnectRunId = 0;
+        this.connectionHealthTimeoutMs = 4000;
+        this.connectionGeneration = 0;
         this.orderCache = new Map();
         this.isInitialized = false;
         this.contractAddress = null;
@@ -61,8 +66,112 @@ export class WebSocketService {
         this.debug = logger.debug.bind(logger);
         this.error = logger.error.bind(logger);
         this.warn = logger.warn.bind(logger);
-        
+
         this.tokenCache = new Map();  // Add token cache
+        this.pricingUpdateHandler = null;
+    }
+
+    clearReconnectTimer() {
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
+    }
+
+    queueReconnect(reason = 'socket-close', delayMs = 5000) {
+        if (this.reconnectPromise || this.reconnectTimer) {
+            return;
+        }
+
+        this.debug(`Scheduling reconnect in ${delayMs}ms due to ${reason}`);
+        this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null;
+            this.reconnect(reason).catch((error) => {
+                this.debug('Scheduled reconnect failed:', error);
+            });
+        }, delayMs);
+    }
+
+    closeProvider(provider = this.provider) {
+        if (!provider) {
+            return;
+        }
+
+        try {
+            provider.removeAllListeners();
+        } catch (error) {
+            this.debug('Error removing provider listeners during close:', error);
+        }
+
+        if (provider._websocket) {
+            try {
+                provider._websocket.onopen = null;
+                provider._websocket.onerror = null;
+                provider._websocket.onclose = null;
+                provider._websocket.close();
+            } catch (error) {
+                this.debug('Error closing websocket during close:', error);
+            }
+        }
+    }
+
+    removeContractEventListeners(contract = this.contract) {
+        if (!contract) {
+            return;
+        }
+
+        contract.removeAllListeners("OrderCreated");
+        contract.removeAllListeners("OrderFilled");
+        contract.removeAllListeners("OrderCanceled");
+        contract.removeAllListeners("OrderCleanedUp");
+        if (this.hasContractEvent(contract, "ContractDisabled")) {
+            contract.removeAllListeners("ContractDisabled");
+        }
+        if (this.hasContractEvent(contract, "ClaimCredited")) {
+            contract.removeAllListeners("ClaimCredited");
+        }
+        if (this.hasContractEvent(contract, "ClaimWithdrawn")) {
+            contract.removeAllListeners("ClaimWithdrawn");
+        }
+        if (this.hasContractEvent(contract, "RetryOrder")) {
+            contract.removeAllListeners("RetryOrder");
+        }
+    }
+
+    resetConnection(closeSocket = true, clearOrderCache = false) {
+        this.connectionGeneration++;
+
+        try {
+            this.closeProvider(closeSocket ? this.provider : null);
+        } catch (error) {
+            this.debug('Error removing provider listeners during teardown:', error);
+        }
+
+        try {
+            this.removeContractEventListeners(this.contract);
+        } catch (error) {
+            this.debug('Error removing contract listeners during teardown:', error);
+        }
+
+        this.isInitialized = false;
+        this.provider = null;
+        this.contract = null;
+        this.initializationPromise = null;
+        this.orderExpiry = null;
+        this.gracePeriod = null;
+        this.lastKnownChainTimestamp = null;
+        this.lastKnownChainBlock = null;
+        this.chainTimeSyncedAtMonotonicMs = null;
+        this.chainTimeSyncPromise = null;
+        this.orderSyncPromise = null;
+        this.hasCompletedOrderSync = false;
+        this.activeRequests = 0;
+        this.lastRequestTime = 0;
+        this.resetContractDisabledStateCache();
+
+        if (clearOrderCache) {
+            this.orderCache.clear();
+        }
     }
 
     resetContractDisabledStateCache() {
@@ -300,7 +409,7 @@ export class WebSocketService {
             this.error('Request failed:', error);
             throw error;
         } finally {
-            this.activeRequests--;
+            this.activeRequests = Math.max(0, this.activeRequests - 1);
         }
     }
 
@@ -380,33 +489,50 @@ export class WebSocketService {
         return await inFlightPromise;
     }
 
-    async initialize() {
+    async initialize(allowReconnect = true) {
         if (this.isInitialized) {
             this.debug('Already initialized, skipping...');
-            return;
+            return true;
+        }
+
+        if (this.initializationPromise) {
+            return await this.initializationPromise;
         }
 
         try {
             this.debug('Starting initialization...');
-            this.initializationPromise = (async () => {
+            this.clearReconnectTimer();
+            const initializationGeneration = this.connectionGeneration;
+            const initializationPromise = (async () => {
                 // Wait for provider connection
                 const config = getNetworkConfig();
                 
                 const wsUrls = [config.wsUrl, ...config.fallbackWsUrls];
                 let connected = false;
+                let connectedProvider = null;
                 
                 for (const url of wsUrls) {
+                    let candidateProvider = null;
                     try {
                         this.debug('Attempting to connect to WebSocket URL:', url);
-                        this.provider = new ethers.providers.WebSocketProvider(url);
+                        candidateProvider = new ethers.providers.WebSocketProvider(url);
                         
                         // Wait for provider to be ready
-                        await this.provider.ready;
+                        await candidateProvider.ready;
+                        if (initializationGeneration !== this.connectionGeneration) {
+                            this.closeProvider(candidateProvider);
+                            return false;
+                        }
                         this.debug('Connected to WebSocket:', url);
+                        connectedProvider = candidateProvider;
+                        this.provider = connectedProvider;
                         connected = true;
                         break;
                     } catch (error) {
                         this.debug('Failed to connect to WebSocket URL:', url, error);
+                        if (candidateProvider) {
+                            this.closeProvider(candidateProvider);
+                        }
                     }
                 }
                 
@@ -415,6 +541,10 @@ export class WebSocketService {
                 }
 
                 await this.syncChainTime();
+                if (initializationGeneration !== this.connectionGeneration) {
+                    this.closeProvider(connectedProvider);
+                    return false;
+                }
 
                 // Initialize contract before fetching constants
                 this.debug('Initializing contract...');
@@ -430,6 +560,11 @@ export class WebSocketService {
                     this.contractABI,
                     this.provider
                 );
+                if (initializationGeneration !== this.connectionGeneration) {
+                    this.removeContractEventListeners(this.contract);
+                    this.closeProvider(connectedProvider);
+                    return false;
+                }
 
                 this.debug('Contract initialized:', {
                     address: this.contract.address,
@@ -439,6 +574,11 @@ export class WebSocketService {
                 this.debug('Fetching contract constants...');
                 this.orderExpiry = await this.contract.ORDER_EXPIRY();
                 this.gracePeriod = await this.contract.GRACE_PERIOD();
+                if (initializationGeneration !== this.connectionGeneration) {
+                    this.removeContractEventListeners(this.contract);
+                    this.closeProvider(connectedProvider);
+                    return false;
+                }
                 this.debug('Contract constants loaded:', {
                     orderExpiry: this.orderExpiry.toString(),
                     gracePeriod: this.gracePeriod.toString()
@@ -447,11 +587,14 @@ export class WebSocketService {
                 // Subscribe to pricing service after everything else is ready
                 const pricing = this.pricingService;
                 if (pricing) {
-                    this.debug('Subscribing to pricing service...');
-                    pricing.subscribe(() => {
-                        this.debug('Price update received, updating all deals...');
-                        this.updateAllDeals();
-                    });
+                    if (!this.pricingUpdateHandler) {
+                        this.pricingUpdateHandler = () => {
+                            this.debug('Price update received, updating all deals...');
+                            this.updateAllDeals();
+                        };
+                        this.debug('Subscribing to pricing service...');
+                        pricing.subscribe(this.pricingUpdateHandler);
+                    }
                     // Trigger initial allowed token price fetch in background.
                     // Do not block initial UI readiness on pricing API requests.
                     Promise.resolve()
@@ -468,19 +611,27 @@ export class WebSocketService {
                 
                 this.isInitialized = true;
                 this.debug('Initialization complete');
-                this.reconnectAttempts = 0;
                 
                 return true;
             })();
 
-            return await this.initializationPromise;
+            this.initializationPromise = initializationPromise;
+
+            return await initializationPromise;
         } catch (error) {
             this.error('Initialization failed:', {
                 message: error.message,
                 stack: error.stack
             });
-            this.initializationPromise = null;
-            return this.reconnect();
+            this.isInitialized = false;
+            if (!allowReconnect) {
+                return false;
+            }
+            return this.reconnect('initialize-failed');
+        } finally {
+            if (this.initializationPromise === initializationPromise) {
+                this.initializationPromise = null;
+            }
         }
     }
 
@@ -521,24 +672,32 @@ export class WebSocketService {
             });
 
             // Add error handling for WebSocket connection
-            this.provider._websocket.onopen = () => {
-                this.debug('WebSocket connected');
-            };
+            const socket = this.provider?._websocket;
+            if (socket) {
+                socket.onopen = () => {
+                    if (socket !== this.provider?._websocket) return;
+                    this.debug('WebSocket connected');
+                };
 
-            this.provider._websocket.onerror = (error) => {
-                this.debug('WebSocket error:', error);
-            };
+                socket.onerror = (error) => {
+                    if (socket !== this.provider?._websocket) return;
+                    this.debug('WebSocket error:', error);
+                };
 
-            this.provider._websocket.onclose = (event) => {
-                this.debug('WebSocket closed:', event);
-                // Attempt to reconnect if not manually closed
-                if (event.code !== 1000) {
-                    this.debug('WebSocket closed unexpectedly, attempting to reconnect...');
-                    setTimeout(() => {
-                        this.reconnect();
-                    }, 5000);
-                }
-            };
+                socket.onclose = (event) => {
+                    if (socket !== this.provider?._websocket) {
+                        this.debug('Ignoring close event from stale websocket instance');
+                        return;
+                    }
+
+                    this.debug('WebSocket closed:', event);
+                    // Attempt to reconnect if not manually closed
+                    if (event.code !== 1000) {
+                        this.debug('WebSocket closed unexpectedly, attempting to reconnect...');
+                        this.queueReconnect('socket-close', 5000);
+                    }
+                };
+            }
 
             contract.on("OrderCreated", async (...args) => {
                 try {
@@ -891,41 +1050,10 @@ export class WebSocketService {
     cleanup() {
         try {
             this.debug('Cleaning up WebSocket service...');
-            
-            // Remove provider event listeners
-            if (this.provider) {
-                this.provider.removeAllListeners("block");
-            }
-            
-            // Remove contract event listeners
-            if (this.contract) {
-                this.contract.removeAllListeners("OrderCreated");
-                this.contract.removeAllListeners("OrderFilled");
-                this.contract.removeAllListeners("OrderCanceled");
-                this.contract.removeAllListeners("OrderCleanedUp");
-                if (this.hasContractEvent(this.contract, "ContractDisabled")) {
-                    this.contract.removeAllListeners("ContractDisabled");
-                }
-                if (this.hasContractEvent(this.contract, "ClaimCredited")) {
-                    this.contract.removeAllListeners("ClaimCredited");
-                }
-                if (this.hasContractEvent(this.contract, "ClaimWithdrawn")) {
-                    this.contract.removeAllListeners("ClaimWithdrawn");
-                }
-                if (this.hasContractEvent(this.contract, "RetryOrder")) {
-                    this.contract.removeAllListeners("RetryOrder");
-                }
-            }
-            
-            // Clear cache
-            this.orderCache.clear();
-            this.lastKnownChainTimestamp = null;
-            this.lastKnownChainBlock = null;
-            this.chainTimeSyncedAtMonotonicMs = null;
-            this.chainTimeSyncPromise = null;
-            this.orderSyncPromise = null;
-            this.hasCompletedOrderSync = false;
-            this.resetContractDisabledStateCache();
+            this.reconnectRunId++;
+            this.clearReconnectTimer();
+            this.resetConnection(true, true);
+            this.reconnectAttempts = 0;
             
             this.debug('WebSocket service cleanup complete');
         } catch (error) {
@@ -1382,41 +1510,137 @@ export class WebSocketService {
         return 'Active';
     }
 
-    // Reconnect method for handling WebSocket disconnections
-    async reconnect() {
-        if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-            this.debug('Max reconnection attempts reached');
+    isSocketOpen() {
+        return this.provider?._websocket?.readyState === 1;
+    }
+
+    async isConnectionHealthy(probeRpc = true, timeoutMs = this.connectionHealthTimeoutMs) {
+        if (this.reconnectPromise || !this.isInitialized || !this.provider || !this.contract) {
             return false;
         }
 
-        this.reconnectAttempts++;
-        const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
-        this.debug(`Reconnecting in ${delay}ms... (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+        if (!this.isSocketOpen()) {
+            return false;
+        }
 
-        // Clean up existing connection
-        if (this.provider) {
+        if (!probeRpc) {
+            return true;
+        }
+
+        try {
+            const blockNumber = await this.withTimeout(
+                Promise.resolve(this.provider.getBlockNumber()),
+                timeoutMs,
+                'connection health check timeout'
+            );
+            return Number.isFinite(Number(blockNumber));
+        } catch (error) {
+            this.debug('WebSocket health check failed:', error);
+            return false;
+        }
+    }
+
+    async recoverConnectionIfNeeded(reason = 'health-check', timeoutMs = this.connectionHealthTimeoutMs) {
+        if (this.reconnectPromise) {
+            return await this.reconnectPromise;
+        }
+
+        if (this.initializationPromise) {
             try {
-                this.provider.removeAllListeners();
-                if (this.provider._websocket) {
-                    this.provider._websocket.close();
-                }
-            } catch (error) {
-                this.debug('Error cleaning up old connection:', error);
+                await this.initializationPromise;
+                return false;
+            } catch (_) {
+                return false;
             }
         }
 
-        // Reset state
-        this.isInitialized = false;
-        this.provider = null;
-        this.contract = null;
-        this.initializationPromise = null;
-        this.lastKnownChainTimestamp = null;
-        this.lastKnownChainBlock = null;
-        this.chainTimeSyncedAtMonotonicMs = null;
-        this.chainTimeSyncPromise = null;
-        this.resetContractDisabledStateCache();
+        const healthy = await this.isConnectionHealthy(true, timeoutMs);
+        if (healthy) {
+            return false;
+        }
 
-        await new Promise(resolve => setTimeout(resolve, delay));
-        return this.initialize();
+        return await this.reconnect(reason, 0);
+    }
+
+    // Reconnect method for handling WebSocket disconnections
+    async reconnect(reason = 'manual', delayMs = null) {
+        if (this.reconnectPromise) {
+            return await this.reconnectPromise;
+        }
+
+        this.clearReconnectTimer();
+        const reconnectRunId = ++this.reconnectRunId;
+
+        this.reconnectPromise = (async () => {
+            while (this.reconnectAttempts < this.maxReconnectAttempts) {
+                if (reconnectRunId !== this.reconnectRunId) {
+                    this.debug('Reconnect loop invalidated before next attempt');
+                    return false;
+                }
+
+                this.reconnectAttempts++;
+                const attempt = this.reconnectAttempts;
+                const computedDelay = delayMs !== null && attempt === 1
+                    ? delayMs
+                    : this.reconnectDelay * Math.pow(2, attempt - 1);
+
+                this.debug(
+                    `Reconnecting in ${computedDelay}ms... (attempt ${attempt}/${this.maxReconnectAttempts}, reason: ${reason})`
+                );
+
+                this.resetConnection(true, false);
+                if (reconnectRunId !== this.reconnectRunId) {
+                    this.debug('Reconnect loop invalidated after connection reset');
+                    return false;
+                }
+
+                if (computedDelay > 0) {
+                    await new Promise(resolve => setTimeout(resolve, computedDelay));
+                }
+                if (reconnectRunId !== this.reconnectRunId) {
+                    this.debug('Reconnect loop invalidated during backoff');
+                    return false;
+                }
+
+                const initialized = await this.initialize(false);
+                if (reconnectRunId !== this.reconnectRunId) {
+                    this.debug('Reconnect loop invalidated after initialization');
+                    return false;
+                }
+                if (!initialized) {
+                    continue;
+                }
+
+                let synced = false;
+                try {
+                    synced = await this.waitForOrderSync({ triggerIfNeeded: true });
+                } catch (error) {
+                    this.debug('Order sync after reconnect threw an error:', error);
+                }
+                if (reconnectRunId !== this.reconnectRunId) {
+                    this.debug('Reconnect loop invalidated after order sync');
+                    return false;
+                }
+
+                if (!synced) {
+                    this.warn('Reconnect restored the provider, but order sync did not complete');
+                    continue;
+                }
+
+                this.reconnectAttempts = 0;
+                this.notifySubscribers('reconnected', {
+                    reason,
+                    attempt
+                });
+                return true;
+            }
+
+            this.debug('Max reconnection attempts reached');
+            return false;
+        })().finally(() => {
+            this.reconnectPromise = null;
+        });
+
+        return await this.reconnectPromise;
     }
 }

@@ -51,6 +51,8 @@ class App {
 		this.claimVisibilityCacheTtlMs = 1500;
 		this.claimVisibilityCheckedAtMs = 0;
 		this.claimVisibilityCacheKey = null;
+		this.visibilityChangeHandler = null;
+		this.foregroundRecoveryPromise = null;
 
 		// Replace debug initialization with LogService
 		const logger = createLogger('APP');
@@ -277,6 +279,34 @@ class App {
 		} catch (error) {
 			this.debug('Failed to refresh active orders tab after sync:', error);
 		}
+	}
+
+	async recoverWebSocketOnForeground() {
+		if (document.visibilityState !== 'visible') {
+			return false;
+		}
+
+		if (this.foregroundRecoveryPromise) {
+			return await this.foregroundRecoveryPromise;
+		}
+
+		this.foregroundRecoveryPromise = (async () => {
+			const ws = this.ctx?.getWebSocket?.();
+			if (!ws?.recoverConnectionIfNeeded) {
+				return false;
+			}
+
+			try {
+				return await ws.recoverConnectionIfNeeded('foreground-visible');
+			} catch (error) {
+				this.debug('Foreground WebSocket recovery failed:', error);
+				return false;
+			}
+		})().finally(() => {
+			this.foregroundRecoveryPromise = null;
+		});
+
+		return await this.foregroundRecoveryPromise;
 	}
 
 	startInitialOrderSync(ws = this.ctx?.getWebSocket?.()) {
@@ -1092,6 +1122,17 @@ class App {
 		});
 
 		this.initializeTabRail();
+
+		if (!this.visibilityChangeHandler) {
+			this.visibilityChangeHandler = () => {
+				if (document.visibilityState !== 'visible') {
+					return;
+				}
+
+				void this.recoverWebSocketOnForeground();
+			};
+			document.addEventListener('visibilitychange', this.visibilityChangeHandler);
+		}
 	}
 
 	async initializeWalletManager() {
@@ -1152,6 +1193,18 @@ class App {
 						textEl.textContent = `Loading orders ${Math.min(fetched, total)}/${total} (batch ${batch}/${totalBatches})`;
 					}
 				} catch (_) {}
+			});
+
+			webSocketService.subscribe('reconnected', () => {
+				this.debug('WebSocket reconnected');
+				void this.refreshClaimTabVisibility({ force: true }).catch((error) => {
+					this.debug('Failed to refresh claim visibility after reconnect:', error);
+				});
+				if (this.currentTab === 'contract-params') {
+					void this.refreshActiveComponent().catch((error) => {
+						this.debug('Failed to refresh contract params after reconnect:', error);
+					});
+				}
 			});
 
 			const wsInitialized = await webSocketService.initialize();
