@@ -4,14 +4,16 @@
   "description": "WhaleSwap Decentralized Trading Interface",
   "main": "index.js",
   "scripts": {
-    "test": "node --test tests/**/*.test.cjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "start": "npx http-server -c-1"
   },
   "keywords": [],
   "author": "",
   "license": "MIT",
-  "dependencies": {},
   "devDependencies": {
-    "http-server": "^14.1.1"
+    "http-server": "^14.1.1",
+    "jsdom": "^27.0.1",
+    "vitest": "^3.2.4"
   }
 }
