@@ -14,6 +14,7 @@ import {
 import { formatTimeDiff, calculateTotalValue } from '../utils/orderUtils.js';
 import { OrdersComponentHelper } from '../services/OrdersComponentHelper.js';
 import { OrdersTableRenderer } from '../services/OrdersTableRenderer.js';
+import { buildTokenDisplaySymbolMap, getDisplaySymbol } from '../utils/tokenDisplay.js';
 
 export class MyOrders extends BaseComponent {
     constructor() {
@@ -152,6 +153,10 @@ export class MyOrders extends BaseComponent {
             // Get all orders first
             const ws = this.ctx.getWebSocket();
             const wallet = this.ctx.getWallet();
+            this.tokenDisplaySymbolMap = buildTokenDisplaySymbolMap(
+                Array.from(ws.tokenCache.values()),
+                this.ctx?.getWalletChainId?.()
+            );
             await ws.ensureFreshChainTime();
             let ordersToDisplay = Array.from(ws.orderCache.values());
             
@@ -248,8 +253,17 @@ export class MyOrders extends BaseComponent {
         
         // Get tokens from WebSocket's tokenCache first
         const ws = this.ctx.getWebSocket();
+        const tokenDisplaySymbolMap = buildTokenDisplaySymbolMap(
+            Array.from(ws.tokenCache.values()),
+            this.ctx?.getWalletChainId?.()
+        );
+        this.tokenDisplaySymbolMap = tokenDisplaySymbolMap;
         const tokens = Array.from(ws.tokenCache.values())
-            .sort((a, b) => a.symbol.localeCompare(b.symbol)); // Sort alphabetically by symbol
+            .map((token) => ({
+                ...token,
+                displaySymbol: getDisplaySymbol(token, tokenDisplaySymbolMap)
+            }))
+            .sort((a, b) => a.displaySymbol.localeCompare(b.displaySymbol)); // Sort alphabetically by display symbol
         
         this.debug('Available tokens:', tokens);
 
@@ -309,13 +323,13 @@ export class MyOrders extends BaseComponent {
                             <select id="sell-token-filter" class="token-filter">
                                 <option value="">All Sell Tokens</option>
                                 ${tokens.map(token => 
-                                    `<option value="${token.address}">${token.symbol}</option>`
+                                    `<option value="${token.address}">${token.displaySymbol || token.symbol}</option>`
                                 ).join('')}
                             </select>
                             <select id="buy-token-filter" class="token-filter">
                                 <option value="">All Buy Tokens</option>
                                 ${tokens.map(token => 
-                                    `<option value="${token.address}">${token.symbol}</option>`
+                                    `<option value="${token.address}">${token.displaySymbol || token.symbol}</option>`
                                 ).join('')}
                             </select>
                             <select id="order-sort" class="order-sort">
@@ -614,6 +628,8 @@ export class MyOrders extends BaseComponent {
             const ws = this.ctx.getWebSocket();
             const sellTokenInfo = await ws.getTokenInfo(order.sellToken);
             const buyTokenInfo = await ws.getTokenInfo(order.buyToken);
+            const sellDisplaySymbol = getDisplaySymbol(sellTokenInfo, this.tokenDisplaySymbolMap);
+            const buyDisplaySymbol = getDisplaySymbol(buyTokenInfo, this.tokenDisplaySymbolMap);
 
             // Use pre-formatted values from dealMetrics
             const { 
@@ -673,7 +689,7 @@ export class MyOrders extends BaseComponent {
                         <div class="token-icon"><div class="loading-spinner"></div></div>
                         <div class="token-details">
                             <div class="token-symbol-row">
-                                <span class="token-symbol">${sellTokenInfo.symbol}</span>
+                                <span class="token-symbol">${sellDisplaySymbol}</span>
                                 <span class="token-price ${sellPriceClass}">${calculateTotalValue(resolvedSellPrice, safeFormattedSellAmount)}</span>
                             </div>
                             <span class="token-amount">${safeFormattedSellAmount}</span>
@@ -685,7 +701,7 @@ export class MyOrders extends BaseComponent {
                         <div class="token-icon"><div class="loading-spinner"></div></div>
                         <div class="token-details">
                             <div class="token-symbol-row">
-                                <span class="token-symbol">${buyTokenInfo.symbol}</span>
+                                <span class="token-symbol">${buyDisplaySymbol}</span>
                                 <span class="token-price ${buyPriceClass}">${calculateTotalValue(resolvedBuyPrice, safeFormattedBuyAmount)}</span>
                             </div>
                             <span class="token-amount">${safeFormattedBuyAmount}</span>

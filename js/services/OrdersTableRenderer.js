@@ -1,6 +1,7 @@
 import { formatTimeDiff } from '../utils/orderUtils.js';
 import { createLogger } from './LogService.js';
 import { createInlineTooltipIcon, setupOrderTooltips } from '../utils/ui.js';
+import { buildTokenDisplaySymbolMap, getDisplaySymbol } from '../utils/tokenDisplay.js';
 
 /**
  * OrdersTableRenderer - Handles table structure, pagination, and expiry timers
@@ -96,8 +97,17 @@ export class OrdersTableRenderer {
         
         // Get tokens for filters
         const ws = this.component.ctx.getWebSocket();
-        const tokens = Array.from(ws.tokenCache.values())
-            .sort((a, b) => a.symbol.localeCompare(b.symbol));
+        const tokens = Array.from(ws.tokenCache.values());
+        const chainId = this.component.ctx?.getWalletChainId?.();
+        const tokenDisplaySymbolMap = buildTokenDisplaySymbolMap(tokens, chainId);
+        this.component.tokenDisplaySymbolMap = tokenDisplaySymbolMap;
+
+        const displayTokens = tokens
+            .map((token) => ({
+                ...token,
+                displaySymbol: getDisplaySymbol(token, tokenDisplaySymbolMap)
+            }))
+            .sort((a, b) => a.displaySymbol.localeCompare(b.displaySymbol));
         
         let mobileRefreshSection = '';
         if (this.options.showRefreshButton) {
@@ -148,7 +158,7 @@ export class OrdersTableRenderer {
         `;
 
         // Advanced filters
-        const advancedFilters = this._createAdvancedFilters(tokens);
+        const advancedFilters = this._createAdvancedFilters(displayTokens);
         filterControls.appendChild(advancedFilters);
         
         // Setup advanced filters toggle
@@ -174,13 +184,13 @@ export class OrdersTableRenderer {
                     <select id="sell-token-filter" class="token-filter">
                         <option value="">All Buy Tokens</option>
                         ${tokens.map(token => 
-                            `<option value="${token.address}">${token.symbol}</option>`
+                            `<option value="${token.address}">${token.displaySymbol || token.symbol}</option>`
                         ).join('')}
                     </select>
                     <select id="buy-token-filter" class="token-filter">
                         <option value="">All Sell Tokens</option>
                         ${tokens.map(token => 
-                            `<option value="${token.address}">${token.symbol}</option>`
+                            `<option value="${token.address}">${token.displaySymbol || token.symbol}</option>`
                         ).join('')}
                     </select>
                     <select id="order-sort" class="order-sort">

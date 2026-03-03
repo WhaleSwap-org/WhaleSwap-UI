@@ -5,6 +5,7 @@ import { processOrderAddress, generateStatusCellHTML, setupClickToCopy } from '.
 import { formatTimeDiff, calculateTotalValue, formatDealValue } from '../utils/orderUtils.js';
 import { OrdersComponentHelper } from '../services/OrdersComponentHelper.js';
 import { OrdersTableRenderer } from '../services/OrdersTableRenderer.js';
+import { buildTokenDisplaySymbolMap, getDisplaySymbol } from '../utils/tokenDisplay.js';
 
 export class TakerOrders extends BaseComponent {
     constructor() {
@@ -93,6 +94,10 @@ export class TakerOrders extends BaseComponent {
 
             // Get all orders and filter for taker
             const ws = this.ctx.getWebSocket();
+            this.tokenDisplaySymbolMap = buildTokenDisplaySymbolMap(
+                Array.from(ws.tokenCache.values()),
+                this.ctx?.getWalletChainId?.()
+            );
             await ws.ensureFreshChainTime();
             let ordersToDisplay = Array.from(ws.orderCache.values())
                 .filter(order => 
@@ -295,6 +300,8 @@ export class TakerOrders extends BaseComponent {
             const ws = this.ctx.getWebSocket();
             const sellTokenInfo = await ws.getTokenInfo(order.sellToken);
             const buyTokenInfo = await ws.getTokenInfo(order.buyToken);
+            const sellDisplaySymbol = getDisplaySymbol(sellTokenInfo, this.tokenDisplaySymbolMap);
+            const buyDisplaySymbol = getDisplaySymbol(buyTokenInfo, this.tokenDisplaySymbolMap);
 
             // Use pre-formatted values from dealMetrics
             const { 
@@ -353,7 +360,7 @@ export class TakerOrders extends BaseComponent {
                         </div>
                         <div class="token-details">
                             <div class="token-symbol-row">
-                                <span class="token-symbol">${sellTokenInfo.symbol}</span>
+                                <span class="token-symbol">${sellDisplaySymbol}</span>
                                 <span class="token-price ${sellPriceClass}">${calculateTotalValue(resolvedSellPrice, safeFormattedSellAmount)}</span>
                             </div>
                             <span class="token-amount">${safeFormattedSellAmount}</span>
@@ -367,7 +374,7 @@ export class TakerOrders extends BaseComponent {
                         </div>
                         <div class="token-details">
                             <div class="token-symbol-row">
-                                <span class="token-symbol">${buyTokenInfo.symbol}</span>
+                                <span class="token-symbol">${buyDisplaySymbol}</span>
                                 <span class="token-price ${buyPriceClass}">${calculateTotalValue(resolvedBuyPrice, safeFormattedBuyAmount)}</span>
                             </div>
                             <span class="token-amount">${safeFormattedBuyAmount}</span>

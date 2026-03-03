@@ -5,6 +5,7 @@ import { createDealCellHTML } from '../utils/ui.js';
 import { formatTimeDiff, calculateTotalValue } from '../utils/orderUtils.js';
 import { OrdersComponentHelper } from '../services/OrdersComponentHelper.js';
 import { OrdersTableRenderer } from '../services/OrdersTableRenderer.js';
+import { buildTokenDisplaySymbolMap, getDisplaySymbol } from '../utils/tokenDisplay.js';
 
 export class ViewOrders extends BaseComponent {
     constructor(containerId = 'view-orders') {
@@ -117,6 +118,10 @@ export class ViewOrders extends BaseComponent {
             // Get all orders first
             const ws = this.ctx.getWebSocket();
             const wallet = this.ctx.getWallet();
+            this.tokenDisplaySymbolMap = buildTokenDisplaySymbolMap(
+                Array.from(ws.tokenCache.values()),
+                this.ctx?.getWalletChainId?.()
+            );
             await ws.ensureFreshChainTime();
             let ordersToDisplay = Array.from(ws.orderCache.values());
             
@@ -296,6 +301,8 @@ export class ViewOrders extends BaseComponent {
             const ws = this.ctx.getWebSocket();
             const sellTokenInfo = await ws.getTokenInfo(order.sellToken);
             const buyTokenInfo = await ws.getTokenInfo(order.buyToken);
+            const sellDisplaySymbol = getDisplaySymbol(sellTokenInfo, this.tokenDisplaySymbolMap);
+            const buyDisplaySymbol = getDisplaySymbol(buyTokenInfo, this.tokenDisplaySymbolMap);
             const deal = order.dealMetrics?.deal > 0 ? 1 / order.dealMetrics?.deal : undefined; // view as buyer/taker
             // Use pre-formatted values from dealMetrics
             const { 
@@ -348,7 +355,7 @@ export class ViewOrders extends BaseComponent {
                         </div>
                         <div class="token-details">
                             <div class="token-symbol-row">
-                                <span class="token-symbol">${sellTokenInfo.symbol}</span>
+                                <span class="token-symbol">${sellDisplaySymbol}</span>
                                 <span class="token-price ${sellPriceClass}">${calculateTotalValue(resolvedSellPrice, safeFormattedSellAmount)}</span>
                             </div>
                             <span class="token-amount">${safeFormattedSellAmount}</span>
@@ -362,7 +369,7 @@ export class ViewOrders extends BaseComponent {
                         </div>
                         <div class="token-details">
                             <div class="token-symbol-row">
-                                <span class="token-symbol">${buyTokenInfo.symbol}</span>
+                                <span class="token-symbol">${buyDisplaySymbol}</span>
                                 <span class="token-price ${buyPriceClass}">${calculateTotalValue(resolvedBuyPrice, safeFormattedBuyAmount)}</span>
                             </div>
                             <span class="token-amount">${safeFormattedBuyAmount}</span>
