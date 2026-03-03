@@ -6,6 +6,7 @@ import { generateTokenIconHTML } from '../utils/tokenIcons.js';
 import { createLogger } from './LogService.js';
 import { erc20Abi } from '../abi/erc20.js';
 import { getOrderStatusText } from '../utils/orderUtils.js';
+import { createTransactionProgressSession } from '../utils/transactionProgress.js';
 import {
     extractTransactionErrorMessage,
     handleTransactionError,
@@ -28,6 +29,48 @@ export class OrdersComponentHelper {
         this.debug = logger.debug.bind(logger);
         this.error = logger.error.bind(logger);
         this.warn = logger.warn.bind(logger);
+        this.fillProgressSession = null;
+        this.fillProgressOrderId = null;
+    }
+
+    isFillProgressActive(orderId) {
+        return this.fillProgressOrderId === Number(orderId) && this.fillProgressSession?.isActive();
+    }
+
+    isFillProgressHidden(orderId) {
+        return this.fillProgressOrderId === Number(orderId) && this.fillProgressSession?.isHidden();
+    }
+
+    configureFillButton(button, orderId) {
+        if (!button) return;
+
+        const isHiddenProgress = this.isFillProgressHidden(orderId);
+        const isActiveProgress = this.isFillProgressActive(orderId);
+
+        button.textContent = isHiddenProgress
+            ? 'View Progress'
+            : isActiveProgress
+                ? 'Filling...'
+                : 'Fill';
+        button.disabled = isActiveProgress && !isHiddenProgress;
+        button.classList.toggle('disabled', button.disabled);
+        button.addEventListener('click', () => this.fillOrder(orderId));
+    }
+
+    syncFillProgressButtons() {
+        if (this.fillProgressOrderId === null || this.fillProgressOrderId === undefined) {
+            return;
+        }
+
+        const buttons = this.component.container.querySelectorAll(
+            `button[data-order-id="${this.fillProgressOrderId}"]`
+        );
+        buttons.forEach(button => this.configureFillButton(button, this.fillProgressOrderId));
+    }
+
+    clearFillProgressSession() {
+        this.fillProgressSession = null;
+        this.fillProgressOrderId = null;
     }
 
     /**
@@ -331,6 +374,10 @@ export class OrdersComponentHelper {
     async fillOrder(orderId) {
         // Prevent duplicate submissions while a fill tx is already in flight.
         if (this.component.isProcessingFill) {
+            if (this.fillProgressSession?.isHidden()) {
+                this.fillProgressSession.reopen();
+                this.syncFillProgressButtons();
+            }
             this.debug('Fill already in progress, ignoring duplicate request');
             return;
         }
@@ -462,7 +509,7 @@ export class OrdersComponentHelper {
             }
 
             const approvalNeeded = buyTokenAllowance.lt(order.buyAmount);
-            progressToast = this.component.ctx.toast.createTransactionProgress({
+            progressToast = createTransactionProgressSession(this.component.ctx.toast, {
                 title: `Filling Order #${normalizedOrderId}`,
                 successTitle: 'Order Filled',
                 failureTitle: 'Order Fill Failed',
@@ -479,6 +526,12 @@ export class OrdersComponentHelper {
                     { id: 'confirm-fill-order', label: 'Confirm fill on-chain', status: 'pending' },
                 ],
             });
+            this.fillProgressSession = progressToast;
+            this.fillProgressOrderId = normalizedOrderId;
+            progressToast.onVisibilityChange(() => {
+                this.syncFillProgressButtons();
+            });
+            this.syncFillProgressButtons();
 
             if (approvalNeeded) {
                 try {
@@ -606,6 +659,7 @@ export class OrdersComponentHelper {
                 button.classList.remove('disabled');
             }
             this.component.isProcessingFill = false;
+            this.clearFillProgressSession();
         }
     }
 
@@ -613,6 +667,7 @@ export class OrdersComponentHelper {
      * Cleanup subscriptions and listeners
      */
     cleanup() {
+        this.clearFillProgressSession();
         // Unsubscribe from WebSocket events
         const ws = this.component.ctx.getWebSocket();
         if (ws && this.component.eventSubscriptions) {

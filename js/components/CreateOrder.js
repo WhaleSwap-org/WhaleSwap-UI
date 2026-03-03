@@ -10,6 +10,7 @@ import { createLogger } from '../services/LogService.js';
 import { validateSellBalance } from '../utils/balanceValidation.js';
 import { tokenIconService } from '../services/TokenIconService.js';
 import { generateTokenIconHTML, getFallbackIconData } from '../utils/tokenIcons.js';
+import { createTransactionProgressSession } from '../utils/transactionProgress.js';
 import {
     extractTransactionErrorMessage,
     handleTransactionError,
@@ -41,6 +42,7 @@ export class CreateOrder extends BaseComponent {
         this.buyToken = null;
         this.isContractDisabled = false;
         this.contractStateReadError = false;
+        this.transactionProgressSession = null;
         this.tokenSelectorListeners = {};  // Store listeners to prevent duplicates
         this.boundWindowClickHandler = null;
         this.boundTooltipOutsideClickHandler = null;
@@ -821,6 +823,10 @@ export class CreateOrder extends BaseComponent {
         event.preventDefault();
         
         if (this.isSubmitting) {
+            if (this.transactionProgressSession?.isHidden()) {
+                this.transactionProgressSession.reopen();
+                this.updateCreateButtonState();
+            }
             this.debug('Already processing a transaction');
             return;
         }
@@ -983,7 +989,7 @@ export class CreateOrder extends BaseComponent {
                 sellAmountWei,
             });
             const defaultSummary = 'Complete the steps below in your wallet and on-chain.';
-            const progressToast = this.ctx.toast.createTransactionProgress({
+            const progressToast = createTransactionProgressSession(this.ctx.toast, {
                 title: 'Creating Order',
                 successTitle: 'Order Created',
                 failureTitle: 'Order Creation Failed',
@@ -999,6 +1005,10 @@ export class CreateOrder extends BaseComponent {
                     { id: 'submit-order', label: 'Submit create order', status: 'pending' },
                     { id: 'confirm-order', label: 'Confirm order on-chain', status: 'pending' },
                 ],
+            });
+            this.transactionProgressSession = progressToast;
+            progressToast.onVisibilityChange(() => {
+                this.updateCreateButtonState();
             });
 
             for (const requirement of approvalRequirements) {
@@ -1155,6 +1165,7 @@ export class CreateOrder extends BaseComponent {
             handleTransactionError(error, this, 'order creation');
         } finally {
             this.isSubmitting = false;
+            this.transactionProgressSession = null;
             this.updateCreateButtonState();
         }
     }
@@ -2293,6 +2304,15 @@ export class CreateOrder extends BaseComponent {
                 !this.isSubmitting &&
                 hasTokens &&
                 hasAmounts;
+
+            const canViewProgress = this.isSubmitting && this.transactionProgressSession?.isHidden();
+
+            if (canViewProgress) {
+                createButton.disabled = false;
+                createButton.classList.remove('disabled');
+                createButton.textContent = 'View Progress';
+                return;
+            }
 
             createButton.disabled = !canCreateOrder;
             createButton.classList.toggle('disabled', !canCreateOrder);

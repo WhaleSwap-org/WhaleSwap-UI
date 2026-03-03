@@ -261,6 +261,7 @@ export class Toast {
     }
 
     createTransactionProgressController(refs, options) {
+        const closeCallbacks = new Set();
         const setSummary = (message) => {
             refs.summary.textContent = message || '';
             refs.summary.hidden = !message;
@@ -282,6 +283,16 @@ export class Toast {
             setTypeAndTitle(type, title);
             setSummary(summary);
             setTerminalMessage(terminalMessage);
+        };
+
+        refs.toast._onClose = () => {
+            closeCallbacks.forEach(callback => {
+                try {
+                    callback();
+                } catch (error) {
+                    this.warn('Toast close callback failed', error);
+                }
+            });
         };
 
         return {
@@ -340,6 +351,13 @@ export class Toast {
                     summary: '',
                     terminalMessage: message || 'Transaction cancelled.',
                 });
+            },
+            onClose: (callback) => {
+                if (typeof callback !== 'function') {
+                    return () => {};
+                }
+                closeCallbacks.add(callback);
+                return () => closeCallbacks.delete(callback);
             },
             close: () => {
                 this.removeToast(refs.toast);
@@ -437,6 +455,11 @@ export class Toast {
             delete toast.dataset.timeoutId;
         }
 
+        if (!toast._closeHandled) {
+            toast._closeHandled = true;
+            toast._onClose?.();
+        }
+
         toast.classList.add('toast-hide');
 
         setTimeout(() => {
@@ -451,6 +474,10 @@ export class Toast {
         if (toast.dataset?.timeoutId) {
             clearTimeout(parseInt(toast.dataset.timeoutId, 10));
             delete toast.dataset.timeoutId;
+        }
+        if (!toast._closeHandled) {
+            toast._closeHandled = true;
+            toast._onClose?.();
         }
         if (toast.parentNode) {
             toast.parentNode.removeChild(toast);

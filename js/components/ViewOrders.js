@@ -384,12 +384,18 @@ export class ViewOrders extends BaseComponent {
             // Render token icons asynchronously (target explicit columns)
             const sellTokenIconContainer = tr.querySelector('td:nth-child(2) .token-icon');
             const buyTokenIconContainer = tr.querySelector('td:nth-child(3) .token-icon');
+            const actionCell = tr.querySelector('.action-column');
+            const wallet = this.ctx.getWallet();
             
             if (sellTokenIconContainer) {
                 this.helper.renderTokenIcon(sellTokenInfo, sellTokenIconContainer);
             }
             if (buyTokenIconContainer) {
                 this.helper.renderTokenIcon(buyTokenInfo, buyTokenIconContainer);
+            }
+
+            if (actionCell) {
+                this.updateActionColumn(actionCell, order, wallet);
             }
 
             // Start expiry timer for this row (handled by renderer)
@@ -413,14 +419,16 @@ export class ViewOrders extends BaseComponent {
         const isUserOrder = order.maker?.toLowerCase() === currentAccount;
         const ws = this.ctx.getWebSocket();
 
-        if (isUserOrder) {
+        if (this.helper.isFillProgressActive(order.id)) {
+            actionCell.innerHTML = `<button class="fill-button" data-order-id="${order.id}"></button>`;
+            const fillButton = actionCell.querySelector('.fill-button');
+            this.helper.configureFillButton(fillButton, order.id);
+        } else if (isUserOrder) {
             actionCell.innerHTML = '<span class="mine-label">Mine</span>';
         } else if (!isUserOrder && ws.canFillOrder(order, currentAccount)) {
-            actionCell.innerHTML = `<button class="fill-button" data-order-id="${order.id}">Fill</button>`;
+            actionCell.innerHTML = `<button class="fill-button" data-order-id="${order.id}"></button>`;
             const fillButton = actionCell.querySelector('.fill-button');
-            if (fillButton) {
-                fillButton.addEventListener('click', () => this.helper.fillOrder(order.id));
-            }
+            this.helper.configureFillButton(fillButton, order.id);
         } else {
             actionCell.innerHTML = '';
         }

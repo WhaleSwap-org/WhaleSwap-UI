@@ -395,12 +395,17 @@ export class TakerOrders extends BaseComponent {
             // Render token icons asynchronously (target explicit columns)
             const sellTokenIconContainer = tr.querySelector('td:nth-child(2) .token-icon');
             const buyTokenIconContainer = tr.querySelector('td:nth-child(3) .token-icon');
+            const actionCell = tr.querySelector('.action-column');
             
             if (sellTokenIconContainer) {
                 this.helper.renderTokenIcon(sellTokenInfo, sellTokenIconContainer);
             }
             if (buyTokenIconContainer) {
                 this.helper.renderTokenIcon(buyTokenInfo, buyTokenIconContainer);
+            }
+
+            if (actionCell) {
+                this.updateActionColumn(actionCell, order, wallet);
             }
 
             // Start expiry timer for this row
@@ -419,13 +424,15 @@ export class TakerOrders extends BaseComponent {
         const ws = this.ctx.getWebSocket();
 
         // For taker orders, user is the taker - show fill button if they can fill
-        if (ws.canFillOrder(order, currentAccount)) {
+        if (this.helper.isFillProgressActive(order.id)) {
+            actionCell.innerHTML = `<button class="fill-button" data-order-id="${order.id}"></button>`;
+            const fillButton = actionCell.querySelector('.fill-button');
+            this.helper.configureFillButton(fillButton, order.id);
+        } else if (ws.canFillOrder(order, currentAccount)) {
             if (!actionCell.querySelector('.fill-button')) {
-                actionCell.innerHTML = `<button class="fill-button" data-order-id="${order.id}">Fill</button>`;
+                actionCell.innerHTML = `<button class="fill-button" data-order-id="${order.id}"></button>`;
                 const fillButton = actionCell.querySelector('.fill-button');
-                if (fillButton) {
-                    fillButton.addEventListener('click', () => this.helper.fillOrder(order.id));
-                }
+                this.helper.configureFillButton(fillButton, order.id);
             }
         } else {
             actionCell.innerHTML = '-';
