@@ -6,7 +6,11 @@ import { generateTokenIconHTML } from '../utils/tokenIcons.js';
 import { createLogger } from './LogService.js';
 import { erc20Abi } from '../abi/erc20.js';
 import { getOrderStatusText } from '../utils/orderUtils.js';
-import { handleTransactionError } from '../utils/ui.js';
+import {
+    extractTransactionErrorMessage,
+    handleTransactionError,
+    isUserRejection,
+} from '../utils/ui.js';
 
 /**
  * OrdersComponentHelper - Shared setup and utility logic for order components
@@ -337,6 +341,7 @@ export class OrdersComponentHelper {
             `button[data-order-id="${normalizedOrderId}"]`
         );
         const originalButtonLabel = button?.textContent;
+        let progressToast = null;
 
         this.component.isProcessingFill = true;
 
@@ -434,13 +439,6 @@ export class OrdersComponentHelper {
                 required: order.buyAmount.toString()
             });
 
-            if (buyTokenAllowance.lt(order.buyAmount)) {
-                this.debug('Requesting buy token approval');
-                const approveTx = await buyToken.approve(contract.address, order.buyAmount);
-                await approveTx.wait();
-                this.component.showSuccess(`${buyTokenSymbol} approval granted`);
-            }
-
             // Ensure contract still holds maker-side sell liquidity.
             const contractSellBalance = await sellToken.balanceOf(contract.address);
             this.debug('Contract sell token balance:', {
@@ -463,28 +461,147 @@ export class OrdersComponentHelper {
                 );
             }
 
+            const approvalNeeded = buyTokenAllowance.lt(order.buyAmount);
+            progressToast = this.component.createTransactionProgressToast({
+                title: `Filling Order #${normalizedOrderId}`,
+                successTitle: 'Order Filled',
+                failureTitle: 'Order Fill Failed',
+                cancelledTitle: 'Order Fill Cancelled',
+                summary: 'Complete the steps below in your wallet and on-chain.',
+                steps: [
+                    {
+                        id: 'approve-buy-token',
+                        label: `Approve ${buyTokenSymbol}`,
+                        status: approvalNeeded ? 'pending' : 'completed',
+                        detail: approvalNeeded ? '' : 'Already approved',
+                    },
+                    { id: 'submit-fill-order', label: 'Submit fill order', status: 'pending' },
+                    { id: 'confirm-fill-order', label: 'Confirm fill on-chain', status: 'pending' },
+                ],
+            });
+
+            if (!progressToast) {
+                throw new Error('Transaction progress toast unavailable');
+            }
+
+            if (approvalNeeded) {
+                try {
+                    this.debug('Requesting buy token approval');
+                    progressToast.updateStep('approve-buy-token', {
+                        status: 'active',
+                        detail: 'Confirm in wallet',
+                    });
+                    const approveTx = await buyToken.approve(contract.address, order.buyAmount);
+                    progressToast.updateStep('approve-buy-token', {
+                        status: 'active',
+                        detail: 'Waiting for confirmation',
+                    });
+                    await approveTx.wait();
+                    progressToast.updateStep('approve-buy-token', {
+                        status: 'completed',
+                        detail: 'Approved',
+                    });
+                } catch (error) {
+                    this.debug('Fill order approval error:', error);
+                    if (isUserRejection(error)) {
+                        progressToast.updateStep('approve-buy-token', {
+                            status: 'cancelled',
+                            detail: 'Wallet request rejected',
+                        });
+                        progressToast.finishCancelled('Cancelled during token approval.');
+                        return;
+                    }
+
+                    const errorMessage = extractTransactionErrorMessage(error);
+                    progressToast.updateStep('approve-buy-token', {
+                        status: 'failed',
+                        detail: errorMessage,
+                    });
+                    progressToast.finishFailure(errorMessage);
+                    return;
+                }
+            }
+
             // Execute fill with a small gas buffer for estimator variance.
             const gasEstimate = await contractWithSigner.estimateGas.fillOrder(normalizedOrderId);
             this.debug('Gas estimate:', gasEstimate.toString());
 
             const gasLimit = gasEstimate.mul(120).div(100);
-            const tx = await contractWithSigner.fillOrder(normalizedOrderId, { gasLimit });
+            progressToast.updateStep('submit-fill-order', {
+                status: 'active',
+                detail: 'Confirm in wallet',
+            });
+
+            let tx;
+            try {
+                tx = await contractWithSigner.fillOrder(normalizedOrderId, { gasLimit });
+            } catch (error) {
+                this.debug('Fill order submission error:', error);
+                if (isUserRejection(error)) {
+                    progressToast.updateStep('submit-fill-order', {
+                        status: 'cancelled',
+                        detail: 'Wallet request rejected',
+                    });
+                    progressToast.finishCancelled('Cancelled before fill submission.');
+                    return;
+                }
+
+                const errorMessage = extractTransactionErrorMessage(error);
+                progressToast.updateStep('submit-fill-order', {
+                    status: 'failed',
+                    detail: errorMessage,
+                });
+                progressToast.finishFailure(errorMessage);
+                return;
+            }
+
             this.debug('Transaction sent:', tx.hash);
+            progressToast.updateStep('submit-fill-order', {
+                status: 'completed',
+                detail: 'Submitted',
+            });
+            progressToast.setTransaction({
+                hash: tx.hash,
+                chainId: this.component.ctx.getWalletChainId(),
+            });
+            progressToast.updateStep('confirm-fill-order', {
+                status: 'active',
+                detail: 'Waiting for confirmation',
+            });
 
             const receipt = await tx.wait();
             this.debug('Transaction receipt:', receipt);
 
             if (receipt.status === 0) {
-                throw new Error('Transaction reverted by contract');
+                const errorMessage = 'Transaction reverted by contract';
+                progressToast.updateStep('confirm-fill-order', {
+                    status: 'failed',
+                    detail: errorMessage,
+                });
+                progressToast.finishFailure(errorMessage);
+                return;
             }
 
             order.status = 'Filled';
             await this.component.refreshOrdersView();
 
-            this.component.showSuccess(`Order ${normalizedOrderId} filled successfully!`);
+            progressToast.updateStep('confirm-fill-order', {
+                status: 'completed',
+                detail: 'Confirmed',
+            });
+            progressToast.finishSuccess(`Order ${normalizedOrderId} filled successfully.`);
         } catch (error) {
             this.debug('Fill order error details:', error);
-            handleTransactionError(error, this.component, 'fill order');
+            if (progressToast) {
+                const errorMessage = extractTransactionErrorMessage(error);
+                progressToast.updateStep('confirm-fill-order', {
+                    status: 'failed',
+                    detail: errorMessage,
+                });
+                progressToast.finishFailure(errorMessage);
+            } else {
+                handleTransactionError(error, this.component, 'fill order');
+            }
         } finally {
             // Always restore UI state and clear the in-flight guard.
             if (button) {
