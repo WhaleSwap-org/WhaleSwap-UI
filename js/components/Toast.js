@@ -278,6 +278,12 @@ export class Toast {
             refs.title.textContent = titleText;
         };
 
+        const finish = ({ type, title, summary, terminalMessage }) => {
+            setTypeAndTitle(type, title);
+            setSummary(summary);
+            setTerminalMessage(terminalMessage);
+        };
+
         return {
             updateStep: (stepId, update) => {
                 const stepRef = refs.stepRefs.get(stepId);
@@ -303,7 +309,7 @@ export class Toast {
                 refs.hashElement.title = hash;
 
                 const explorerUrl = getTransactionExplorerUrl(hash, chainId);
-                if (explorerUrl && explorerUrl !== '#') {
+                if (explorerUrl !== '#') {
                     refs.link.href = explorerUrl;
                     refs.link.hidden = false;
                 } else {
@@ -312,19 +318,28 @@ export class Toast {
                 }
             },
             finishSuccess: (message) => {
-                setTypeAndTitle('success', options.successTitle);
-                setSummary(message || options.summary || '');
-                setTerminalMessage('');
+                finish({
+                    type: 'success',
+                    title: options.successTitle,
+                    summary: message || options.summary || '',
+                    terminalMessage: '',
+                });
             },
             finishFailure: (message) => {
-                setTypeAndTitle('error', options.failureTitle);
-                setSummary('');
-                setTerminalMessage(message || 'Transaction failed.');
+                finish({
+                    type: 'error',
+                    title: options.failureTitle,
+                    summary: '',
+                    terminalMessage: message || 'Transaction failed.',
+                });
             },
             finishCancelled: (message) => {
-                setTypeAndTitle('warning', options.cancelledTitle);
-                setSummary('');
-                setTerminalMessage(message || 'Transaction cancelled.');
+                finish({
+                    type: 'warning',
+                    title: options.cancelledTitle,
+                    summary: '',
+                    terminalMessage: message || 'Transaction cancelled.',
+                });
             },
             close: () => {
                 this.removeToast(refs.toast);

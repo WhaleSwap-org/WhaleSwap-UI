@@ -177,21 +177,6 @@ export class BaseComponent {
     }
 
     /**
-     * Create a persistent checklist toast for multi-step transactions.
-     * @param {Object} options
-     * @returns {Object|null}
-     */
-    createTransactionProgressToast(options) {
-        this.debug('Creating transaction progress toast:', options?.title);
-        const fn = this.ctx?.toast?.createTransactionProgress;
-        if (typeof fn === 'function') {
-            return fn(options);
-        }
-        this.warn('Transaction progress toast API unavailable');
-        return null;
-    }
-
-    /**
      * Default initialize method - subclasses should override
      * @param {boolean} readOnlyMode - true if no wallet connected
      */

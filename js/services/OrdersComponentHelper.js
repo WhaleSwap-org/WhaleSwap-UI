@@ -462,7 +462,7 @@ export class OrdersComponentHelper {
             }
 
             const approvalNeeded = buyTokenAllowance.lt(order.buyAmount);
-            progressToast = this.component.createTransactionProgressToast({
+            progressToast = this.component.ctx.toast.createTransactionProgress({
                 title: `Filling Order #${normalizedOrderId}`,
                 successTitle: 'Order Filled',
                 failureTitle: 'Order Fill Failed',
@@ -479,10 +479,6 @@ export class OrdersComponentHelper {
                     { id: 'confirm-fill-order', label: 'Confirm fill on-chain', status: 'pending' },
                 ],
             });
-
-            if (!progressToast) {
-                throw new Error('Transaction progress toast unavailable');
-            }
 
             if (approvalNeeded) {
                 try {

@@ -983,7 +983,7 @@ export class CreateOrder extends BaseComponent {
                 sellAmountWei,
             });
             const defaultSummary = 'Complete the steps below in your wallet and on-chain.';
-            const progressToast = this.createTransactionProgressToast({
+            const progressToast = this.ctx.toast.createTransactionProgress({
                 title: 'Creating Order',
                 successTitle: 'Order Created',
                 failureTitle: 'Order Creation Failed',
@@ -1000,10 +1000,6 @@ export class CreateOrder extends BaseComponent {
                     { id: 'confirm-order', label: 'Confirm order on-chain', status: 'pending' },
                 ],
             });
-
-            if (!progressToast) {
-                throw new Error('Transaction progress toast unavailable');
-            }
 
             for (const requirement of approvalRequirements) {
                 if (!requirement.needsApproval) {
@@ -1160,21 +1156,6 @@ export class CreateOrder extends BaseComponent {
         } finally {
             this.isSubmitting = false;
             this.updateCreateButtonState();
-        }
-    }
-
-    async checkAllowance(tokenAddress, owner, amount) {
-        try {
-            const tokenContract = new ethers.Contract(
-                tokenAddress,
-                ['function allowance(address owner, address spender) view returns (uint256)'],
-                this.provider
-            );
-            const allowance = await tokenContract.allowance(owner, this.contract.address);
-            return allowance.gte(amount);
-        } catch (error) {
-            this.error('Error checking allowance:', error);
-            return false;
         }
     }
 
@@ -2064,77 +2045,6 @@ export class CreateOrder extends BaseComponent {
             status: 'completed',
             detail: 'Approved',
         });
-    }
-
-    // Add new helper method for user-friendly error messages
-    getUserFriendlyError(error) {
-        // Check for common error codes and messages
-        if (error.code === 4001 || error.code === 'ACTION_REJECTED') {
-            return 'Transaction was declined';
-        }
-        
-        // Handle timeout specifically
-        if (error.message?.includes('Transaction timeout')) {
-            return 'Transaction timed out. Please check your wallet and try again.';
-        }
-        
-        // Handle on-chain failures
-        if (error.message?.includes('Transaction failed on-chain')) {
-            return 'Transaction failed on-chain. Please check your balance and try again.';
-        }
-        
-        // Handle contract revert errors with detailed messages
-        if (error.code === -32603 && error.data?.message) {
-            return error.data.message;
-        }
-        
-        // Handle other specific error cases
-        if (error.message?.includes('insufficient funds')) {
-            return 'Insufficient funds for gas fees';
-        }
-        if (error.message?.includes('nonce')) {
-            return 'Transaction error - please refresh and try again';
-        }
-        if (error.message?.includes('gas required exceeds allowance')) {
-            return 'Transaction requires too much gas';
-        }
-        
-        // Try to extract error from ethers error structure
-        if (error.error?.data?.message) {
-            return error.error.data.message;
-        }
-        
-        // Default generic message
-        return 'Transaction failed - please try again';
-    }
-
-    // Helper method to verify transaction status
-    async verifyTransactionStatus(txHash) {
-        try {
-            const provider = walletManager.getProvider();
-            if (!provider) {
-                throw new Error('Provider not available');
-            }
-
-            // Wait a bit for transaction to be mined
-            await new Promise(resolve => setTimeout(resolve, 2000));
-
-            // Get transaction receipt
-            const receipt = await provider.getTransactionReceipt(txHash);
-            
-            if (!receipt) {
-                throw new Error('Transaction not found on-chain');
-            }
-
-            if (receipt.status === 0) {
-                throw new Error('Transaction failed on-chain');
-            }
-
-            return receipt;
-        } catch (error) {
-            this.debug('Transaction verification failed:', error);
-            throw error;
-        }
     }
 
     // Update the fee display in the UI
