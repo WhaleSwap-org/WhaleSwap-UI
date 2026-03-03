@@ -6,7 +6,9 @@ const UNKNOWN_SYMBOL = 'UNKNOWN';
 const PREFERRED_SYMBOL_SUFFIXES = {
     137: {
         // Polygon PoS LINK
-        '0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39': 'pol'
+        '0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39': 'pol',
+        // Polygon PoS USDC
+        '0x2791bca1f2de4661ed88a30c99a7a9449aa84174': 'pol'
     }
 };
 

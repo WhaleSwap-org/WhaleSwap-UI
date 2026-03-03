@@ -245,7 +245,8 @@ export class MyOrders extends BaseComponent {
         return Math.ceil(this.totalOrders / pageSize);
     }
 
-    // Keep the setupTable method as is since it's specific to MyOrders view
+    // TODO: Migrate this custom table/filter setup to shared OrdersTableRenderer
+    // once renderer options cover MyOrders-specific header order, defaults, and refresh controls.
     async setupTable() {
         // Store current filter state before rebuilding table
         const existingCheckbox = this.container.querySelector('#fillable-orders-toggle');
