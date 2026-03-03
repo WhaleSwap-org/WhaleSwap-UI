@@ -77,9 +77,15 @@ export function getExplorerUrl(address) {
 export function getTransactionExplorerUrl(txHash, chainId = null) {
     if (!txHash) return '#';
 
-    const networkConfig = chainId !== null && chainId !== undefined
-        ? getNetworkConfig(chainId)
-        : getNetworkConfig();
+    let networkConfig = null;
+    try {
+        networkConfig = chainId !== null && chainId !== undefined
+            ? getNetworkConfig(chainId)
+            : getNetworkConfig();
+    } catch (error) {
+        console.warn('[orderUtils] Failed to resolve transaction explorer network', error);
+        return '#';
+    }
 
     if (!networkConfig?.explorer) {
         console.warn('[orderUtils] Transaction explorer URL not configured');
