@@ -293,14 +293,15 @@ export class WebSocketService {
      * @returns {Promise<number|null>} Current chain timestamp in seconds, or `null` if sync failed.
      */
     async ensureChainTimeInitialized() {
-        const needsBootstrap = !this.hasChainTime() ||
+        const hasCachedChainTime = this.hasChainTime();
+        const needsBootstrap = !hasCachedChainTime ||
             this.getChainTimeAgeMs() > this.chainTimeMaxAgeMs;
 
         if (needsBootstrap) {
             const lastFailureAt = this.lastChainTimeBootstrapFailureAtMonotonicMs;
             if (lastFailureAt !== null) {
                 const msSinceLastFailure = this.getMonotonicNowMs() - lastFailureAt;
-                if (msSinceLastFailure < this.chainTimeRetryCooldownMs) {
+                if (hasCachedChainTime && msSinceLastFailure < this.chainTimeRetryCooldownMs) {
                     return this.getCurrentTimestamp();
                 }
             }
