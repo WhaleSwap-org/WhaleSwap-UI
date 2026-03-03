@@ -223,7 +223,7 @@ export class Cleanup extends BaseComponent {
 
             // Get all orders from WebSocket cache
             const orders = this.webSocket.getOrders();
-            await this.webSocket.ensureFreshChainTime();
+            await this.webSocket.ensureChainTimeInitialized();
             const currentTime = this.webSocket.getCurrentTimestamp();
             
             // Filter eligible orders (defensive against missing timings)
@@ -407,7 +407,7 @@ export class Cleanup extends BaseComponent {
             this.cleanupButton.textContent = 'Cleaning...';
 
             const orders = this.webSocket.getOrders();
-            await this.webSocket.ensureFreshChainTime(0);
+            await this.webSocket.ensureChainTimeInitialized();
             const currentTime = this.webSocket.getCurrentTimestamp();
             const eligibleOrders = orders.filter(order => {
                 const graceEndsAt = order?.timings?.graceEndsAt;

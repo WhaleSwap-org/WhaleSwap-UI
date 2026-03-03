@@ -122,7 +122,7 @@ export class ViewOrders extends BaseComponent {
                 Array.from(ws.tokenCache.values()),
                 this.ctx?.getWalletChainId?.()
             );
-            await ws.ensureFreshChainTime();
+            await ws.ensureChainTimeInitialized();
             let ordersToDisplay = Array.from(ws.orderCache.values());
             
             // Apply token filters

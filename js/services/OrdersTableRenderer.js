@@ -522,7 +522,7 @@ export class OrdersTableRenderer {
             const order = ws.orderCache.get(Number(orderId));
             if (!order) return;
 
-            await ws.ensureFreshChainTime();
+            await ws.ensureChainTimeInitialized();
             const currentTime = ws.getCurrentTimestamp();
             const expiresAt = order?.timings?.expiresAt;
             const timeDiff = Number.isFinite(currentTime) && typeof expiresAt === 'number'
