@@ -21,6 +21,7 @@ export class ContractParams extends BaseComponent {
         this.RECONNECT_TIMEOUT_MS = 45000;
         this.RECONNECT_RETRY_LIMIT = 1;
         this.feeConfigUpdatedHandler = null;
+        this.contractDisabledHandler = null;
     }
 
     setupFeeConfigSubscription(ws) {
@@ -49,6 +50,46 @@ export class ContractParams extends BaseComponent {
         ws.subscribe('FeeConfigUpdated', this.feeConfigUpdatedHandler);
     }
 
+    setupContractDisabledSubscription(ws) {
+        if (!ws?.subscribe) {
+            return;
+        }
+
+        if (!this.contractDisabledHandler) {
+            this.contractDisabledHandler = () => {
+                this.debug('ContractDisabled received, updating contract state display');
+                this.applyContractDisabledState();
+            };
+        }
+
+        if (ws.unsubscribe) {
+            ws.unsubscribe('ContractDisabled', this.contractDisabledHandler);
+        }
+        ws.subscribe('ContractDisabled', this.contractDisabledHandler);
+    }
+
+    applyContractDisabledState() {
+        if (!this.cachedParams) {
+            if (this.container?.classList?.contains('active') && !this.isInitializing) {
+                this.initialize().catch((error) => {
+                    this.debug('Failed to refresh contract parameters after ContractDisabled:', error);
+                });
+            }
+            return;
+        }
+
+        this.cachedParams = {
+            ...this.cachedParams,
+            isDisabled: true
+        };
+        this.lastFetchTime = Date.now();
+
+        const paramsContainer = this.container?.querySelector?.('.params-container');
+        if (paramsContainer) {
+            paramsContainer.innerHTML = this.generateParametersHTML(this.cachedParams);
+        }
+    }
+
     async initialize(readOnlyMode = true) {
         if (this.isInitializing) {
             this.debug('Already initializing, skipping...');
@@ -60,6 +101,7 @@ export class ContractParams extends BaseComponent {
         try {
             const ws = this.ctx.getWebSocket();
             this.setupFeeConfigSubscription(ws);
+            this.setupContractDisabledSubscription(ws);
 
             const now = Date.now();
             if (this.cachedParams && (now - this.lastFetchTime) < this.CACHE_DURATION) {
@@ -491,6 +533,9 @@ export class ContractParams extends BaseComponent {
         const ws = this.ctx.getWebSocket();
         if (ws?.unsubscribe && this.feeConfigUpdatedHandler) {
             ws.unsubscribe('FeeConfigUpdated', this.feeConfigUpdatedHandler);
+        }
+        if (ws?.unsubscribe && this.contractDisabledHandler) {
+            ws.unsubscribe('ContractDisabled', this.contractDisabledHandler);
         }
         // Don't clear the cache on cleanup
         this.isInitialized = false;
