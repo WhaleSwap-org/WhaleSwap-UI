@@ -9,6 +9,12 @@ const PREFERRED_SYMBOL_SUFFIXES = {
         '0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39': 'pol',
         // Polygon PoS USDC
         '0x2791bca1f2de4661ed88a30c99a7a9449aa84174': 'pol'
+    },
+    80002: {
+        // Amoy Token A
+        '0xa9840bb54084091dbfaa9e2e0925317f870da0d8': 'amoy',
+        // Amoy Token B
+        '0xc73c204a6ebee4b53c913894749a22db169454e7': 'amoy'
     }
 };
 
@@ -86,7 +92,11 @@ export function buildTokenDisplaySymbolMap(tokens = [], chainIdCandidate = null,
     for (const entries of symbolBuckets.values()) {
         if (entries.length === 1) {
             const entry = entries[0];
-            displaySymbolMap.set(entry.address, entry.symbol);
+            const preferredSuffix = getPreferredSuffix(chainId, entry.address, preferredSymbolSuffixes);
+            const displaySymbol = preferredSuffix
+                ? `${entry.symbol}.${preferredSuffix}`
+                : entry.symbol;
+            displaySymbolMap.set(entry.address, displaySymbol);
             continue;
         }
 

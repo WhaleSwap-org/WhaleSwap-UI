@@ -32,6 +32,17 @@ describe('tokenDisplay utilities', () => {
         expect(map.get(TOKEN_B)).toBe('WETH');
     });
 
+    it('applies suffix mapping even when symbol is unique', () => {
+        const tokens = [
+            { address: TOKEN_A, symbol: 'AAA' },
+            { address: TOKEN_C, symbol: 'USDC' }
+        ];
+
+        const map = buildTokenDisplaySymbolMap(tokens, 137, TEST_SUFFIXES);
+        expect(map.get(TOKEN_A)).toBe('AAA.issuer');
+        expect(map.get(TOKEN_C)).toBe('USDC');
+    });
+
     it('applies issuer postfix from provided mapping for symbol collisions', () => {
         const tokens = [
             { address: TOKEN_A, symbol: 'AAA' },
