@@ -283,10 +283,10 @@ export class WebSocketService {
     async ensureChainTimeInitialized() {
         if (!this.hasChainTime()) {
             const lastFailureAt = this.lastChainTimeBootstrapFailureAtMonotonicMs;
-            if (Number.isFinite(lastFailureAt)) {
+            if (lastFailureAt !== null) {
                 const msSinceLastFailure = this.getMonotonicNowMs() - lastFailureAt;
                 if (msSinceLastFailure < this.chainTimeRetryCooldownMs) {
-                    return this.getCurrentTimestamp();
+                    return null;
                 }
             }
             await this.bootstrapChainTime();
