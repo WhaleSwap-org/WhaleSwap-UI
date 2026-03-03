@@ -47,6 +47,7 @@ export class WebSocketService {
         this.lastKnownChainTimestamp = null;
         this.chainTimeSyncedAtMonotonicMs = null;
         this.chainTimeSyncPromise = null;
+        this.chainTimeMaxAgeMs = 120000;
         this.chainTimeRetryCooldownMs = 10000;
         this.lastChainTimeBootstrapFailureAtMonotonicMs = null;
 
@@ -222,6 +223,17 @@ export class WebSocketService {
     }
 
     /**
+     * Age of the cached chain timestamp.
+     * @returns {number} Milliseconds since last successful bootstrap, or `Infinity` if unavailable.
+     */
+    getChainTimeAgeMs() {
+        if (!this.hasChainTime()) {
+            return Infinity;
+        }
+        return Math.max(0, this.getMonotonicNowMs() - this.chainTimeSyncedAtMonotonicMs);
+    }
+
+    /**
      * Bootstrap the chain-time cache from the latest block timestamp.
      * @returns {Promise<number|null>} Synced chain timestamp in seconds, or `null` on failure.
      */
@@ -281,12 +293,15 @@ export class WebSocketService {
      * @returns {Promise<number|null>} Current chain timestamp in seconds, or `null` if sync failed.
      */
     async ensureChainTimeInitialized() {
-        if (!this.hasChainTime()) {
+        const needsBootstrap = !this.hasChainTime() ||
+            this.getChainTimeAgeMs() > this.chainTimeMaxAgeMs;
+
+        if (needsBootstrap) {
             const lastFailureAt = this.lastChainTimeBootstrapFailureAtMonotonicMs;
             if (lastFailureAt !== null) {
                 const msSinceLastFailure = this.getMonotonicNowMs() - lastFailureAt;
                 if (msSinceLastFailure < this.chainTimeRetryCooldownMs) {
-                    return null;
+                    return this.getCurrentTimestamp();
                 }
             }
             await this.bootstrapChainTime();

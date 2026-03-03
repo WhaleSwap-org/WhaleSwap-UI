@@ -409,9 +409,12 @@ export class Cleanup extends BaseComponent {
             const orders = this.webSocket.getOrders();
             await this.webSocket.ensureChainTimeInitialized();
             const currentTime = this.webSocket.getCurrentTimestamp();
+            if (!Number.isFinite(currentTime)) {
+                throw new Error('Unable to verify current chain time. Please try again in a moment.');
+            }
             const eligibleOrders = orders.filter(order => {
                 const graceEndsAt = order?.timings?.graceEndsAt;
-                return Number.isFinite(currentTime) && typeof graceEndsAt === 'number' && currentTime > graceEndsAt;
+                return typeof graceEndsAt === 'number' && currentTime > graceEndsAt;
             });
 
             if (eligibleOrders.length === 0) {
