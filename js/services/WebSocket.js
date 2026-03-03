@@ -42,6 +42,7 @@ export class WebSocketService {
         // Periodic websocket health checks catch stale-open sockets that never emit close.
         this.healthCheckIntervalMs = 15000;
         this.healthCheckTimeoutMs = 5000;
+        this.connectTimeoutMs = 10000;
         this.healthCheckTimer = null;
         this.healthCheckPromise = null;
         
@@ -161,6 +162,19 @@ export class WebSocketService {
         });
 
         return await this.healthCheckPromise;
+    }
+
+    async handleInitializationFailure(error, allowReconnect) {
+        this.error('Initialization failed:', {
+            message: error.message,
+            stack: error.stack
+        });
+
+        if (!allowReconnect) {
+            return false;
+        }
+
+        return this.reconnect('initialize-failed');
     }
 
     resetContractDisabledStateCache() {
@@ -485,7 +499,11 @@ export class WebSocketService {
         }
 
         if (this.initializationPromise) {
-            return await this.initializationPromise;
+            try {
+                return await this.initializationPromise;
+            } catch (error) {
+                return await this.handleInitializationFailure(error, allowReconnect);
+            }
         }
 
         let initializationPromise = null;
@@ -506,12 +524,25 @@ export class WebSocketService {
                         this.provider = new ethers.providers.WebSocketProvider(url);
                         
                         // Wait for provider to be ready
-                        await this.provider.ready;
+                        await this.withTimeout(
+                            this.provider.ready,
+                            this.connectTimeoutMs,
+                            `WebSocket connect timeout for ${url}`
+                        );
                         this.debug('Connected to WebSocket:', url);
                         connected = true;
                         break;
                     } catch (error) {
                         this.debug('Failed to connect to WebSocket URL:', url, error);
+                        try {
+                            if (this.provider?._websocket) {
+                                this.provider._websocket.onopen = null;
+                                this.provider._websocket.onerror = null;
+                                this.provider._websocket.onclose = null;
+                                this.provider._websocket.close();
+                            }
+                        } catch (_) {}
+                        this.provider = null;
                     }
                 }
                 
@@ -585,14 +616,7 @@ export class WebSocketService {
             this.initializationPromise = initializationPromise;
             return await initializationPromise;
         } catch (error) {
-            this.error('Initialization failed:', {
-                message: error.message,
-                stack: error.stack
-            });
-            if (!allowReconnect) {
-                return false;
-            }
-            return this.reconnect('initialize-failed');
+            return await this.handleInitializationFailure(error, allowReconnect);
         } finally {
             if (this.initializationPromise === initializationPromise) {
                 this.initializationPromise = null;
@@ -602,9 +626,6 @@ export class WebSocketService {
 
     async waitForInitialization() {
         if (this.isInitialized) return true;
-        if (this.initializationPromise) {
-            return await this.initializationPromise;
-        }
         return this.initialize();
     }
 
@@ -1515,6 +1536,8 @@ export class WebSocketService {
             return await this.reconnectPromise;
         }
 
+        let retryCycleDelay = null;
+
         this.reconnectPromise = (async () => {
             this.stopHealthMonitor();
             this.healthCheckPromise = null;
@@ -1562,11 +1585,15 @@ export class WebSocketService {
                 }
             }
 
-            this.debug('Max reconnection attempts reached; waiting for next health check cycle');
+            retryCycleDelay = this.reconnectDelay * Math.pow(2, this.maxReconnectAttempts - 1);
+            this.debug(`Max reconnection attempts reached; scheduling another reconnect cycle in ${retryCycleDelay}ms`);
             this.reconnectAttempts = 0;
             return false;
         })().finally(() => {
             this.reconnectPromise = null;
+            if (retryCycleDelay !== null && !this.isInitialized && !this.reconnectTimer) {
+                this.queueReconnect('retry-cycle', retryCycleDelay);
+            }
         });
 
         return await this.reconnectPromise;
