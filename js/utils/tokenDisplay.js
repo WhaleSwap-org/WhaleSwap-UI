@@ -43,8 +43,8 @@ function getTokenSymbol(token) {
     return trimmed || UNKNOWN_SYMBOL;
 }
 
-function getPreferredSuffix(chainId, tokenAddress) {
-    const chainConfig = PREFERRED_SYMBOL_SUFFIXES[chainId];
+function getPreferredSuffix(chainId, tokenAddress, preferredSymbolSuffixes = PREFERRED_SYMBOL_SUFFIXES) {
+    const chainConfig = preferredSymbolSuffixes?.[chainId];
     if (!chainConfig) return null;
     return chainConfig[normalizeAddress(tokenAddress)] || null;
 }
@@ -60,7 +60,7 @@ export function resolveDisplayChainId(chainIdCandidate = null) {
     return 137;
 }
 
-export function buildTokenDisplaySymbolMap(tokens = [], chainIdCandidate = null) {
+export function buildTokenDisplaySymbolMap(tokens = [], chainIdCandidate = null, preferredSymbolSuffixes = PREFERRED_SYMBOL_SUFFIXES) {
     const chainId = resolveDisplayChainId(chainIdCandidate);
     const symbolBuckets = new Map();
     const displaySymbolMap = new Map();
@@ -89,7 +89,7 @@ export function buildTokenDisplaySymbolMap(tokens = [], chainIdCandidate = null)
         }
 
         entries.forEach((entry) => {
-            const preferredSuffix = getPreferredSuffix(chainId, entry.address);
+            const preferredSuffix = getPreferredSuffix(chainId, entry.address, preferredSymbolSuffixes);
             const displaySymbol = preferredSuffix
                 ? `${entry.symbol}.${preferredSuffix}`
                 : entry.symbol;

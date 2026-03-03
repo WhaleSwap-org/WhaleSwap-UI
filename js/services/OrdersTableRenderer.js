@@ -99,7 +99,8 @@ export class OrdersTableRenderer {
         const ws = this.component.ctx.getWebSocket();
         const tokens = Array.from(ws.tokenCache.values());
         const chainId = this.component.ctx?.getWalletChainId?.();
-        const tokenDisplaySymbolMap = buildTokenDisplaySymbolMap(tokens, chainId);
+        const preferredSymbolSuffixes = this.component?.preferredSymbolSuffixes;
+        const tokenDisplaySymbolMap = buildTokenDisplaySymbolMap(tokens, chainId, preferredSymbolSuffixes);
         this.component.tokenDisplaySymbolMap = tokenDisplaySymbolMap;
 
         const displayTokens = tokens

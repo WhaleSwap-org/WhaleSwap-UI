@@ -3,9 +3,14 @@ import { CreateOrder } from '../js/components/CreateOrder.js';
 import { buildTokenDisplaySymbolMap } from '../js/utils/tokenDisplay.js';
 import { walletManager } from '../js/services/WalletManager.js';
 
-const POLYGON_LINK_POS = '0x53E0bca35eC356BD5ddDFebBD1Fc0fD03FaBad39';
-const OTHER_LINK = '0x1111111111111111111111111111111111111111';
-const USDC = '0x2222222222222222222222222222222222222222';
+const TOKEN_A = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const TOKEN_B = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+const TOKEN_C = '0xcccccccccccccccccccccccccccccccccccccccc';
+const TEST_SUFFIXES = {
+    137: {
+        [TOKEN_A]: 'issuer'
+    }
+};
 
 function createContextStub() {
     return {
@@ -50,11 +55,11 @@ describe('CreateOrder display symbol wiring', () => {
     it('renders displaySymbol labels in token list sorted order', () => {
         const component = createComponent();
         const tokens = [
-            { address: POLYGON_LINK_POS, symbol: 'LINK', name: 'Chainlink PoS', balance: '1', iconUrl: 'fallback' },
-            { address: OTHER_LINK, symbol: 'LINK', name: 'Other Link', balance: '1', iconUrl: 'fallback' },
-            { address: USDC, symbol: 'USDC', name: 'USD Coin', balance: '1', iconUrl: 'fallback' }
+            { address: TOKEN_A, symbol: 'AAA', name: 'Alpha Issuer', balance: '1', iconUrl: 'fallback' },
+            { address: TOKEN_B, symbol: 'AAA', name: 'Alpha Default', balance: '1', iconUrl: 'fallback' },
+            { address: TOKEN_C, symbol: 'USDC', name: 'USD Coin', balance: '1', iconUrl: 'fallback' }
         ];
-        component.tokenDisplaySymbolMap = buildTokenDisplaySymbolMap(tokens, '0x89');
+        component.tokenDisplaySymbolMap = buildTokenDisplaySymbolMap(tokens, '0x89', TEST_SUFFIXES);
 
         const listContainer = document.createElement('div');
         component.displayTokens(tokens, listContainer, 'buy');
@@ -62,27 +67,27 @@ describe('CreateOrder display symbol wiring', () => {
         const labels = Array.from(listContainer.querySelectorAll('.token-item-symbol'))
             .map((element) => element.textContent.trim());
 
-        expect(labels).toEqual(['LINK', 'LINK.pol', 'USDC']);
+        expect(labels).toEqual(['AAA', 'AAA.issuer', 'USDC']);
     });
 
     it('allows searching by displaySymbol', async () => {
         const component = createComponent();
         const tokens = [
-            { address: POLYGON_LINK_POS, symbol: 'LINK', name: 'Chainlink PoS', balance: '1', iconUrl: 'fallback' },
-            { address: OTHER_LINK, symbol: 'LINK', name: 'Other Link', balance: '1', iconUrl: 'fallback' }
+            { address: TOKEN_A, symbol: 'AAA', name: 'Alpha Issuer', balance: '1', iconUrl: 'fallback' },
+            { address: TOKEN_B, symbol: 'AAA', name: 'Alpha Default', balance: '1', iconUrl: 'fallback' }
         ];
-        component.tokenDisplaySymbolMap = buildTokenDisplaySymbolMap(tokens, '0x89');
+        component.tokenDisplaySymbolMap = buildTokenDisplaySymbolMap(tokens, '0x89', TEST_SUFFIXES);
         component.tokens = tokens.map((token) => component.normalizeTokenDisplay(token));
         component.tokensLoading = false;
         component.renderTokenIcon = vi.fn();
 
-        await component.handleTokenSearch('pol', 'sell');
+        await component.handleTokenSearch('issuer', 'sell');
 
         const resultSymbols = Array.from(
             document.querySelectorAll('#sellContractResult .token-item-symbol')
         ).map((element) => element.textContent.trim());
 
-        expect(resultSymbols).toEqual(['LINK.pol']);
+        expect(resultSymbols).toEqual(['AAA.issuer']);
     });
 
     it('uses displaySymbol in zero-balance warning for sell selection', async () => {
@@ -93,21 +98,21 @@ describe('CreateOrder display symbol wiring', () => {
         vi.spyOn(walletManager, 'isWalletConnected').mockReturnValue(true);
 
         const token = {
-            address: POLYGON_LINK_POS,
-            symbol: 'LINK',
-            displaySymbol: 'LINK.pol',
-            name: 'Chainlink PoS',
+            address: TOKEN_A,
+            symbol: 'AAA',
+            displaySymbol: 'AAA.issuer',
+            name: 'Alpha Issuer',
             balance: '0',
             iconUrl: 'fallback'
         };
         component.tokens = [token];
 
         const tokenItem = document.createElement('div');
-        tokenItem.dataset.address = POLYGON_LINK_POS;
+        tokenItem.dataset.address = TOKEN_A;
 
         await component.handleTokenItemClick('sell', tokenItem);
 
         expect(warningSpy).toHaveBeenCalledTimes(1);
-        expect(warningSpy.mock.calls[0][0]).toContain('LINK.pol has no balance available for selling');
+        expect(warningSpy.mock.calls[0][0]).toContain('AAA.issuer has no balance available for selling');
     });
 });

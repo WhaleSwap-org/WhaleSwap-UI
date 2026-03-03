@@ -5,6 +5,15 @@ import {
     resolveDisplayChainId
 } from '../js/utils/tokenDisplay.js';
 
+const TOKEN_A = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const TOKEN_B = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+const TOKEN_C = '0xcccccccccccccccccccccccccccccccccccccccc';
+const TEST_SUFFIXES = {
+    137: {
+        [TOKEN_A]: 'issuer'
+    }
+};
+
 describe('tokenDisplay utilities', () => {
     it('parses numeric and hex chain IDs', () => {
         expect(resolveDisplayChainId(137)).toBe(137);
@@ -14,39 +23,35 @@ describe('tokenDisplay utilities', () => {
 
     it('keeps unique symbols unchanged', () => {
         const tokens = [
-            { address: '0x1111111111111111111111111111111111111111', symbol: 'USDC' },
-            { address: '0x2222222222222222222222222222222222222222', symbol: 'WETH' }
+            { address: TOKEN_A, symbol: 'USDC' },
+            { address: TOKEN_B, symbol: 'WETH' }
         ];
 
         const map = buildTokenDisplaySymbolMap(tokens, 137);
-        expect(map.get(tokens[0].address.toLowerCase())).toBe('USDC');
-        expect(map.get(tokens[1].address.toLowerCase())).toBe('WETH');
+        expect(map.get(TOKEN_A)).toBe('USDC');
+        expect(map.get(TOKEN_B)).toBe('WETH');
     });
 
-    it('applies issuer postfix only for mapped collisions', () => {
-        const polygonPosLink = '0x53E0bca35eC356BD5ddDFebBD1Fc0fD03FaBad39';
-        const otherLink = '0x1111111111111111111111111111111111111111';
+    it('applies issuer postfix from provided mapping for symbol collisions', () => {
         const tokens = [
-            { address: polygonPosLink, symbol: 'LINK' },
-            { address: otherLink, symbol: 'LINK' }
+            { address: TOKEN_A, symbol: 'AAA' },
+            { address: TOKEN_B, symbol: 'AAA' }
         ];
 
-        const map = buildTokenDisplaySymbolMap(tokens, '0x89');
-        expect(map.get(polygonPosLink.toLowerCase())).toBe('LINK.pol');
-        expect(map.get(otherLink.toLowerCase())).toBe('LINK');
+        const map = buildTokenDisplaySymbolMap(tokens, '0x89', TEST_SUFFIXES);
+        expect(map.get(TOKEN_A)).toBe('AAA.issuer');
+        expect(map.get(TOKEN_B)).toBe('AAA');
     });
 
     it('does not append address suffix for unmapped collisions', () => {
-        const tokenA = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-        const tokenB = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
         const tokens = [
-            { address: tokenA, symbol: 'ABC' },
-            { address: tokenB, symbol: 'ABC' }
+            { address: TOKEN_B, symbol: 'ABC' },
+            { address: TOKEN_C, symbol: 'ABC' }
         ];
 
-        const map = buildTokenDisplaySymbolMap(tokens, 137);
-        expect(map.get(tokenA)).toBe('ABC');
-        expect(map.get(tokenB)).toBe('ABC');
+        const map = buildTokenDisplaySymbolMap(tokens, 137, TEST_SUFFIXES);
+        expect(map.get(TOKEN_B)).toBe('ABC');
+        expect(map.get(TOKEN_C)).toBe('ABC');
     });
 
     it('prefers map value, then token displaySymbol, then symbol', () => {
