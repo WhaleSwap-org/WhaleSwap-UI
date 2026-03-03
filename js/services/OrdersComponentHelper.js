@@ -391,8 +391,11 @@ export class OrdersComponentHelper {
                 throw new Error(`Order is not active (status: ${getOrderStatusText(currentOrderStatus)})`);
             }
 
-            await ws.ensureFreshChainTime(0);
+            await ws.ensureChainTimeInitialized();
             const now = ws.getCurrentTimestamp();
+            if (!Number.isFinite(now)) {
+                throw new Error('Unable to verify current chain time. Please try again in a moment.');
+            }
             const expiryTime = ws.getOrderExpiryTime(order);
             if (Number.isFinite(expiryTime) && now > expiryTime) {
                 throw new Error('Order has expired');
