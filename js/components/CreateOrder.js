@@ -12,6 +12,7 @@ import { tokenIconService } from '../services/TokenIconService.js';
 import { generateTokenIconHTML, getFallbackIconData } from '../utils/tokenIcons.js';
 import { handleTransactionError } from '../utils/ui.js';
 import { getExplorerUrl } from '../utils/orderUtils.js';
+import { buildTokenDisplaySymbolMap, getDisplaySymbol } from '../utils/tokenDisplay.js';
 
 export class CreateOrder extends BaseComponent {
     constructor() {
@@ -42,6 +43,7 @@ export class CreateOrder extends BaseComponent {
         this.amountInputListeners = {};
         this.boundTooltipEscapeHandler = null;
         this.tooltipCleanupCallbacks = [];
+        this.tokenDisplaySymbolMap = new Map();
         
         // Initialize logger
         const logger = createLogger('CREATE_ORDER');
@@ -124,6 +126,7 @@ export class CreateOrder extends BaseComponent {
         this.feeToken = null;
         this.isContractDisabled = false;
         this.contractStateReadError = false;
+        this.tokenDisplaySymbolMap = new Map();
         if (clearSelections) {
             this.clearSelectedTokens();
         }
@@ -869,7 +872,8 @@ export class CreateOrder extends BaseComponent {
 
             // Check if the same token is selected for both buy and sell
             if (this.sellToken.address.toLowerCase() === this.buyToken.address.toLowerCase()) {
-                this.showError(`Cannot create an order with the same token (${this.sellToken.symbol}) for both buy and sell. Please select different tokens.`);
+                const sellTokenLabel = this.sellToken.displaySymbol || this.sellToken.symbol;
+                this.showError(`Cannot create an order with the same token (${sellTokenLabel}) for both buy and sell. Please select different tokens.`);
                 return;
             }
 
@@ -881,12 +885,14 @@ export class CreateOrder extends BaseComponent {
                 ]);
 
                 if (!sellTokenAllowed) {
-                    this.showError(`Sell token ${this.sellToken.symbol} is not allowed for trading. Please select an allowed token.`);
+                    const sellTokenLabel = this.sellToken.displaySymbol || this.sellToken.symbol;
+                    this.showError(`Sell token ${sellTokenLabel} is not allowed for trading. Please select an allowed token.`);
                     return;
                 }
 
                 if (!buyTokenAllowed) {
-                    this.showError(`Buy token ${this.buyToken.symbol} is not allowed for trading. Please select an allowed token.`);
+                    const buyTokenLabel = this.buyToken.displaySymbol || this.buyToken.symbol;
+                    this.showError(`Buy token ${buyTokenLabel} is not allowed for trading. Please select an allowed token.`);
                     return;
                 }
 
@@ -1123,6 +1129,10 @@ export class CreateOrder extends BaseComponent {
         try {
             this.debug('Loading allowed wallet tokens...');
             const allowedTokens = await getAllWalletTokens();
+            this.tokenDisplaySymbolMap = buildTokenDisplaySymbolMap(
+                allowedTokens,
+                this.ctx?.getWalletChainId?.()
+            );
             const normalizedAllowed = allowedTokens.map(token => this.normalizeTokenDisplay(token));
 
             this.tokens = normalizedAllowed; // Keep allowed tokens for backward compatibility
@@ -1439,7 +1449,7 @@ export class CreateOrder extends BaseComponent {
                                             </div>
                                             <div class="token-item-info">
                                                 <div class="token-item-symbol">
-                                                    ${token.symbol}
+                                                    ${token.displaySymbol || token.symbol}
                                                 </div>
                                                 <div class="token-item-name">
                                                     ${token.name}
@@ -1501,7 +1511,8 @@ export class CreateOrder extends BaseComponent {
 
                 const searchResults = searchSource.filter(token => 
                     token.name.toLowerCase().includes(searchTerm) ||
-                    token.symbol.toLowerCase().includes(searchTerm)
+                    token.symbol.toLowerCase().includes(searchTerm) ||
+                    (token.displaySymbol || '').toLowerCase().includes(searchTerm)
                 );
 
                 if (searchResults.length > 0) {
@@ -1534,7 +1545,7 @@ export class CreateOrder extends BaseComponent {
                                                 </div>
                                                 <div class="token-item-info">
                                                     <div class="token-item-symbol">
-                                                        ${token.symbol}
+                                                        ${token.displaySymbol || token.symbol}
                                                     </div>
                                                     <div class="token-item-name">
                                                         ${token.name}
@@ -1605,7 +1616,7 @@ export class CreateOrder extends BaseComponent {
         // Clear existing content
         container.innerHTML = '';
 
-        // Sort tokens: tokens with balance first, then alphabetically by symbol
+        // Sort tokens: tokens with balance first, then alphabetically by display symbol
         const sortedTokens = [...tokens]
             .map(token => this.normalizeTokenDisplay(token))
             .sort((a, b) => {
@@ -1616,8 +1627,8 @@ export class CreateOrder extends BaseComponent {
             if (aBalance > 0 && bBalance === 0) return -1;
             if (aBalance === 0 && bBalance > 0) return 1;
             
-            // Then sort alphabetically by symbol
-            return a.symbol.localeCompare(b.symbol);
+            // Then sort alphabetically by display symbol
+            return (a.displaySymbol || a.symbol).localeCompare(b.displaySymbol || b.symbol);
         });
 
         // Add each token to the container
@@ -1625,6 +1636,7 @@ export class CreateOrder extends BaseComponent {
             const tokenElement = document.createElement('div');
             const balance = Number(token.balance) || 0;
             const hasBalance = balance > 0;
+            const tokenLabel = token.displaySymbol || token.symbol;
             
             // For buy tokens, don't grey out tokens with no balance and don't add border classes
             if (type === 'buy') {
@@ -1682,7 +1694,7 @@ export class CreateOrder extends BaseComponent {
                         </div>
                         <div class="token-item-info">
                             <div class="token-item-symbol">
-                                ${token.symbol}
+                                ${tokenLabel}
                             </div>
                             <div class="token-item-name">${token.name}</div>
                         </div>
@@ -1736,7 +1748,14 @@ export class CreateOrder extends BaseComponent {
     }
 
     normalizeTokenDisplay(token) {
-        return token;
+        if (!token || typeof token !== 'object') {
+            return token;
+        }
+
+        return {
+            ...token,
+            displaySymbol: getDisplaySymbol(token, this.tokenDisplaySymbolMap)
+        };
     }
 
     // Add helper method for token icons
@@ -2092,6 +2111,7 @@ export class CreateOrder extends BaseComponent {
             this[`${type}Token`] = {
                 address: token.address,
                 symbol: token.symbol,
+                displaySymbol: token.displaySymbol || token.symbol,
                 decimals: token.decimals || 18,
                 balance: token.balance || '0',
                 usdPrice: usdPrice
@@ -2128,7 +2148,7 @@ export class CreateOrder extends BaseComponent {
                                 }
                             </div>
                             <div class="token-info">
-                                <span class="token-symbol">${token.symbol}</span>
+                                <span class="token-symbol">${token.displaySymbol || token.symbol}</span>
                             </div>
                         </div>
                         <svg width="12" height="12" viewBox="0 0 12 12">
@@ -2207,7 +2227,8 @@ export class CreateOrder extends BaseComponent {
             if (type === 'sell') {
                 const balance = Number(token.balance) || 0;
                 if (balance <= 0) {
-                    this.showWarning(`${token.symbol} has no balance available for selling. Please select a token with a balance.`);
+                    const tokenLabel = token.displaySymbol || token.symbol;
+                    this.showWarning(`${tokenLabel} has no balance available for selling. Please select a token with a balance.`);
                     return; // Don't allow selection of tokens with zero balance for selling
                 }
             }
@@ -2397,6 +2418,7 @@ export class CreateOrder extends BaseComponent {
         const pricing = this.ctx.getPricing();
         modalContent.innerHTML = tokens.map(token => {
             const displayToken = this.normalizeTokenDisplay(token);
+            const tokenLabel = displayToken.displaySymbol || displayToken.symbol;
             const usdPrice = pricing?.getPrice(displayToken.address);
             const balance = parseFloat(displayToken.balance) || 0;
             const balanceUSD = (balance > 0 && usdPrice !== undefined) ? (balance * usdPrice).toFixed(2) : (usdPrice !== undefined ? '0.00' : 'N/A');
@@ -2406,12 +2428,12 @@ export class CreateOrder extends BaseComponent {
                     <div class="token-item-left">
                         <div class="token-icon">
                             ${displayToken.iconUrl && displayToken.iconUrl !== 'fallback' ? 
-                                `<img src="${displayToken.iconUrl}" alt="${displayToken.symbol}" class="token-icon-image">` :
-                                `<div class="token-icon-fallback">${displayToken.symbol.charAt(0)}</div>`
+                                `<img src="${displayToken.iconUrl}" alt="${tokenLabel}" class="token-icon-image">` :
+                                `<div class="token-icon-fallback">${tokenLabel.charAt(0)}</div>`
                             }
                         </div>
                         <div class="token-info">
-                            <span class="token-symbol">${displayToken.symbol}</span>
+                            <span class="token-symbol">${tokenLabel}</span>
                             <span class="token-name">${displayToken.name || ''}</span>
                         </div>
                     </div>
