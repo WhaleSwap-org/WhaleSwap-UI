@@ -1,3 +1,5 @@
+import { escapeHtmlAttribute, escapeHtmlText } from './html.js';
+
 export function setVisibility(element, isVisible) {
     if (!element) return;
     element.classList.toggle('is-hidden', !isVisible);
@@ -15,22 +17,6 @@ export const DEAL_TOOLTIP_TEXT = `Deal = Buy Value / Sell Value
 • Higher deal number is better
 • Deal > 1: better deal based on market prices
 • Deal < 1: worse deal based on market prices`;
-
-function escapeHtmlAttribute(value) {
-    return String(value)
-        .replace(/&/g, '&amp;')
-        .replace(/\r?\n/g, '&#10;')
-        .replace(/"/g, '&quot;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-}
-
-function escapeHtmlText(value) {
-    return String(value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-}
 
 function getOrderTooltipElement() {
     let tooltip = document.getElementById(ORDER_TOOLTIP_ELEMENT_ID);

@@ -17,31 +17,44 @@ const TOKEN_INFO = {
     [TOKEN_C]: { address: TOKEN_C, symbol: 'USDC', name: 'USD Coin', decimals: 6 }
 };
 
-function createWsStub({ includeCache = false } = {}) {
+function createWsStub({
+    includeCache = false,
+    tokenInfoMap = TOKEN_INFO,
+    orderStatus = 'Active',
+    currentTimestamp = 1_700_000_000,
+    canFillOrder = false
+} = {}) {
     const ws = {
-        getTokenInfo: vi.fn(async (address) => TOKEN_INFO[address.toLowerCase()] || null),
-        getOrderStatus: vi.fn(() => 'Active'),
-        getCurrentTimestamp: vi.fn(() => 1_700_000_000),
+        getTokenInfo: vi.fn(async (address) => tokenInfoMap[address.toLowerCase()] || null),
+        getOrderStatus: vi.fn(() => orderStatus),
+        getCurrentTimestamp: vi.fn(() => currentTimestamp),
         canCancelOrder: vi.fn(() => false),
-        canFillOrder: vi.fn(() => false)
+        canFillOrder: vi.fn(() => canFillOrder)
     };
 
     if (includeCache) {
         ws.tokenCache = new Map(
-            Object.values(TOKEN_INFO).map((token) => [token.address.toLowerCase(), token])
+            Object.values(tokenInfoMap).map((token) => [token.address.toLowerCase(), token])
         );
     }
 
     return ws;
 }
 
-function createContext(ws, walletAddress = MAKER) {
+function createContext(
+    ws,
+    walletAddress = MAKER,
+    {
+        pricingByToken = {},
+        estimatedTokens = []
+    } = {}
+) {
     return {
         getWebSocket: () => ws,
         getWalletChainId: () => '0x89',
         getPricing: () => ({
-            getPrice: () => undefined,
-            isPriceEstimated: () => false
+            getPrice: (token) => pricingByToken[token?.toLowerCase?.()] ?? undefined,
+            isPriceEstimated: (token) => estimatedTokens.includes(token?.toLowerCase?.())
         }),
         getWallet: () => ({
             getAccount: () => walletAddress,
@@ -71,6 +84,22 @@ function createOrder() {
             formattedSellAmount: '1.00',
             formattedBuyAmount: '1.00',
             deal: 1
+        }
+    };
+}
+
+function createFallbackOrder() {
+    return {
+        id: 2,
+        maker: MAKER,
+        taker: TAKER,
+        sellToken: TOKEN_A,
+        buyToken: TOKEN_B,
+        sellAmount: '2000000',
+        buyAmount: '500000',
+        timings: {
+            createdAt: 1_700_000_000,
+            expiresAt: 1_700_003_600
         }
     };
 }
@@ -163,5 +192,90 @@ describe('orders tabs display symbol rendering', () => {
             .map((element) => element.textContent.trim());
 
         expect(symbols).toEqual(['AAA.issuer', 'AAA']);
+    });
+
+    it('uses fallback formatting, price classes, and expiry text in ViewOrders rows', async () => {
+        document.body.innerHTML = '<div id="view-orders"></div>';
+
+        const tokenInfoMap = {
+            [TOKEN_A]: { address: TOKEN_A, symbol: 'AAA', name: 'Token A', decimals: 6 },
+            [TOKEN_B]: { address: TOKEN_B, symbol: 'BBB', name: 'Token B', decimals: 6 }
+        };
+        const ws = createWsStub({ tokenInfoMap, orderStatus: 'Active', currentTimestamp: 1_700_000_000 });
+        const component = new ViewOrders();
+        component.setContext(createContext(ws, MAKER, {
+            pricingByToken: {
+                [TOKEN_A]: 2,
+                [TOKEN_B]: 3
+            },
+            estimatedTokens: [TOKEN_A]
+        }));
+        component.tokenDisplaySymbolMap = new Map([
+            [TOKEN_A, 'AAA.issuer'],
+            [TOKEN_B, 'BBB']
+        ]);
+        component.helper.renderTokenIcon = vi.fn();
+        component.renderer.startExpiryTimer = vi.fn();
+
+        const row = await component.createOrderRow(createFallbackOrder());
+        const tokenAmounts = Array.from(row.querySelectorAll('.token-amount'))
+            .map((element) => element.textContent.trim());
+        const tokenPrices = Array.from(row.querySelectorAll('.token-price'))
+            .map((element) => element.textContent.trim());
+        const tokenPriceClasses = Array.from(row.querySelectorAll('.token-price'))
+            .map((element) => element.classList.contains('price-estimate'));
+        const expiryText = row.querySelector('td:nth-child(5)')?.textContent?.trim();
+        const dealText = row.querySelector('.deal-value')?.textContent?.trim();
+
+        expect(tokenAmounts).toEqual(['2000000', '500000']);
+        expect(tokenPrices).toEqual(['$4000000', '$1500000']);
+        expect(tokenPriceClasses).toEqual([true, false]);
+        expect(expiryText).toBe('1H 0M');
+        expect(dealText).toBe('N/A');
+    });
+
+    it('uses fallback formatting, price classes, and expiry text in TakerOrders rows', async () => {
+        document.body.innerHTML = '<div id="taker-orders"></div>';
+
+        const tokenInfoMap = {
+            [TOKEN_A]: { address: TOKEN_A, symbol: 'AAA', name: 'Token A', decimals: 6 },
+            [TOKEN_B]: { address: TOKEN_B, symbol: 'BBB', name: 'Token B', decimals: 6 }
+        };
+        const ws = createWsStub({
+            tokenInfoMap,
+            orderStatus: 'Active',
+            currentTimestamp: 1_700_000_000,
+            canFillOrder: true
+        });
+        const component = new TakerOrders();
+        component.setContext(createContext(ws, TAKER, {
+            pricingByToken: {
+                [TOKEN_A]: 2,
+                [TOKEN_B]: 3
+            },
+            estimatedTokens: [TOKEN_A]
+        }));
+        component.tokenDisplaySymbolMap = new Map([
+            [TOKEN_A, 'AAA.issuer'],
+            [TOKEN_B, 'BBB']
+        ]);
+        component.helper.renderTokenIcon = vi.fn();
+        component.renderer.startExpiryTimer = vi.fn();
+
+        const row = await component.createOrderRow(createFallbackOrder());
+        const tokenAmounts = Array.from(row.querySelectorAll('.token-amount'))
+            .map((element) => element.textContent.trim());
+        const tokenPrices = Array.from(row.querySelectorAll('.token-price'))
+            .map((element) => element.textContent.trim());
+        const tokenPriceClasses = Array.from(row.querySelectorAll('.token-price'))
+            .map((element) => element.classList.contains('price-estimate'));
+        const expiryText = row.querySelector('td:nth-child(5)')?.textContent?.trim();
+        const dealText = row.querySelector('td:nth-child(4)')?.textContent?.trim();
+
+        expect(tokenAmounts).toEqual(['2000000', '500000']);
+        expect(tokenPrices).toEqual(['$4000000', '$1500000']);
+        expect(tokenPriceClasses).toEqual([true, false]);
+        expect(expiryText).toBe('1H 0M');
+        expect(dealText).toBe('N/A');
     });
 });

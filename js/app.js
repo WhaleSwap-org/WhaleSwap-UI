@@ -24,6 +24,7 @@ import { versionService } from './services/VersionService.js';
 import { createAppContext, setGlobalContext } from './services/AppContext.js';
 import { hasAnyClaimables } from './utils/claims.js';
 import { isUserRejection } from './utils/ui.js';
+import { escapeHtml } from './utils/html.js';
 
 class App {
 	constructor() {
@@ -1717,15 +1718,6 @@ let addNetworkButton, networkButton, networkDropdown, networkBadge;
 let networkSelectorElement;
 let selectedNetworkSlug = null;
 let networkSetupRequiredSlug = null;
-
-function escapeHtml(value) {
-	return String(value)
-		.replace(/&/g, '&amp;')
-		.replace(/</g, '&lt;')
-		.replace(/>/g, '&gt;')
-		.replace(/"/g, '&quot;')
-		.replace(/'/g, '&#39;');
-}
 
 function getNetworkLogoPath(network) {
 	return typeof network?.logo === 'string' ? network.logo : '';
