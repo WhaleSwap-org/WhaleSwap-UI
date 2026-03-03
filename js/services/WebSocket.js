@@ -47,6 +47,8 @@ export class WebSocketService {
         this.lastKnownChainTimestamp = null;
         this.chainTimeSyncedAtMonotonicMs = null;
         this.chainTimeSyncPromise = null;
+        this.chainTimeRetryCooldownMs = 10000;
+        this.lastChainTimeBootstrapFailureAtMonotonicMs = null;
 
         // Order sync lifecycle state
         this.orderSyncPromise = null;
@@ -238,15 +240,18 @@ export class WebSocketService {
                 const blockTimestamp = Number(block?.timestamp);
 
                 if (!Number.isFinite(blockTimestamp)) {
+                    this.lastChainTimeBootstrapFailureAtMonotonicMs = this.getMonotonicNowMs();
                     return null;
                 }
 
                 this.lastKnownChainTimestamp = blockTimestamp;
                 this.chainTimeSyncedAtMonotonicMs = this.getMonotonicNowMs();
+                this.lastChainTimeBootstrapFailureAtMonotonicMs = null;
 
                 return this.lastKnownChainTimestamp;
             } catch (error) {
-                this.debug('Failed to sync chain time:', error);
+                this.lastChainTimeBootstrapFailureAtMonotonicMs = this.getMonotonicNowMs();
+                this.debug('Failed to bootstrap chain time:', error);
                 return null;
             } finally {
                 this.chainTimeSyncPromise = null;
@@ -277,6 +282,13 @@ export class WebSocketService {
      */
     async ensureChainTimeInitialized() {
         if (!this.hasChainTime()) {
+            const lastFailureAt = this.lastChainTimeBootstrapFailureAtMonotonicMs;
+            if (Number.isFinite(lastFailureAt)) {
+                const msSinceLastFailure = this.getMonotonicNowMs() - lastFailureAt;
+                if (msSinceLastFailure < this.chainTimeRetryCooldownMs) {
+                    return this.getCurrentTimestamp();
+                }
+            }
             await this.bootstrapChainTime();
         }
 
@@ -1006,6 +1018,7 @@ export class WebSocketService {
             this.lastKnownChainTimestamp = null;
             this.chainTimeSyncedAtMonotonicMs = null;
             this.chainTimeSyncPromise = null;
+            this.lastChainTimeBootstrapFailureAtMonotonicMs = null;
             this.orderSyncPromise = null;
             this.hasCompletedOrderSync = false;
             this.isInitialized = false;
@@ -1518,6 +1531,7 @@ export class WebSocketService {
                 this.lastKnownChainTimestamp = null;
                 this.chainTimeSyncedAtMonotonicMs = null;
                 this.chainTimeSyncPromise = null;
+                this.lastChainTimeBootstrapFailureAtMonotonicMs = null;
                 this.resetContractDisabledStateCache();
 
                 await new Promise(resolve => setTimeout(resolve, delay));
