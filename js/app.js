@@ -1528,20 +1528,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 		// Check version first, before anything else happens
 		await versionService.initialize();
 
-		// Add global error handler for WebSocket issues
-		window.addEventListener('error', (event) => {
-			if (event.error && event.error.message && event.error.message.includes('callback')) {
-				console.warn('WebSocket callback error detected, attempting to reconnect...');
-				// Access via window.app.ctx since app is now initialized
-				if (window.app?.ctx) {
-					const ws = window.app.ctx.getWebSocket();
-					if (ws && ws.reconnect) {
-						ws.reconnect();
-					}
-				}
-			}
-		});
-
 		await window.app.load();
 
 		// Add network config button event listener here (element doesn't exist in HTML, so commented out)
