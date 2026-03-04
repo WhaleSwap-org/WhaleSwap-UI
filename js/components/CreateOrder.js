@@ -39,8 +39,10 @@ export class CreateOrder extends BaseComponent {
         this.allowedTokensLoadPromise = null;
         this.feeLoadPromise = null;
         this.feeConfigUpdatedHandler = null;
+        this.allowedTokensUpdatedHandler = null;
         this.contractDisabledHandler = null;
         this.pendingFeeConfigRefresh = false;
+        this.pendingAllowedTokensRefresh = false;
         this.sellToken = null;
         this.buyToken = null;
         this.isContractDisabled = false;
@@ -132,6 +134,7 @@ export class CreateOrder extends BaseComponent {
         this.allowedTokensLoadPromise = null;
         this.feeLoadPromise = null;
         this.pendingFeeConfigRefresh = false;
+        this.pendingAllowedTokensRefresh = false;
         this.feeToken = null;
         this.isContractDisabled = false;
         this.contractStateReadError = false;
@@ -466,6 +469,7 @@ export class CreateOrder extends BaseComponent {
             this.subscribeToContractDisabledUpdates();
             await this.refreshContractDisabledState();
             this.subscribeToFeeConfigUpdates();
+            this.subscribeToAllowedTokensUpdates();
             
             // Load fee/token data in background so initial tab render is not blocked.
             this.startBackgroundDataLoading();
@@ -498,19 +502,44 @@ export class CreateOrder extends BaseComponent {
             this.requestFeeConfigRefresh({ source: 'background' });
         }
 
+        this.requestAllowedTokensRefresh({ source: 'background' });
+    }
+
+    requestAllowedTokensRefresh({ forceFresh = false, source = 'unknown' } = {}) {
         const hasAllowedTokens = Array.isArray(this.allowedTokens) && this.allowedTokens.length > 0;
-        if (!this.allowedTokensLoadPromise && !hasAllowedTokens) {
-            this.tokensLoading = true;
-            this.setAllowedTokenListsLoadingState('Loading allowed tokens...');
-            this.allowedTokensLoadPromise = this.loadContractTokens()
-                .catch((error) => {
-                    this.debug('Background token load failed:', error);
-                })
-                .finally(() => {
-                    this.tokensLoading = false;
-                    this.allowedTokensLoadPromise = null;
-                });
+        if (forceFresh) {
+            this.tokens = [];
+            this.allowedTokens = [];
         }
+
+        if (this.allowedTokensLoadPromise) {
+            if (forceFresh) {
+                this.pendingAllowedTokensRefresh = true;
+            }
+            return this.allowedTokensLoadPromise;
+        }
+
+        if (!forceFresh && hasAllowedTokens) {
+            return Promise.resolve(this.allowedTokens);
+        }
+
+        this.tokensLoading = true;
+        this.setAllowedTokenListsLoadingState('Loading allowed tokens...');
+        this.allowedTokensLoadPromise = this.loadContractTokens()
+            .catch((error) => {
+                this.debug(`Allowed token refresh failed (${source}):`, error);
+            })
+            .finally(() => {
+                this.tokensLoading = false;
+                this.allowedTokensLoadPromise = null;
+
+                if (this.pendingAllowedTokensRefresh) {
+                    this.pendingAllowedTokensRefresh = false;
+                    this.requestAllowedTokensRefresh({ forceFresh: true, source: 'pending-followup' });
+                }
+            });
+
+        return this.allowedTokensLoadPromise;
     }
 
     requestFeeConfigRefresh({ forceFresh = false, source = 'unknown' } = {}) {
@@ -559,6 +588,24 @@ export class CreateOrder extends BaseComponent {
         };
 
         ws.subscribe('FeeConfigUpdated', this.feeConfigUpdatedHandler);
+    }
+
+    subscribeToAllowedTokensUpdates() {
+        const ws = this.ctx.getWebSocket();
+        if (!ws?.subscribe) {
+            return;
+        }
+
+        if (this.allowedTokensUpdatedHandler && ws.unsubscribe) {
+            ws.unsubscribe('AllowedTokensUpdated', this.allowedTokensUpdatedHandler);
+        }
+
+        this.allowedTokensUpdatedHandler = () => {
+            this.debug('AllowedTokensUpdated event received, refreshing allowed token lists');
+            this.requestAllowedTokensRefresh({ forceFresh: true, source: 'AllowedTokensUpdated' });
+        };
+
+        ws.subscribe('AllowedTokensUpdated', this.allowedTokensUpdatedHandler);
     }
 
     subscribeToContractDisabledUpdates() {
@@ -1404,6 +1451,7 @@ export class CreateOrder extends BaseComponent {
             this.allowedTokens = normalizedAllowed;
             
             this.debug('Loaded allowed tokens:', normalizedAllowed);
+            await this.reconcileSelectedTokensWithAllowedList();
             
             // Trigger price fetching for allowed tokens
             const pricing = this.ctx.getPricing();
@@ -1441,6 +1489,30 @@ export class CreateOrder extends BaseComponent {
             this.debug('Error loading wallet tokens:', error);
             this.setAllowedTokenListsErrorState('Failed to load allowed tokens. Please retry shortly.');
             this.showError('Failed to load tokens. Please try again.');
+        }
+    }
+
+    async reconcileSelectedTokensWithAllowedList() {
+        const allowedAddressSet = new Set(
+            (Array.isArray(this.allowedTokens) ? this.allowedTokens : [])
+                .map((token) => String(token?.address || '').toLowerCase())
+                .filter(Boolean)
+        );
+
+        const removedSelections = [];
+        for (const type of ['sell', 'buy']) {
+            const selectedToken = this[`${type}Token`];
+            const selectedAddress = String(selectedToken?.address || '').toLowerCase();
+            if (!selectedAddress || allowedAddressSet.has(selectedAddress)) {
+                continue;
+            }
+
+            await this.handleTokenSelect(type, null);
+            removedSelections.push(type);
+        }
+
+        if (removedSelections.length > 0) {
+            this.showWarning('A selected token is no longer in the allowed list. Please choose a new token.');
         }
     }
 
@@ -2097,12 +2169,17 @@ export class CreateOrder extends BaseComponent {
         if (ws?.unsubscribe && this.feeConfigUpdatedHandler) {
             ws.unsubscribe('FeeConfigUpdated', this.feeConfigUpdatedHandler);
         }
+        if (ws?.unsubscribe && this.allowedTokensUpdatedHandler) {
+            ws.unsubscribe('AllowedTokensUpdated', this.allowedTokensUpdatedHandler);
+        }
         if (ws?.unsubscribe && this.contractDisabledHandler) {
             ws.unsubscribe('ContractDisabled', this.contractDisabledHandler);
         }
         this.feeConfigUpdatedHandler = null;
+        this.allowedTokensUpdatedHandler = null;
         this.contractDisabledHandler = null;
         this.pendingFeeConfigRefresh = false;
+        this.pendingAllowedTokensRefresh = false;
     }
 
     // Add this method to the CreateOrder class
