@@ -86,6 +86,23 @@ class App {
 		return !!button && button.style.display !== 'none';
 	}
 
+	getNoOrderTabsVisibility() {
+		return {
+			showMyOrders: false,
+			showInvitedOrders: false
+		};
+	}
+
+	buildOrderTabVisibilityFromOrders(orders = [], account = '') {
+		const normalizedAccount = String(account || '').toLowerCase();
+		if (!normalizedAccount) return this.getNoOrderTabsVisibility();
+
+		return {
+			showMyOrders: orders.some((order) => String(order?.maker || '').toLowerCase() === normalizedAccount),
+			showInvitedOrders: orders.some((order) => String(order?.taker || '').toLowerCase() === normalizedAccount)
+		};
+	}
+
 	isClaimEventForCurrentAccount(eventData = null) {
 		if (!eventData?.beneficiary) {
 			return true;
@@ -153,8 +170,9 @@ class App {
 		const { force = false } = options;
 		const myOrdersButton = this.getTabButton('my-orders');
 		const invitedOrdersButton = this.getTabButton('taker-orders');
+		const noOrderTabsVisibility = this.getNoOrderTabsVisibility();
 		if (!myOrdersButton && !invitedOrdersButton) {
-			return { showMyOrders: false, showInvitedOrders: false };
+			return noOrderTabsVisibility;
 		}
 
 		const requestId = ++this.orderTabVisibilityRequestId;
@@ -192,19 +210,13 @@ class App {
 			const account = wallet?.getAccount?.();
 
 			if (!isConnected || !account || !this.isWalletOnSelectedNetwork()) {
-				return await applyVisibility({
-					showMyOrders: false,
-					showInvitedOrders: false
-				});
+				return await applyVisibility(noOrderTabsVisibility);
 			}
 
 			const ws = this.ctx?.getWebSocket?.();
 			await ws?.waitForInitialization?.();
 			if (!ws) {
-				return await applyVisibility({
-					showMyOrders: false,
-					showInvitedOrders: false
-				});
+				return await applyVisibility(noOrderTabsVisibility);
 			}
 
 			if (force || !ws.hasCompletedOrderSync) {
@@ -212,11 +224,7 @@ class App {
 			}
 
 			const orders = Array.from(ws.orderCache?.values?.() || []);
-			const normalizedAccount = String(account).toLowerCase();
-			const visibility = {
-				showMyOrders: orders.some((order) => String(order?.maker || '').toLowerCase() === normalizedAccount),
-				showInvitedOrders: orders.some((order) => String(order?.taker || '').toLowerCase() === normalizedAccount)
-			};
+			const visibility = this.buildOrderTabVisibilityFromOrders(orders, account);
 			return await applyVisibility(visibility);
 		} catch (error) {
 			this.debug('Order tab visibility check failed:', error);
