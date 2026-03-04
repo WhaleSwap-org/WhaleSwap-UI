@@ -71,6 +71,22 @@ class App {
 			|| tabId === 'cleanup-orders';
 	}
 
+	getTabButton(tabId) {
+		return document.querySelector(`.tab-button[data-tab="${tabId}"]`);
+	}
+
+	setTabVisible(tabId, isVisible) {
+		const button = this.getTabButton(tabId);
+		if (!button) return null;
+		button.style.display = isVisible ? 'block' : 'none';
+		return button;
+	}
+
+	isTabVisible(tabId) {
+		const button = this.getTabButton(tabId);
+		return !!button && button.style.display !== 'none';
+	}
+
 	isClaimEventForCurrentAccount(eventData = null) {
 		if (!eventData?.beneficiary) {
 			return true;
@@ -136,8 +152,8 @@ class App {
 
 	async refreshOrderTabVisibility(options = {}) {
 		const { force = false } = options;
-		const myOrdersButton = document.querySelector('.tab-button[data-tab="my-orders"]');
-		const invitedOrdersButton = document.querySelector('.tab-button[data-tab="taker-orders"]');
+		const myOrdersButton = this.getTabButton('my-orders');
+		const invitedOrdersButton = this.getTabButton('taker-orders');
 		if (!myOrdersButton && !invitedOrdersButton) {
 			return { showMyOrders: false, showInvitedOrders: false };
 		}
@@ -145,8 +161,8 @@ class App {
 		const requestId = ++this.orderTabVisibilityRequestId;
 		const isCurrentRequest = () => requestId === this.orderTabVisibilityRequestId;
 		const fallback = {
-			showMyOrders: myOrdersButton ? myOrdersButton.style.display !== 'none' : false,
-			showInvitedOrders: invitedOrdersButton ? invitedOrdersButton.style.display !== 'none' : false
+			showMyOrders: this.isTabVisible('my-orders'),
+			showInvitedOrders: this.isTabVisible('taker-orders')
 		};
 
 		const applyVisibility = async (
@@ -155,12 +171,8 @@ class App {
 		) => {
 			if (!isCurrentRequest()) return visibility;
 
-			if (myOrdersButton) {
-				myOrdersButton.style.display = visibility.showMyOrders ? 'block' : 'none';
-			}
-			if (invitedOrdersButton) {
-				invitedOrdersButton.style.display = visibility.showInvitedOrders ? 'block' : 'none';
-			}
+			this.setTabVisible('my-orders', visibility.showMyOrders);
+			this.setTabVisible('taker-orders', visibility.showInvitedOrders);
 
 			if (allowRedirect) {
 				if (!visibility.showMyOrders && this.currentTab === 'my-orders') {
@@ -1107,38 +1119,29 @@ class App {
 
 			// Add new method to update tab visibility
 			this.updateTabVisibility = (isConnected) => {
-				const tabButtons = document.querySelectorAll('.tab-button');
-				tabButtons.forEach(button => {
-					// Always show intro, create-order, view-orders, cleanup-orders, contract-params
-					if (
-						button.dataset.tab === 'intro' ||
-						button.dataset.tab === 'create-order' ||
-						button.dataset.tab === 'view-orders' ||
-						button.dataset.tab === 'cleanup-orders' ||
-						button.dataset.tab === 'contract-params'
-					) {
-						button.style.display = 'block';
-					} else if (
-						button.dataset.tab === 'my-orders' ||
-						button.dataset.tab === 'taker-orders'
-					) {
-						// These are determined asynchronously from the order cache.
-						// Hide by default until visibility checks complete.
-						button.style.display = 'none';
-					} else if (button.dataset.tab === 'claim') {
-						// Claim visibility is handled asynchronously after claimable checks.
-						// Keep current state while connected to avoid flicker and fail-closed behavior.
-						if (!isConnected) {
-							button.style.display = 'none';
-							this.claimTabVisibilityKnown = true;
-							this.claimTabLastVisible = false;
-							this.clearClaimVisibilityRetryTimer();
-							this.resetClaimVisibilityRetryBackoff();
-						}
-					} else {
-						button.style.display = isConnected ? 'block' : 'none';
-					}
-				});
+				// Always visible tabs.
+				this.setTabVisible('intro', true);
+				this.setTabVisible('create-order', true);
+				this.setTabVisible('view-orders', true);
+				this.setTabVisible('cleanup-orders', true);
+				this.setTabVisible('contract-params', true);
+
+				// Visibility computed asynchronously from order cache.
+				this.setTabVisible('my-orders', false);
+				this.setTabVisible('taker-orders', false);
+
+				// Connection-dependent tabs.
+				this.setTabVisible('admin', isConnected);
+
+				// Claim visibility is handled asynchronously after claimable checks.
+				// Keep current state while connected to avoid flicker and fail-closed behavior.
+				if (!isConnected) {
+					this.setTabVisible('claim', false);
+					this.claimTabVisibilityKnown = true;
+					this.claimTabLastVisible = false;
+					this.clearClaimVisibilityRetryTimer();
+					this.resetClaimVisibilityRetryBackoff();
+				}
 
 				// If disconnected, only switch to view-orders if current tab is not visible
 				if (!isConnected) {
