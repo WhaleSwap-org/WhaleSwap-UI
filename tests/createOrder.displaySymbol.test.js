@@ -115,4 +115,34 @@ describe('CreateOrder display symbol wiring', () => {
         expect(warningSpy).toHaveBeenCalledTimes(1);
         expect(warningSpy.mock.calls[0][0]).toContain('AAA.issuer has no balance available for selling');
     });
+
+    it('resets token selector button text to default when selected token is cleared', async () => {
+        const component = createComponent();
+
+        document.body.insertAdjacentHTML('beforeend', `
+            <button id="buyTokenSelector"></button>
+            <input id="buyToken" value="" />
+            <div id="buyAmountUSD"></div>
+            <button id="createOrderBtn"></button>
+        `);
+
+        const token = {
+            address: TOKEN_A,
+            symbol: 'AAA',
+            displaySymbol: 'AAA.issuer',
+            name: 'Alpha Issuer',
+            balance: '1',
+            decimals: 18,
+            iconUrl: 'fallback'
+        };
+
+        await component.handleTokenSelect('buy', token);
+        expect(document.getElementById('buyTokenSelector')?.textContent).toContain('AAA.issuer');
+
+        await component.handleTokenSelect('buy', null);
+
+        expect(document.getElementById('buyTokenSelector')?.textContent).toContain('Select token');
+        expect(document.getElementById('buyTokenSelector')?.textContent).not.toContain('AAA.issuer');
+        expect(document.getElementById('buyToken')?.value).toBe('');
+    });
 });
