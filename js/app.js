@@ -775,7 +775,7 @@ class App {
 		const wallet = this.ctx?.getWallet?.();
 		const isConnected = !!wallet?.isWalletConnected?.() && !!wallet?.getSigner?.();
 		if (!isConnected) {
-			window.location.reload();
+			triggerPageReloadWithSwitchFallback();
 			return;
 		}
 
@@ -992,7 +992,6 @@ class App {
 					}
 					case 'accountsChanged': {
 						try {
-							clearNetworkSetupRequired();
 							this.ctx.setWalletChainId(walletManager.chainId || null);
 							syncNetworkBadgeFromState();
 
@@ -1025,7 +1024,6 @@ class App {
 						try {
 							this.debug('Chain changed event received:', data?.chainId);
 							const walletChainId = data?.chainId || null;
-							clearNetworkSetupRequired();
 							this.ctx.setWalletChainId(walletChainId);
 							syncNetworkBadgeFromState();
 
@@ -1033,7 +1031,7 @@ class App {
 								const walletNetwork = getNetworkById(walletChainId);
 								if (walletNetwork && walletNetwork.slug === selectedNetwork.slug) {
 									setActiveNetwork(walletNetwork);
-									window.location.reload();
+									triggerPageReloadWithSwitchFallback();
 								} else {
 								this.updateTabVisibility(false);
 								await this.refreshAdminTabVisibility();
@@ -1427,6 +1425,21 @@ class App {
 
 	handleChainChange(chainId) {
 
+	}
+
+	prepareForNetworkReload() {
+		try {
+			if (this.currentTab !== 'create-order') {
+				return;
+			}
+
+			const createOrderComponent = this.components?.['create-order'];
+			if (typeof createOrderComponent?.persistFormStateForReload === 'function') {
+				createOrderComponent.persistFormStateForReload();
+			}
+		} catch (error) {
+			this.debug('Failed to preserve create order form state before reload:', error);
+		}
 	}
 
 	showLoader(container = document.body) {
@@ -1828,6 +1841,12 @@ function syncAddNetworkButtonVisibility() {
 
 function triggerPageReloadWithSwitchFallback() {
 	try {
+		window.app?.prepareForNetworkReload?.();
+	} catch (error) {
+		console.warn('[App] Failed to preserve state before reload:', error);
+	}
+
+	try {
 		window.location.reload();
 	} catch (error) {
 		console.warn('[App] Reload failed after network switch:', error);
@@ -1878,6 +1897,14 @@ function syncNetworkBadgeFromState() {
 		}
 		if (networkDropdown) {
 			networkDropdown.dataset.networkStatus = 'setup-needed';
+		}
+	} else {
+		networkBadge.classList.add('wrong-network');
+		if (networkButton) {
+			networkButton.dataset.networkStatus = 'wrong-network';
+		}
+		if (networkDropdown) {
+			networkDropdown.dataset.networkStatus = 'wrong-network';
 		}
 	}
 
@@ -1938,16 +1965,23 @@ const populateNetworkOptions = () => {
 	networkDropdown.innerHTML = networks.map(network => buildNetworkOptionMarkup(network)).join('');
 
 	// Re-attach click handlers only if multiple networks.
-	document.querySelectorAll('.network-option').forEach(option => {
-		const commitSelection = async () => {
-			const network = getNetworkBySlug(option.dataset.slug);
-			if (!network) return;
-			const hasChanged = applySelectedNetwork(network, { updateUrl: true });
-			toggleNetworkDropdown(false);
-			if (hasChanged && typeof window.app?.handleNetworkSelectionCommit === 'function') {
-				await window.app.handleNetworkSelectionCommit(network);
-			}
-		};
+		document.querySelectorAll('.network-option').forEach(option => {
+			const commitSelection = async () => {
+				const network = getNetworkBySlug(option.dataset.slug);
+				if (!network) return;
+				const hasChanged = applySelectedNetwork(network, { updateUrl: true });
+				const walletChainId = window.app?.ctx?.getWalletChainId?.();
+				const shouldRetryCurrentSelection = Boolean(
+					!hasChanged
+					&& walletChainId
+					&& typeof window.app?.isWalletOnSelectedNetwork === 'function'
+					&& !window.app.isWalletOnSelectedNetwork()
+				);
+				toggleNetworkDropdown(false);
+				if ((hasChanged || shouldRetryCurrentSelection) && typeof window.app?.handleNetworkSelectionCommit === 'function') {
+					await window.app.handleNetworkSelectionCommit(network);
+				}
+			};
 
 		option.addEventListener('click', commitSelection);
 		option.addEventListener('keydown', async (event) => {

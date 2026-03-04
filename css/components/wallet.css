@@ -40,6 +40,16 @@
   background: var(--network-button-connected-hover);
 }
 
+.network-button[data-network-status="wrong-network"] {
+  background: var(--network-button-mismatch-bg);
+  border-color: var(--network-button-mismatch-border);
+  color: var(--network-button-mismatch-text);
+}
+
+.network-button[data-network-status="wrong-network"]:hover {
+  background: var(--network-button-mismatch-hover);
+}
+
 .network-button[data-network-status="setup-needed"] {
   background: var(--network-button-wrong-bg);
   border-color: var(--network-button-wrong-border);
@@ -76,6 +86,11 @@
 .network-dropdown[data-network-status="connected"] {
   background: var(--network-connected-bg);
   border-color: var(--network-connected-border);
+}
+
+.network-dropdown[data-network-status="wrong-network"] {
+  background: var(--network-mismatch-bg);
+  border-color: var(--network-mismatch-border);
 }
 
 .network-dropdown[data-network-status="setup-needed"] {
@@ -122,6 +137,11 @@
 .network-dropdown[data-network-status="connected"] .network-option:hover,
 .network-dropdown[data-network-status="connected"] .network-option.active {
   background: rgba(16, 185, 129, 0.2);
+}
+
+.network-dropdown[data-network-status="wrong-network"] .network-option:hover,
+.network-dropdown[data-network-status="wrong-network"] .network-option.active {
+  background: rgba(148, 163, 184, 0.2);
 }
 
 .network-dropdown[data-network-status="setup-needed"] .network-option:hover,
@@ -322,6 +342,11 @@
 .network-badge.connected {
   background-color: transparent;
   color: #10b981;
+}
+
+.network-badge.wrong-network {
+  background-color: transparent;
+  color: var(--network-button-mismatch-text);
 }
 
 .network-badge.setup-needed {
