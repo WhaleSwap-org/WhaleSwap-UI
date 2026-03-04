@@ -253,13 +253,13 @@ export class CreateOrder extends BaseComponent {
 
     async applyReloadFormState(snapshot) {
         if (!snapshot) {
-            return;
+            return { clearSnapshot: false, restored: false };
         }
 
         const currentSelectedChainSlug = this.ctx?.getSelectedChainSlug?.() || getNetworkConfig()?.slug || null;
         if (snapshot.selectedChainSlug && currentSelectedChainSlug && snapshot.selectedChainSlug !== currentSelectedChainSlug) {
             this.debug('Skipping create-order form restore on different selected chain');
-            return;
+            return { clearSnapshot: true, restored: false };
         }
 
         if ((!Array.isArray(this.tokens) || this.tokens.length === 0) && this.allowedTokensLoadPromise) {
@@ -300,8 +300,20 @@ export class CreateOrder extends BaseComponent {
             takerAddressInput.value = snapshot.takerAddress || '';
         }
 
+        const restoredSellToken = !snapshot.sellTokenAddress
+            || this.sellToken?.address?.toLowerCase() === snapshot.sellTokenAddress.toLowerCase();
+        const restoredBuyToken = !snapshot.buyTokenAddress
+            || this.buyToken?.address?.toLowerCase() === snapshot.buyTokenAddress.toLowerCase();
+        const restored = restoredSellToken && restoredBuyToken;
+
+        if (!restored) {
+            this.debug('Create-order form restore deferred until token data is available');
+            return { clearSnapshot: false, restored: false };
+        }
+
         this.updateCreateButtonState();
         this.debug('Restored create-order form state after reload');
+        return { clearSnapshot: true, restored: true };
     }
 
     async restorePendingReloadFormState() {
@@ -311,11 +323,12 @@ export class CreateOrder extends BaseComponent {
         }
 
         try {
-            await this.applyReloadFormState(snapshot);
+            const result = await this.applyReloadFormState(snapshot);
+            if (result?.clearSnapshot) {
+                this.clearPendingReloadFormState();
+            }
         } catch (error) {
             this.debug('Failed to restore create-order form state after reload:', error);
-        } finally {
-            this.clearPendingReloadFormState();
         }
     }
 

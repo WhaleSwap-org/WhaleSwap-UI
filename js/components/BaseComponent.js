@@ -3,7 +3,7 @@ import { ethers } from 'ethers';
 import { erc20Abi } from '../abi/erc20.js';
 import { createLogger } from '../services/LogService.js';
 import { getAppContext } from '../services/AppContext.js';
-import { getNetworkConfig } from '../config/networks.js';
+import { getNetworkConfig, getNetworkById } from '../config/networks.js';
 
 /**
  * BaseComponent - Base class for all UI components
@@ -178,12 +178,12 @@ export class BaseComponent {
     }
 
     isWalletOnSelectedNetwork() {
-        const selectedChainId = String(getNetworkConfig()?.chainId || '').toLowerCase();
-        const walletChainId = String(
-            this.ctx?.getWalletChainId?.() ?? walletManager.chainId ?? ''
-        ).toLowerCase();
+        const selectedNetwork = getNetworkConfig();
+        const walletNetwork = getNetworkById(
+            this.ctx?.getWalletChainId?.() ?? walletManager.chainId ?? null
+        );
 
-        return Boolean(selectedChainId && walletChainId && selectedChainId === walletChainId);
+        return Boolean(selectedNetwork?.slug && walletNetwork?.slug && selectedNetwork.slug === walletNetwork.slug);
     }
 
     async ensureWalletReadyForWrite(actionLabel = 'submit this transaction') {
