@@ -2363,12 +2363,17 @@ export class CreateOrder extends BaseComponent {
                 if (tokenInput) {
                     tokenInput.value = '';
                 }
+                const selector = document.getElementById(`${type}TokenSelector`);
+                if (selector) {
+                    selector.innerHTML = this.getDefaultTokenSelectorMarkup();
+                }
                 const usdDisplay = document.getElementById(`${type}AmountUSD`);
                 if (usdDisplay) {
                     setVisibility(usdDisplay, false);
                 }
                 // Hide balance display when no token is selected
                 this.hideBalanceDisplay(type);
+                this.updateCreateButtonState();
                 return;
             }
             
