@@ -2723,10 +2723,12 @@ export class CreateOrder extends BaseComponent {
 
                 // Close modal when clicking outside (register once)
                 if (!this.boundWindowClickHandler) {
+                    const createOrderModalIds = new Set(['sellTokenModal', 'buyTokenModal']);
                     this.boundWindowClickHandler = (event) => {
-                        if (event.target.classList?.contains('token-modal')) {
-                            event.target.style.display = 'none';
-                        }
+                        const modalTarget = event.target;
+                        if (!(modalTarget instanceof HTMLElement)) return;
+                        if (!createOrderModalIds.has(modalTarget.id)) return;
+                        modalTarget.style.display = 'none';
                     };
                     window.addEventListener('click', this.boundWindowClickHandler);
                 }
