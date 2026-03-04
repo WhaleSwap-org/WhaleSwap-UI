@@ -636,6 +636,7 @@ export class OrdersComponentHelper {
             }
 
             order.status = 'Filled';
+            this.clearFillProgressSession();
             await this.component.refreshOrdersView();
 
             progressToast.updateStep('confirm-fill-order', {
