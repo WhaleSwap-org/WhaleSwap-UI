@@ -736,9 +736,13 @@ class App {
 	handleNetworkSwitchFailure(error, targetNetwork) {
 		this.warn('Wallet network switch rejected/failed:', error);
 		if (isNetworkAddRequiredError(error)) {
-			this.showWarning(`Wallet does not have ${targetNetwork.displayName || targetNetwork.name} added. Add Network.`);
+			setNetworkSetupRequired(targetNetwork.slug);
+			syncNetworkBadgeFromState();
+			this.showWarning(`Wallet still needs ${targetNetwork.displayName || targetNetwork.name} added. Use Add Network to retry.`);
 			return;
 		}
+		clearNetworkSetupRequired();
+		syncNetworkBadgeFromState();
 		if (isWalletUserRejectedError(error)) {
 			this.showWarning('Wallet request was cancelled.');
 			return;
@@ -747,14 +751,13 @@ class App {
 	}
 
 	async switchWalletToNetworkWithReload(targetNetwork) {
-		setNetworkSwitchInProgress(true);
 		try {
 			await walletManager.switchToNetwork(targetNetwork);
+			clearNetworkSetupRequired();
 			triggerPageReloadWithSwitchFallback();
 			return true;
 		} catch (error) {
 			this.handleNetworkSwitchFailure(error, targetNetwork);
-			setNetworkSwitchInProgress(false);
 			return false;
 		}
 	}
@@ -766,7 +769,6 @@ class App {
 			setActiveNetwork(network);
 		} catch (error) {
 			this.error('Failed to set active network from selection:', error);
-			setNetworkSwitchInProgress(false);
 			return;
 		}
 
@@ -947,9 +949,7 @@ class App {
 							const selectedNetwork = this.getSelectedNetwork();
 							const walletNetwork = getNetworkById(walletChainId);
 							const shouldAttemptSwitch = !walletNetwork || walletNetwork.slug !== selectedNetwork.slug;
-							if (shouldAttemptSwitch) {
-								setNetworkSwitchInProgress(true);
-							}
+							clearNetworkSetupRequired();
 							this.ctx.setWalletChainId(walletChainId);
 							syncNetworkBadgeFromState();
 								if (shouldAttemptSwitch) {
@@ -971,6 +971,7 @@ class App {
 							break;
 						}
 					case 'disconnect': {
+						clearNetworkSetupRequired();
 						this.ctx.setWalletChainId(null);
 						syncNetworkBadgeFromState();
 						this.debug('Wallet disconnected, updating tab visibility...');
@@ -991,6 +992,7 @@ class App {
 					}
 					case 'accountsChanged': {
 						try {
+							clearNetworkSetupRequired();
 							this.ctx.setWalletChainId(walletManager.chainId || null);
 							syncNetworkBadgeFromState();
 
@@ -1023,6 +1025,7 @@ class App {
 						try {
 							this.debug('Chain changed event received:', data?.chainId);
 							const walletChainId = data?.chainId || null;
+							clearNetworkSetupRequired();
 							this.ctx.setWalletChainId(walletChainId);
 							syncNetworkBadgeFromState();
 
@@ -1700,7 +1703,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 let addNetworkButton, networkButton, networkDropdown, networkBadge;
 let networkSelectorElement;
 let selectedNetworkSlug = null;
-let networkSwitchInProgress = false;
+let networkSetupRequiredSlug = null;
 
 function escapeHtml(value) {
 	return String(value)
@@ -1796,9 +1799,31 @@ function isWalletUserRejectedError(error) {
 	return Boolean(error?.originalSwitchError) && isUserRejection(error.originalSwitchError);
 }
 
-function setNetworkSwitchInProgress(isInProgress) {
-	networkSwitchInProgress = Boolean(isInProgress);
-	syncAddNetworkButtonVisibility();
+function clearNetworkSetupRequired() {
+	networkSetupRequiredSlug = null;
+}
+
+function setNetworkSetupRequired(slug) {
+	networkSetupRequiredSlug = slug ? String(slug).toLowerCase() : null;
+}
+
+function syncAddNetworkButtonVisibility() {
+	if (!addNetworkButton) return;
+
+	const selectedSlug = selectedNetworkSlug || window.app?.ctx?.getSelectedChainSlug?.() || getDefaultNetwork().slug;
+	const selectedNetwork = getNetworkBySlug(selectedSlug) || getDefaultNetwork();
+	const walletChainId = window.app?.ctx?.getWalletChainId?.();
+	const shouldShow = Boolean(
+		networkSetupRequiredSlug
+		&& networkSetupRequiredSlug === selectedSlug
+		&& walletManager.hasInjectedProvider()
+		&& walletChainId
+	);
+
+	addNetworkButton.classList.toggle('hidden', !shouldShow);
+	addNetworkButton.textContent = shouldShow
+		? `Add ${selectedNetwork.displayName || selectedNetwork.name}`
+		: 'Add Network';
 }
 
 function triggerPageReloadWithSwitchFallback() {
@@ -1806,42 +1831,7 @@ function triggerPageReloadWithSwitchFallback() {
 		window.location.reload();
 	} catch (error) {
 		console.warn('[App] Reload failed after network switch:', error);
-		setNetworkSwitchInProgress(false);
-		return;
 	}
-
-	// In test/mocked environments reload can be a no-op, so always unlock after a delay.
-	const unlockSwitchState = () => {
-		if (networkSwitchInProgress) {
-			setNetworkSwitchInProgress(false);
-		}
-	};
-
-	window.setTimeout(unlockSwitchState, 1500);
-
-	// Also unlock as soon as the document becomes visible again.
-	if (document.visibilityState !== 'visible') {
-		document.addEventListener('visibilitychange', () => {
-			if (document.visibilityState === 'visible') {
-				unlockSwitchState();
-			}
-		}, { once: true });
-	}
-}
-
-function syncAddNetworkButtonVisibility() {
-	if (!addNetworkButton) return;
-
-	const selectedSlug = selectedNetworkSlug || window.app?.ctx?.getSelectedChainSlug?.() || getDefaultNetwork().slug;
-	const walletChainId = window.app?.ctx?.getWalletChainId?.();
-	const walletNetwork = walletChainId ? getNetworkById(walletChainId) : null;
-	const shouldShow = Boolean(
-		walletManager.hasInjectedProvider()
-		&& walletChainId
-		&& !networkSwitchInProgress
-		&& (!walletNetwork || walletNetwork.slug !== selectedSlug)
-	);
-	addNetworkButton.classList.toggle('hidden', !shouldShow);
 }
 
 function syncNetworkBadgeFromState() {
@@ -1850,7 +1840,7 @@ function syncNetworkBadgeFromState() {
 	const selectedSlug = selectedNetworkSlug || window.app?.ctx?.getSelectedChainSlug?.() || getDefaultNetwork().slug;
 	const selectedNetwork = getNetworkBySlug(selectedSlug) || getDefaultNetwork();
 	renderNetworkBadge(selectedNetwork);
-	networkBadge.classList.remove('connected', 'wrong-network', 'disconnected');
+	networkBadge.classList.remove('connected', 'setup-needed', 'wrong-network', 'disconnected');
 	if (networkButton) {
 		networkButton.dataset.networkStatus = 'default';
 	}
@@ -1873,6 +1863,7 @@ function syncNetworkBadgeFromState() {
 
 	const walletNetwork = getNetworkById(walletChainId);
 	if (walletNetwork && walletNetwork.slug === selectedNetwork.slug) {
+		clearNetworkSetupRequired();
 		networkBadge.classList.add('connected');
 		if (networkButton) {
 			networkButton.dataset.networkStatus = 'connected';
@@ -1880,13 +1871,13 @@ function syncNetworkBadgeFromState() {
 		if (networkDropdown) {
 			networkDropdown.dataset.networkStatus = 'connected';
 		}
-	} else {
-		networkBadge.classList.add('wrong-network');
+	} else if (networkSetupRequiredSlug && networkSetupRequiredSlug === selectedNetwork.slug) {
+		networkBadge.classList.add('setup-needed');
 		if (networkButton) {
-			networkButton.dataset.networkStatus = 'wrong-network';
+			networkButton.dataset.networkStatus = 'setup-needed';
 		}
 		if (networkDropdown) {
-			networkDropdown.dataset.networkStatus = 'wrong-network';
+			networkDropdown.dataset.networkStatus = 'setup-needed';
 		}
 	}
 
@@ -1897,6 +1888,9 @@ function applySelectedNetwork(network, { updateUrl = true } = {}) {
 	if (!network) return;
 
 	const hasChanged = selectedNetworkSlug !== network.slug;
+	if (hasChanged) {
+		clearNetworkSetupRequired();
+	}
 	selectedNetworkSlug = network.slug;
 	if (window.app?.ctx?.setSelectedChainSlug) {
 		window.app.ctx.setSelectedChainSlug(network.slug);
@@ -1948,21 +1942,11 @@ const populateNetworkOptions = () => {
 		const commitSelection = async () => {
 			const network = getNetworkBySlug(option.dataset.slug);
 			if (!network) return;
-			const previousSlug = selectedNetworkSlug || window.app?.ctx?.getSelectedChainSlug?.() || getDefaultNetwork().slug;
-			const hasWalletContext = Boolean(window.app?.ctx?.getWalletChainId?.());
-			const shouldSuppressAddButton = hasWalletContext && previousSlug !== network.slug;
-			if (shouldSuppressAddButton) {
-				setNetworkSwitchInProgress(true);
-			}
-
 			const hasChanged = applySelectedNetwork(network, { updateUrl: true });
 			toggleNetworkDropdown(false);
 			if (hasChanged && typeof window.app?.handleNetworkSelectionCommit === 'function') {
 				await window.app.handleNetworkSelectionCommit(network);
-				return;
 			}
-
-			setNetworkSwitchInProgress(false);
 		};
 
 		option.addEventListener('click', commitSelection);
@@ -2002,15 +1986,14 @@ document.addEventListener('DOMContentLoaded', () => {
 				return;
 			}
 
-			const originalText = addNetworkButton.textContent;
 			addNetworkButton.disabled = true;
-			addNetworkButton.textContent = 'Switching...';
+			addNetworkButton.textContent = 'Retrying...';
 
 			try {
 				await window.app?.switchWalletToNetworkWithReload?.(selectedNetwork);
 			} finally {
 				addNetworkButton.disabled = false;
-				addNetworkButton.textContent = originalText;
+				syncAddNetworkButtonVisibility();
 			}
 		});
 	}

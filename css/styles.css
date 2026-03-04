@@ -195,7 +195,7 @@ h6 {
   color: #10b981;
 }
 
-.network-badge.wrong-network {
+.network-badge.setup-needed {
   background-color: transparent;
   color: #ef4444;
 }

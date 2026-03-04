@@ -426,13 +426,11 @@ export class WalletUI extends BaseComponent {
 
             networkBadge.textContent = selectedNetwork.displayName || selectedNetwork.name;
             networkBadge.classList.remove('has-logo');
-            networkBadge.classList.remove('wrong-network', 'connected', 'disconnected');
+            networkBadge.classList.remove('setup-needed', 'wrong-network', 'connected', 'disconnected');
             if (!chainId) {
                 networkBadge.classList.add('disconnected');
             } else if (walletNetwork && walletNetwork.slug === selectedNetwork.slug) {
                 networkBadge.classList.add('connected');
-            } else {
-                networkBadge.classList.add('wrong-network');
             }
             this.debug('Network badge updated');
         } catch (error) {
