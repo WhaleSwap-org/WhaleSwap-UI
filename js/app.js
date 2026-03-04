@@ -43,6 +43,8 @@ class App {
 		this.claimTabVisibilityRequestId = 0;
 		this.claimTabVisibilityKnown = false;
 		this.claimTabLastVisible = false;
+		this.orderTabVisibilityRequestId = 0;
+		this.orderTabVisibilityRefreshTimer = null;
 		this.claimVisibilityRefreshTimer = null;
 		this.claimVisibilityRetryTimer = null;
 		this.claimVisibilityRetryBaseDelayMs = 500;
@@ -66,6 +68,39 @@ class App {
 			|| tabId === 'my-orders'
 			|| tabId === 'taker-orders'
 			|| tabId === 'cleanup-orders';
+	}
+
+	getTabButton(tabId) {
+		return document.querySelector(`.tab-button[data-tab="${tabId}"]`);
+	}
+
+	setTabVisible(tabId, isVisible) {
+		const button = this.getTabButton(tabId);
+		if (!button) return null;
+		button.style.display = isVisible ? 'block' : 'none';
+		return button;
+	}
+
+	isTabVisible(tabId) {
+		const button = this.getTabButton(tabId);
+		return !!button && button.style.display !== 'none';
+	}
+
+	getNoOrderTabsVisibility() {
+		return {
+			showMyOrders: false,
+			showInvitedOrders: false
+		};
+	}
+
+	buildOrderTabVisibilityFromOrders(orders = [], account = '') {
+		const normalizedAccount = String(account || '').toLowerCase();
+		if (!normalizedAccount) return this.getNoOrderTabsVisibility();
+
+		return {
+			showMyOrders: orders.some((order) => String(order?.maker || '').toLowerCase() === normalizedAccount),
+			showInvitedOrders: orders.some((order) => String(order?.taker || '').toLowerCase() === normalizedAccount)
+		};
 	}
 
 	isClaimEventForCurrentAccount(eventData = null) {
@@ -112,6 +147,91 @@ class App {
 				this.debug('Scheduled claim visibility refresh failed:', error);
 			});
 		}, 120);
+	}
+
+	clearOrderTabVisibilityRefreshTimer() {
+		if (this.orderTabVisibilityRefreshTimer) {
+			clearTimeout(this.orderTabVisibilityRefreshTimer);
+			this.orderTabVisibilityRefreshTimer = null;
+		}
+	}
+
+	scheduleOrderTabVisibilityRefresh({ force = true } = {}) {
+		this.clearOrderTabVisibilityRefreshTimer();
+		this.orderTabVisibilityRefreshTimer = setTimeout(() => {
+			this.orderTabVisibilityRefreshTimer = null;
+			this.refreshOrderTabVisibility({ force }).catch((error) => {
+				this.debug('Scheduled order-tab visibility refresh failed:', error);
+			});
+		}, 120);
+	}
+
+	async refreshOrderTabVisibility(options = {}) {
+		const { force = false } = options;
+		const myOrdersButton = this.getTabButton('my-orders');
+		const invitedOrdersButton = this.getTabButton('taker-orders');
+		const noOrderTabsVisibility = this.getNoOrderTabsVisibility();
+		if (!myOrdersButton && !invitedOrdersButton) {
+			return noOrderTabsVisibility;
+		}
+
+		const requestId = ++this.orderTabVisibilityRequestId;
+		const isCurrentRequest = () => requestId === this.orderTabVisibilityRequestId;
+		const fallback = {
+			showMyOrders: this.isTabVisible('my-orders'),
+			showInvitedOrders: this.isTabVisible('taker-orders')
+		};
+
+		const applyVisibility = async (
+			visibility,
+			{ allowRedirect = true } = {}
+		) => {
+			if (!isCurrentRequest()) return visibility;
+
+			this.setTabVisible('my-orders', visibility.showMyOrders);
+			this.setTabVisible('taker-orders', visibility.showInvitedOrders);
+
+			if (allowRedirect) {
+				if (!visibility.showMyOrders && this.currentTab === 'my-orders') {
+					await this.showTab('view-orders');
+				}
+				if (!visibility.showInvitedOrders && this.currentTab === 'taker-orders') {
+					await this.showTab('view-orders');
+				}
+			}
+
+			this.updateTabRailOverflowState();
+			return visibility;
+		};
+
+		try {
+			const wallet = this.ctx?.getWallet?.();
+			const isConnected = !!wallet?.isWalletConnected?.();
+			const account = wallet?.getAccount?.();
+
+			if (!isConnected || !account || !this.isWalletOnSelectedNetwork()) {
+				return await applyVisibility(noOrderTabsVisibility);
+			}
+
+			const ws = this.ctx?.getWebSocket?.();
+			await ws?.waitForInitialization?.();
+			if (!ws) {
+				return await applyVisibility(noOrderTabsVisibility);
+			}
+
+			if (force || !ws.hasCompletedOrderSync) {
+				await ws.waitForOrderSync({ triggerIfNeeded: true });
+			}
+
+			const orders = Array.from(ws.orderCache?.values?.() || []);
+			const visibility = this.buildOrderTabVisibilityFromOrders(orders, account);
+			return await applyVisibility(visibility);
+		} catch (error) {
+			this.debug('Order tab visibility check failed:', error);
+			return await applyVisibility(fallback, {
+				allowRedirect: false
+			});
+		}
 	}
 
 	clearClaimVisibilityRetryTimer() {
@@ -836,6 +956,7 @@ class App {
 									this.updateTabVisibility(false);
 									await this.refreshAdminTabVisibility();
 									await this.refreshClaimTabVisibility();
+									await this.refreshOrderTabVisibility();
 									await this.switchWalletToNetworkWithReload(selectedNetwork);
 									break;
 								}
@@ -843,11 +964,12 @@ class App {
 							this.debug('Wallet connected on selected chain, reinitializing components...');
 							this.updateTabVisibility(true);
 							await this.refreshAdminTabVisibility();
-						await this.refreshClaimTabVisibility();
-						// Preserve WebSocket order cache to avoid clearing orders on connect
-						await this.reinitializeComponents(true);
-						break;
-					}
+							await this.refreshClaimTabVisibility();
+							await this.refreshOrderTabVisibility();
+							// Preserve WebSocket order cache to avoid clearing orders on connect
+							await this.reinitializeComponents(true);
+							break;
+						}
 					case 'disconnect': {
 						this.ctx.setWalletChainId(null);
 						syncNetworkBadgeFromState();
@@ -855,6 +977,7 @@ class App {
 						this.updateTabVisibility(false);
 						await this.refreshAdminTabVisibility();
 						await this.refreshClaimTabVisibility();
+						await this.refreshOrderTabVisibility();
 						// Clear CreateOrder state only; no need to initialize since tab is hidden
 						try {
 							const createOrderComponent = this.components['create-order'];
@@ -875,20 +998,22 @@ class App {
 									this.updateTabVisibility(false);
 									await this.refreshAdminTabVisibility();
 									await this.refreshClaimTabVisibility();
+									await this.refreshOrderTabVisibility();
 									break;
 								}
 
 								this.debug('Account changed, reinitializing components...');
 								this.updateTabVisibility(true);
 								await this.refreshAdminTabVisibility();
-							await this.refreshClaimTabVisibility();
-							await this.reinitializeComponents(true);
-							if (data?.account) {
-								const short = `${data.account.slice(0,6)}...${data.account.slice(-4)}`;
-								this.showInfo(`Switched account to ${short}`);
-							} else {
-								this.showInfo('Account changed');
-							}
+								await this.refreshClaimTabVisibility();
+								await this.refreshOrderTabVisibility();
+								await this.reinitializeComponents(true);
+								if (data?.account) {
+									const short = `${data.account.slice(0,6)}...${data.account.slice(-4)}`;
+									this.showInfo(`Switched account to ${short}`);
+								} else {
+									this.showInfo('Account changed');
+								}
 						} catch (error) {
 							console.error('[App] Error handling accountsChanged:', error);
 						}
@@ -910,6 +1035,7 @@ class App {
 								this.updateTabVisibility(false);
 								await this.refreshAdminTabVisibility();
 								await this.refreshClaimTabVisibility();
+								await this.refreshOrderTabVisibility();
 							}
 						} catch (error) {
 							console.error('[App] Error handling chainChanged:', error);
@@ -928,16 +1054,29 @@ class App {
 				ws.subscribe('OrderCreated', () => {
 					this.debug('Order created, refreshing components...');
 					this.refreshActiveComponent();
+					this.scheduleOrderTabVisibilityRefresh();
 				});
 
 				ws.subscribe('OrderFilled', () => {
 					this.debug('Order filled, refreshing components...');
 					this.refreshActiveComponent();
+					this.scheduleOrderTabVisibilityRefresh();
 				});
 
 				ws.subscribe('OrderCanceled', () => {
 					this.debug('Order canceled, refreshing components...');
 					this.refreshActiveComponent();
+					this.scheduleOrderTabVisibilityRefresh();
+				});
+
+				ws.subscribe('OrderCleanedUp', () => {
+					this.debug('Order cleaned up, refreshing components...');
+					this.refreshActiveComponent();
+					this.scheduleOrderTabVisibilityRefresh();
+				});
+
+				ws.subscribe('orderSyncComplete', () => {
+					this.scheduleOrderTabVisibilityRefresh({ force: false });
 				});
 
 				ws.subscribe('claimsUpdated', (eventData) => {
@@ -992,31 +1131,29 @@ class App {
 
 			// Add new method to update tab visibility
 			this.updateTabVisibility = (isConnected) => {
-				const tabButtons = document.querySelectorAll('.tab-button');
-				tabButtons.forEach(button => {
-					// Always show intro, create-order, view-orders, cleanup-orders, contract-params
-					if (
-						button.dataset.tab === 'intro' ||
-						button.dataset.tab === 'create-order' ||
-						button.dataset.tab === 'view-orders' ||
-						button.dataset.tab === 'cleanup-orders' ||
-						button.dataset.tab === 'contract-params'
-					) {
-						button.style.display = 'block';
-					} else if (button.dataset.tab === 'claim') {
-						// Claim visibility is handled asynchronously after claimable checks.
-						// Keep current state while connected to avoid flicker and fail-closed behavior.
-						if (!isConnected) {
-							button.style.display = 'none';
-							this.claimTabVisibilityKnown = true;
-							this.claimTabLastVisible = false;
-							this.clearClaimVisibilityRetryTimer();
-							this.resetClaimVisibilityRetryBackoff();
-						}
-					} else {
-						button.style.display = isConnected ? 'block' : 'none';
-					}
-				});
+				// Always visible tabs.
+				this.setTabVisible('intro', true);
+				this.setTabVisible('create-order', true);
+				this.setTabVisible('view-orders', true);
+				this.setTabVisible('cleanup-orders', true);
+				this.setTabVisible('contract-params', true);
+
+				// Visibility computed asynchronously from order cache.
+				this.setTabVisible('my-orders', false);
+				this.setTabVisible('taker-orders', false);
+
+				// Connection-dependent tabs.
+				this.setTabVisible('admin', isConnected);
+
+				// Claim visibility is handled asynchronously after claimable checks.
+				// Keep current state while connected to avoid flicker and fail-closed behavior.
+				if (!isConnected) {
+					this.setTabVisible('claim', false);
+					this.claimTabVisibilityKnown = true;
+					this.claimTabLastVisible = false;
+					this.clearClaimVisibilityRetryTimer();
+					this.resetClaimVisibilityRetryBackoff();
+				}
 
 				// If disconnected, only switch to view-orders if current tab is not visible
 				if (!isConnected) {
@@ -1028,6 +1165,7 @@ class App {
 
 				this.scrollActiveTabIntoView({ behavior: 'auto' });
 
+				this.scheduleOrderTabVisibilityRefresh();
 				this.scheduleClaimTabVisibilityRefresh();
 			};
 
@@ -1040,6 +1178,9 @@ class App {
 			Promise.resolve()
 				.then(() => this.refreshClaimTabVisibility())
 				.catch((error) => this.debug('Deferred claim visibility check failed:', error));
+			Promise.resolve()
+				.then(() => this.refreshOrderTabVisibility())
+				.catch((error) => this.debug('Deferred order-tab visibility check failed:', error));
 
 		// Add new property to track WebSocket readiness
 		this.wsInitialized = false;
@@ -1351,6 +1492,16 @@ class App {
 						} else {
 							this.showWarning('Unable to verify claimable balances right now. Please try again.');
 						}
+						return;
+					}
+				}
+
+				if (tabId === 'my-orders' || tabId === 'taker-orders') {
+					const { showMyOrders, showInvitedOrders } = await this.refreshOrderTabVisibility();
+					const isVisible = tabId === 'my-orders' ? showMyOrders : showInvitedOrders;
+					if (!isVisible) {
+						const label = tabId === 'my-orders' ? 'my orders' : 'invited orders';
+						this.showWarning(`No ${label} available for connected wallet.`);
 						return;
 					}
 				}
