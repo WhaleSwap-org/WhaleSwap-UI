@@ -67,4 +67,30 @@ describe('Claim display symbols', () => {
         const symbol = component.container.querySelector('.claim-token-symbol')?.textContent?.trim();
         expect(symbol).toBe('LINK.pol');
     });
+
+    it('escapes claim row symbol, name, and amount text', () => {
+        const component = createComponent();
+
+        component.renderClaimRows([
+            {
+                token: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                tokenLower: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                symbol: 'SAFE',
+                displaySymbol: '<b>BAD</b>',
+                name: '<img src=x onerror=1>',
+                formattedAmount: '1<2',
+                iconUrl: 'fallback'
+            }
+        ]);
+
+        const symbol = component.container.querySelector('.claim-token-symbol');
+        const name = component.container.querySelector('.claim-token-name');
+        const amount = component.container.querySelector('.claim-amount');
+
+        expect(symbol?.textContent).toBe('<b>BAD</b>');
+        expect(name?.textContent).toBe('<img src=x onerror=1>');
+        expect(amount?.textContent).toBe('1<2');
+        expect(symbol?.querySelector('b')).toBeNull();
+        expect(name?.querySelector('img')).toBeNull();
+    });
 });
