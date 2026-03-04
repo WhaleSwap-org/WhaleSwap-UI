@@ -79,7 +79,9 @@ class ContractService {
                 this.debug(`Trying HTTP RPC: ${url}`);
                 const httpProvider = new ethers.providers.JsonRpcProvider(url);
                 const httpContract = new ethers.Contract(net.contractAddress, net.contractABI, httpProvider);
-                return await readFn(httpContract);
+                const result = await readFn(httpContract);
+                this.debug(`HTTP RPC succeeded: ${url}`);
+                return result;
             } catch (e) {
                 lastErr = e;
                 this.warn(`HTTP RPC failed (${url}):`, e?.message || e);
