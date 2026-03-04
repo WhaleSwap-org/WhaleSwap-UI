@@ -789,6 +789,10 @@ export class Admin extends BaseComponent {
             this.updateFeeButton.disabled = true;
             this.updateFeeButton.textContent = 'Updating...';
 
+            if (!await this.ensureWalletReadyForWrite('update the fee configuration')) {
+                return;
+            }
+
             const wallet = this.ctx.getWallet();
             const signer = await wallet.getSigner();
             const metadata = await this.getTokenMetadata(feeToken);
@@ -895,6 +899,10 @@ export class Admin extends BaseComponent {
             this.updateTokensButton.disabled = true;
             this.updateTokensButton.textContent = 'Updating...';
 
+            if (!await this.ensureWalletReadyForWrite('update allowed tokens')) {
+                return;
+            }
+
             const wallet = this.ctx.getWallet();
             const signer = await wallet.getSigner();
             const tx = await this.contract.connect(signer).updateAllowedTokens(tokens, flags);
@@ -926,6 +934,10 @@ export class Admin extends BaseComponent {
         try {
             this.disableButton.disabled = true;
             this.disableButton.textContent = 'Disabling...';
+
+            if (!await this.ensureWalletReadyForWrite('disable the contract')) {
+                return;
+            }
 
             const wallet = this.ctx.getWallet();
             const signer = await wallet.getSigner();

@@ -204,6 +204,11 @@ export function extractTransactionErrorMessage(error) {
         return 'Unknown error occurred';
     }
 
+    const errorText = String(error.reason || error.message || '').toLowerCase();
+    if (error.code === 'NETWORK_ERROR' && errorText.includes('underlying network changed')) {
+        return 'Wallet network changed. Switch back to the selected network and try again.';
+    }
+
     if (error.code === 'UNPREDICTABLE_GAS_LIMIT' && error.error?.data?.message) {
         return error.error.data.message;
     }
