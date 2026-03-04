@@ -405,6 +405,10 @@ export class OrdersComponentHelper {
                 throw new Error('Please sign in to fill order');
             }
 
+            if (!await this.component.ensureWalletReadyForWrite(`fill order #${normalizedOrderId}`)) {
+                return;
+            }
+
             let signer;
             try {
                 signer = provider.getSigner();

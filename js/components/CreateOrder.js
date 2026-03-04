@@ -845,6 +845,10 @@ export class CreateOrder extends BaseComponent {
                 return;
             }
 
+            if (!await this.ensureWalletReadyForWrite('create the order')) {
+                return;
+            }
+
             // Get fresh signer and reinitialize contract
             const signer = walletManager.getSigner();
             if (!signer) {

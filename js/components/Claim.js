@@ -290,6 +290,10 @@ export class Claim extends BaseComponent {
         this.renderClaimRows(this.claims);
 
         try {
+            if (!await this.ensureWalletReadyForWrite('claim this token')) {
+                return;
+            }
+
             const signer = await wallet.getSigner();
             if (!signer) {
                 throw new Error('No signer available');
