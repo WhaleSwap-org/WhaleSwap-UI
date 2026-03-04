@@ -2682,7 +2682,10 @@ export class CreateOrder extends BaseComponent {
     }
 
     initializeTokenSelectors() {
-        ['sell', 'buy'].forEach(type => {
+        const tokenSelectorTypes = ['sell', 'buy'];
+        const createOrderModalIds = new Set(tokenSelectorTypes.map((type) => `${type}TokenModal`));
+
+        tokenSelectorTypes.forEach(type => {
             const selector = document.getElementById(`${type}TokenSelector`);
             const modal = document.getElementById(`${type}TokenModal`);
             const closeButton = modal?.querySelector('.token-modal-close');
@@ -2723,7 +2726,6 @@ export class CreateOrder extends BaseComponent {
 
                 // Close modal when clicking outside (register once)
                 if (!this.boundWindowClickHandler) {
-                    const createOrderModalIds = new Set(['sellTokenModal', 'buyTokenModal']);
                     this.boundWindowClickHandler = (event) => {
                         const modalTarget = event.target;
                         if (!(modalTarget instanceof HTMLElement)) return;
