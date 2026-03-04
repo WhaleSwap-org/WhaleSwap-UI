@@ -1,11 +1,11 @@
 import { BaseComponent } from './BaseComponent.js';
 import { createLogger } from '../services/LogService.js';
+import { ethers } from 'ethers';
 import { processOrderAddress, generateStatusCellHTML, setupClickToCopy } from '../utils/ui.js';
-import { calculateTotalValue, formatDealValue } from '../utils/orderUtils.js';
+import { formatTimeDiff, calculateTotalValue, formatDealValue } from '../utils/orderUtils.js';
 import { OrdersComponentHelper } from '../services/OrdersComponentHelper.js';
 import { OrdersTableRenderer } from '../services/OrdersTableRenderer.js';
-import { buildTokenDisplaySymbolMap } from '../utils/tokenDisplay.js';
-import { buildOrderRowContext } from '../utils/ordersComponentHelpers.js';
+import { buildTokenDisplaySymbolMap, getDisplaySymbol } from '../utils/tokenDisplay.js';
 
 export class TakerOrders extends BaseComponent {
     constructor() {
@@ -296,28 +296,55 @@ export class TakerOrders extends BaseComponent {
             tr.dataset.orderId = order.id.toString();
             tr.dataset.timestamp = order.timings?.createdAt?.toString() || '0';
 
+            // Get token info from WebSocket cache
             const ws = this.ctx.getWebSocket();
-            const pricing = this.ctx.getPricing();
-            const {
-                sellTokenInfo,
-                buyTokenInfo,
-                sellDisplaySymbol,
-                buyDisplaySymbol,
+            const sellTokenInfo = await ws.getTokenInfo(order.sellToken);
+            const buyTokenInfo = await ws.getTokenInfo(order.buyToken);
+            const sellDisplaySymbol = getDisplaySymbol(sellTokenInfo, this.tokenDisplaySymbolMap);
+            const buyDisplaySymbol = getDisplaySymbol(buyTokenInfo, this.tokenDisplaySymbolMap);
+
+            // Use pre-formatted values from dealMetrics
+            const { 
                 formattedSellAmount,
                 formattedBuyAmount,
-                resolvedSellPrice,
-                resolvedBuyPrice,
-                sellPriceClass,
-                buyPriceClass,
-                orderStatus,
-                expiryText,
-                buyerDealRatio
-            } = await buildOrderRowContext({
-                order,
-                ws,
-                pricing,
-                tokenDisplaySymbolMap: this.tokenDisplaySymbolMap
-            });
+                sellTokenUsdPrice,
+                buyTokenUsdPrice 
+            } = order.dealMetrics || {};
+            
+            const deal = order.dealMetrics?.deal > 0 ? 1 / order.dealMetrics?.deal : undefined; // view as buyer/taker
+
+            // Fallback amount formatting if dealMetrics not yet populated
+            const safeFormattedSellAmount = typeof formattedSellAmount !== 'undefined'
+                ? formattedSellAmount
+                : (order?.sellAmount && sellTokenInfo?.decimals != null
+                    ? ethers.utils.formatUnits(order.sellAmount, sellTokenInfo.decimals)
+                    : '0');
+            const safeFormattedBuyAmount = typeof formattedBuyAmount !== 'undefined'
+                ? formattedBuyAmount
+                : (order?.buyAmount && buyTokenInfo?.decimals != null
+                    ? ethers.utils.formatUnits(order.buyAmount, buyTokenInfo.decimals)
+                    : '0');
+
+            // Determine prices with fallback to current pricing service map
+            const pricing = this.ctx.getPricing();
+            const resolvedSellPrice = typeof sellTokenUsdPrice !== 'undefined' 
+                ? sellTokenUsdPrice 
+                : (pricing ? pricing.getPrice(order.sellToken) : undefined);
+            const resolvedBuyPrice = typeof buyTokenUsdPrice !== 'undefined' 
+                ? buyTokenUsdPrice 
+                : (pricing ? pricing.getPrice(order.buyToken) : undefined);
+
+            // Mark as estimate if not explicitly present in pricing map
+            const sellPriceClass = (pricing && pricing.isPriceEstimated(order.sellToken)) ? 'price-estimate' : '';
+            const buyPriceClass = (pricing && pricing.isPriceEstimated(order.buyToken)) ? 'price-estimate' : '';
+
+            const orderStatus = ws.getOrderStatus(order);
+            const expiryEpoch = order?.timings?.expiresAt;
+            const currentTime = ws.getCurrentTimestamp();
+            const expiryText = orderStatus === 'Active' && typeof expiryEpoch === 'number' 
+                && Number.isFinite(currentTime)
+                ? formatTimeDiff(expiryEpoch - currentTime) 
+                : '';
 
             // Get counterparty address for display
             const wallet = this.ctx.getWallet();
@@ -334,9 +361,9 @@ export class TakerOrders extends BaseComponent {
                         <div class="token-details">
                             <div class="token-symbol-row">
                                 <span class="token-symbol">${sellDisplaySymbol}</span>
-                                <span class="token-price ${sellPriceClass}">${calculateTotalValue(resolvedSellPrice, formattedSellAmount)}</span>
+                                <span class="token-price ${sellPriceClass}">${calculateTotalValue(resolvedSellPrice, safeFormattedSellAmount)}</span>
                             </div>
-                            <span class="token-amount">${formattedSellAmount}</span>
+                            <span class="token-amount">${safeFormattedSellAmount}</span>
                         </div>
                     </div>
                 </td>
@@ -348,13 +375,13 @@ export class TakerOrders extends BaseComponent {
                         <div class="token-details">
                             <div class="token-symbol-row">
                                 <span class="token-symbol">${buyDisplaySymbol}</span>
-                                <span class="token-price ${buyPriceClass}">${calculateTotalValue(resolvedBuyPrice, formattedBuyAmount)}</span>
+                                <span class="token-price ${buyPriceClass}">${calculateTotalValue(resolvedBuyPrice, safeFormattedBuyAmount)}</span>
                             </div>
-                            <span class="token-amount">${formattedBuyAmount}</span>
+                            <span class="token-amount">${safeFormattedBuyAmount}</span>
                         </div>
                     </div>
                 </td>
-                <td>${formatDealValue(buyerDealRatio)}</td>
+                <td>${formatDealValue(deal)}</td>
                 <td>${expiryText}</td>
                 <td class="order-status">
                     ${generateStatusCellHTML(orderStatus, counterpartyAddress, isZeroAddr, formattedAddress)}
