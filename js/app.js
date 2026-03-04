@@ -23,7 +23,6 @@ import { Admin } from './components/Admin.js';
 import { versionService } from './services/VersionService.js';
 import { createAppContext, setGlobalContext } from './services/AppContext.js';
 import { hasAnyClaimables } from './utils/claims.js';
-import { getOrderTabVisibility } from './utils/orderTabs.js';
 import { isUserRejection } from './utils/ui.js';
 
 class App {
@@ -213,7 +212,11 @@ class App {
 			}
 
 			const orders = Array.from(ws.orderCache?.values?.() || []);
-			const visibility = getOrderTabVisibility(orders, account);
+			const normalizedAccount = String(account).toLowerCase();
+			const visibility = {
+				showMyOrders: orders.some((order) => String(order?.maker || '').toLowerCase() === normalizedAccount),
+				showInvitedOrders: orders.some((order) => String(order?.taker || '').toLowerCase() === normalizedAccount)
+			};
 			return await applyVisibility(visibility);
 		} catch (error) {
 			this.debug('Order tab visibility check failed:', error);
