@@ -201,7 +201,7 @@ button.info-icon.order-tooltip-icon {
 .deal-cell-content {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: flex-end;
   gap: 0.35rem;
 }
 
@@ -647,7 +647,7 @@ button.info-icon.order-tooltip-icon {
   }
 
   .deal-cell-content {
-    justify-content: flex-start;
+    justify-content: space-between;
     width: 100%;
   }
 
