@@ -115,7 +115,7 @@ Generate coverage reports (`text`, `html`, `lcov`, `json-summary`):
 npm run test:coverage
 ```
 
-Coverage artifacts are written to `coverage/`. The PR unit-test workflow prints a coverage summary in the check output and uploads the full `coverage/` directory as an artifact.
+Coverage artifacts are written to `coverage/`. The PR unit-test workflow prints the Vitest coverage report in the check log and uploads the full `coverage/` directory as an artifact.
 
 ## Security Notes
 - Always verify token addresses
