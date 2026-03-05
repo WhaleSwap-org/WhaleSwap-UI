@@ -99,12 +99,6 @@ jobs:
             lines.push('```');
           }
 
-          lines.push(
-            '',
-            '0% functions means the file defines functions, but the current test suite did not execute any of them.',
-            'Branches are shown as `n/a` when a file has no tracked branch points.'
-          );
-
           const output = `${lines.join('\n')}\n`;
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, output);
           process.stdout.write(output);
