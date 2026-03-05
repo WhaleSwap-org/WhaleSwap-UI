@@ -1,6 +1,6 @@
 import { BaseComponent } from './BaseComponent.js';
 import { createLogger } from '../services/LogService.js';
-import { createDealCellHTML, processOrderAddress, generateStatusCellHTML, setupClickToCopy } from '../utils/ui.js';
+import { processOrderAddress, generateStatusCellHTML, setupClickToCopy } from '../utils/ui.js';
 import { calculateTotalValue, formatDealValue } from '../utils/orderUtils.js';
 import { OrdersComponentHelper } from '../services/OrdersComponentHelper.js';
 import { OrdersTableRenderer } from '../services/OrdersTableRenderer.js';
@@ -354,7 +354,7 @@ export class TakerOrders extends BaseComponent {
                         </div>
                     </div>
                 </td>
-                <td class="deal-cell">${createDealCellHTML(formatDealValue(buyerDealRatio))}</td>
+                <td>${formatDealValue(buyerDealRatio)}</td>
                 <td>${expiryText}</td>
                 <td class="order-status">
                     ${generateStatusCellHTML(orderStatus, counterpartyAddress, isZeroAddr, formattedAddress)}

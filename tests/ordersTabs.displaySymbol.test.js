@@ -270,14 +270,12 @@ describe('orders tabs display symbol rendering', () => {
         const tokenPriceClasses = Array.from(row.querySelectorAll('.token-price'))
             .map((element) => element.classList.contains('price-estimate'));
         const expiryText = row.querySelector('td:nth-child(5)')?.textContent?.trim();
-        const dealText = row.querySelector('.deal-value')?.textContent?.trim();
-        const dealCell = row.querySelector('.deal-cell-content');
+        const dealText = row.querySelector('td:nth-child(4)')?.textContent?.trim();
 
         expect(tokenAmounts).toEqual(['2.0', '0.5']);
         expect(tokenPrices).toEqual(['$4.00', '$1.50']);
         expect(tokenPriceClasses).toEqual([true, false]);
         expect(expiryText).toBe('1H 0M');
-        expect(dealCell).not.toBeNull();
         expect(dealText).toBe('N/A');
     });
 });
