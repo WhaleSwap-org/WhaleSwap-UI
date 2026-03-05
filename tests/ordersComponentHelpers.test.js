@@ -83,8 +83,8 @@ describe('ordersComponentHelpers', () => {
             tokenDisplaySymbolMap: new Map()
         });
 
-        expect(result.formattedSellAmount).toBe('2000000');
-        expect(result.formattedBuyAmount).toBe('900000');
+        expect(result.formattedSellAmount).toBe('0.000000000002');
+        expect(result.formattedBuyAmount).toBe('0.9');
         expect(result.resolvedSellPrice).toBe(3);
         expect(result.resolvedBuyPrice).toBe(7);
         expect(result.expiryText).toBe('');
