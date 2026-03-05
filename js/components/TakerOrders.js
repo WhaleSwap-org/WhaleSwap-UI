@@ -1,6 +1,11 @@
 import { BaseComponent } from './BaseComponent.js';
 import { createLogger } from '../services/LogService.js';
-import { processOrderAddress, generateStatusCellHTML, setupClickToCopy } from '../utils/ui.js';
+import {
+    createDealCellHTML,
+    processOrderAddress,
+    generateStatusCellHTML,
+    setupClickToCopy
+} from '../utils/ui.js';
 import { calculateTotalValue, formatDealValue } from '../utils/orderUtils.js';
 import { OrdersComponentHelper } from '../services/OrdersComponentHelper.js';
 import { OrdersTableRenderer } from '../services/OrdersTableRenderer.js';
@@ -256,13 +261,22 @@ export class TakerOrders extends BaseComponent {
             } else {
                 this.warn('Advanced filters element not found');
             }
+
+            // Keep the shared renderer header and tooltip behavior.
+            return;
             
+            /* Legacy custom header override retained only for reference.
             // Customize table header
             const thead = this.container.querySelector('thead tr');
             if (!thead) {
                 this.error('Table header element not found');
                 return;
             }
+
+            const dealTooltipIcon = createInlineTooltipIcon(DEAL_TOOLTIP_TEXT, {
+                className: 'info-icon order-tooltip-icon',
+                ariaLabel: 'Explain deal value'
+            });
 
             thead.innerHTML = `
                 <th>ID</th>
@@ -280,6 +294,20 @@ export class TakerOrders extends BaseComponent {
                 <th>Status</th>
                 <th>Action</th>
             `;
+            thead.innerHTML = `
+                <th>ID</th>
+                <th>Buy</th>
+                <th>Sell</th>
+                <th>
+                    Deal
+                    ${dealTooltipIcon}
+                </th>
+                <th>Expires</th>
+                <th>Status</th>
+                <th>Action</th>
+            `;
+            setupOrderTooltips(this.container);
+            */
         } catch (error) {
             this.error('Error setting up table:', error);
         }
@@ -354,7 +382,7 @@ export class TakerOrders extends BaseComponent {
                         </div>
                     </div>
                 </td>
-                <td>${formatDealValue(buyerDealRatio)}</td>
+                <td class="deal-cell">${createDealCellHTML(formatDealValue(buyerDealRatio))}</td>
                 <td>${expiryText}</td>
                 <td class="order-status">
                     ${generateStatusCellHTML(orderStatus, counterpartyAddress, isZeroAddr, formattedAddress)}
