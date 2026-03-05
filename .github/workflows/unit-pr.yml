@@ -53,27 +53,32 @@ jobs:
 
           const summary = JSON.parse(fs.readFileSync('coverage/coverage-summary.json', 'utf8'));
           const total = summary.total;
+          const formatMetric = (metric) => {
+            if (!metric || metric.total === 0) {
+              return `n/a (${metric?.covered ?? 0}/${metric?.total ?? 0})`;
+            }
+            return `${metric.pct}% (${metric.covered}/${metric.total})`;
+          };
+
           const lowestFiles = Object.entries(summary)
             .filter(([name]) => name !== 'total')
             .map(([name, data]) => ({
               file: path.relative(process.cwd(), name).replace(/\\/g, '/'),
-              statements: data.statements.pct,
-              branches: data.branches.pct,
-              functions: data.functions.pct,
-              lines: data.lines.pct
+              statements: data.statements,
+              branches: data.branches,
+              functions: data.functions,
+              lines: data.lines
             }))
-            .sort((a, b) => a.statements - b.statements)
+            .sort((a, b) => a.statements.pct - b.statements.pct)
             .slice(0, 5);
 
           const lines = [
             '## Coverage Summary',
             '',
-            '| Metric | Coverage |',
-            '| --- | ---: |',
-            `| Statements | ${total.statements.pct}% |`,
-            `| Branches | ${total.branches.pct}% |`,
-            `| Functions | ${total.functions.pct}% |`,
-            `| Lines | ${total.lines.pct}% |`
+            `- Statements: ${formatMetric(total.statements)}`,
+            `- Branches: ${formatMetric(total.branches)}`,
+            `- Functions: ${formatMetric(total.functions)}`,
+            `- Lines: ${formatMetric(total.lines)}`
           ];
 
           if (lowestFiles.length > 0) {
@@ -81,16 +86,24 @@ jobs:
               '',
               '### Lowest Statement Coverage',
               '',
-              '| File | Stmts | Branches | Funcs | Lines |',
-              '| --- | ---: | ---: | ---: | ---: |'
+              '```text'
             );
 
             for (const file of lowestFiles) {
               lines.push(
-                `| \`${file.file}\` | ${file.statements}% | ${file.branches}% | ${file.functions}% | ${file.lines}% |`
+                `${file.file}`,
+                `  stmts ${formatMetric(file.statements)} | funcs ${formatMetric(file.functions)} | lines ${formatMetric(file.lines)} | branches ${formatMetric(file.branches)}`
               );
             }
+
+            lines.push('```');
           }
+
+          lines.push(
+            '',
+            '0% functions means the file defines functions, but the current test suite did not execute any of them.',
+            'Branches are shown as `n/a` when a file has no tracked branch points.'
+          );
 
           const output = `${lines.join('\n')}\n`;
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, output);
