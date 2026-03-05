@@ -33,5 +33,73 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run unit tests
-        run: npm test
+      - name: Run unit tests with coverage
+        run: npm run test:coverage
+
+      - name: Summarize coverage
+        if: always()
+        shell: bash
+        run: |
+          if [ ! -f coverage/coverage-summary.json ]; then
+            echo "## Coverage Summary" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Coverage summary was not generated." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          node <<'EOF'
+          const fs = require('fs');
+          const path = require('path');
+
+          const summary = JSON.parse(fs.readFileSync('coverage/coverage-summary.json', 'utf8'));
+          const total = summary.total;
+          const lowestFiles = Object.entries(summary)
+            .filter(([name]) => name !== 'total')
+            .map(([name, data]) => ({
+              file: path.relative(process.cwd(), name).replace(/\\/g, '/'),
+              statements: data.statements.pct,
+              branches: data.branches.pct,
+              functions: data.functions.pct,
+              lines: data.lines.pct
+            }))
+            .sort((a, b) => a.statements - b.statements)
+            .slice(0, 5);
+
+          const lines = [
+            '## Coverage Summary',
+            '',
+            '| Metric | Coverage |',
+            '| --- | ---: |',
+            `| Statements | ${total.statements.pct}% |`,
+            `| Branches | ${total.branches.pct}% |`,
+            `| Functions | ${total.functions.pct}% |`,
+            `| Lines | ${total.lines.pct}% |`
+          ];
+
+          if (lowestFiles.length > 0) {
+            lines.push(
+              '',
+              '### Lowest Statement Coverage',
+              '',
+              '| File | Stmts | Branches | Funcs | Lines |',
+              '| --- | ---: | ---: | ---: | ---: |'
+            );
+
+            for (const file of lowestFiles) {
+              lines.push(
+                `| \`${file.file}\` | ${file.statements}% | ${file.branches}% | ${file.functions}% | ${file.lines}% |`
+              );
+            }
+          }
+
+          const output = `${lines.join('\n')}\n`;
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, output);
+          process.stdout.write(output);
+          EOF
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: whaleswap-ui-coverage
+          path: coverage
