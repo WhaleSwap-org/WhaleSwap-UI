@@ -350,6 +350,11 @@ export class PricingService {
             this.debug(`Updated price for ${address}: ${data.price}`);
         }
 
+        if (newPrices.size > 0) {
+            this.lastUpdate = Date.now();
+            this.notifyPriceUpdates(Array.from(newPrices.keys()));
+        }
+
         return newPrices;
     }
 
