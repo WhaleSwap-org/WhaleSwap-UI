@@ -1932,6 +1932,9 @@
   max-width: 980px;
   margin: 0 auto;
   text-align: left;
+  --admin-token-col-action: 120px;
+  --admin-token-col-symbol: 120px;
+  --admin-token-col-remove: 116px;
 }
 
 .admin-panel > .main-heading {
@@ -2073,9 +2076,25 @@
   margin-bottom: 10px;
 }
 
+.admin-panel .admin-token-row-labels {
+  display: grid;
+  grid-template-columns: var(--admin-token-col-action) minmax(0, 1fr) var(--admin-token-col-symbol) var(--admin-token-col-remove);
+  gap: 8px;
+  align-items: end;
+  max-width: 760px;
+  margin: 0 auto 6px;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.admin-panel .admin-token-row-label-symbol,
+.admin-panel .admin-token-row-label-remove {
+  text-align: left;
+}
+
 .admin-panel .admin-token-row {
   display: grid;
-  grid-template-columns: 120px minmax(0, 1fr) 120px auto;
+  grid-template-columns: var(--admin-token-col-action) minmax(0, 1fr) var(--admin-token-col-symbol) var(--admin-token-col-remove);
   gap: 8px;
   align-items: center;
 }
@@ -2083,6 +2102,13 @@
 .admin-panel .admin-token-row input,
 .admin-panel .admin-token-row select {
   margin-bottom: 0;
+}
+
+.admin-panel .admin-token-mobile-label {
+  display: none;
+  font-weight: 600;
+  font-size: 13px;
+  margin: 2px 2px 0;
 }
 
 .admin-panel .admin-token-symbol {
@@ -2165,6 +2191,8 @@
 
 .admin-panel .admin-token-remove {
   white-space: nowrap;
+  text-align: left;
+  width: 100%;
 }
 
 .admin-panel .action-button {
@@ -2194,8 +2222,16 @@
     grid-template-columns: 1fr;
   }
 
+  .admin-panel .admin-token-row-labels {
+    display: none;
+  }
+
   .admin-panel .admin-token-row {
     grid-template-columns: 1fr;
+  }
+
+  .admin-panel .admin-token-mobile-label {
+    display: block;
   }
 
   .admin-panel .admin-token-remove {
