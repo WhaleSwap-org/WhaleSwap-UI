@@ -761,7 +761,7 @@ export class WebSocketService {
                 }
             });
 
-            contract.on("OrderCleanedUp", (orderId) => {
+            contract.on("OrderCleanedUp", orderId => {
                 const orderIdNum = orderId.toNumber();
                 const pricing = this.pricingService;
                 const didRemove = pricing?.removeOrder
@@ -799,10 +799,10 @@ export class WebSocketService {
             if (this.hasContractEvent(contract, "AllowedTokensUpdated")) {
                 contract.on("AllowedTokensUpdated", (tokens, allowed, timestamp) => {
                     const normalizedTokens = Array.isArray(tokens)
-                        ? tokens.map((token) => String(token || '').toLowerCase())
+                        ? tokens.map(token => String(token || '').toLowerCase())
                         : [];
                     const normalizedAllowed = Array.isArray(allowed)
-                        ? allowed.map((flag) => Boolean(flag))
+                        ? allowed.map(flag => Boolean(flag))
                         : [];
                     const eventPayload = {
                         tokens: normalizedTokens,
@@ -819,7 +819,7 @@ export class WebSocketService {
                                 await pricing.getAllowedTokens();
                                 await pricing.fetchAllowedTokensPrices();
                             })
-                            .catch((error) => {
+                            .catch(error => {
                                 this.debug('Failed to refresh pricing after AllowedTokensUpdated:', error);
                             });
                     }
@@ -1291,18 +1291,10 @@ export class WebSocketService {
     }
 
     updateOrderCache(orderId, orderData) {
-        const pricing = this.pricingService;
-        if (pricing?.upsertOrder) {
-            return pricing.upsertOrder(orderData, { computeDeal: false });
-        }
         this.orderCache.set(orderId, orderData);
     }
 
     removeOrder(orderId) {
-        const pricing = this.pricingService;
-        if (pricing?.removeOrder) {
-            return pricing.removeOrder(orderId);
-        }
         this.orderCache.delete(orderId);
     }
 
@@ -1529,9 +1521,6 @@ export class WebSocketService {
     // Will be used with refresh button in the UI 
     async updateAllDeals() {
         const pricing = this.pricingService;
-        if (pricing?.updateAllDeals) {
-            return pricing.updateAllDeals();
-        }
         if (!pricing) {
             this.debug('Cannot update deals: PricingService not available');
             return;
