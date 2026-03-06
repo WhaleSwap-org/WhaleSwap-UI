@@ -116,13 +116,14 @@ export class ViewOrders extends BaseComponent {
         try {
             // Get all orders first
             const ws = this.ctx.getWebSocket();
+            const pricing = this.ctx.getPricing();
             const wallet = this.ctx.getWallet();
             this.tokenDisplaySymbolMap = buildTokenDisplaySymbolMap(
-                Array.from(ws.tokenCache.values()),
+                Array.from(pricing.tokenCache.values()),
                 this.ctx?.getWalletChainId?.()
             );
             await ws.ensureChainTimeInitialized();
-            let ordersToDisplay = Array.from(ws.orderCache.values());
+            let ordersToDisplay = pricing.getOrders();
             
             // Apply token filters
             const sellTokenFilter = this.container.querySelector('#sell-token-filter')?.value;
@@ -263,13 +264,6 @@ export class ViewOrders extends BaseComponent {
         if (this._boundPricingHandler && this.pricingService) {
             this.pricingService.unsubscribe(this._boundPricingHandler);
             this._boundPricingHandler = null;
-        }
-        
-        // Unsubscribe from WebSocket
-        if (this._boundOrdersUpdatedHandler) {
-            const ws = this.ctx.getWebSocket();
-            ws?.unsubscribe("ordersUpdated", this._boundOrdersUpdatedHandler);
-            this._boundOrdersUpdatedHandler = null;
         }
         
         // Clear refresh timeout

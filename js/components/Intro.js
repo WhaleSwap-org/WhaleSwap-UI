@@ -26,7 +26,8 @@ export class Intro extends BaseComponent {
 	async refreshOrderFeeCopy() {
 		try {
 			const ws = this.ctx.getWebSocket();
-			if (!ws) return;
+			const pricing = this.ctx.getPricing();
+			if (!ws || !pricing) return;
 
 			await ws.waitForInitialization();
 			if (!ws.contract) return;
@@ -36,7 +37,7 @@ export class Intro extends BaseComponent {
 				ws.queueRequest(async () => ws.contract.orderCreationFeeAmount())
 			]);
 
-			const tokenInfo = await ws.getTokenInfo(feeTokenAddress);
+			const tokenInfo = await pricing.getTokenInfo(feeTokenAddress);
 			const tokenSymbol = tokenInfo?.symbol || `${feeTokenAddress.slice(0, 6)}...${feeTokenAddress.slice(-4)}`;
 			const tokenDecimals = Number.isInteger(tokenInfo?.decimals) ? tokenInfo.decimals : 18;
 			const formattedFee = ethers.utils.formatUnits(feeAmountRaw, tokenDecimals);

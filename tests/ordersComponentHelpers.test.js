@@ -6,12 +6,6 @@ const TOKEN_B = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
 function createWsStub({ status = 'Active', currentTimestamp = 1_700_000_000 } = {}) {
     return {
-        getTokenInfo: vi.fn(async (address) => {
-            if (address.toLowerCase() === TOKEN_A) {
-                return { address: TOKEN_A, symbol: 'AAA', decimals: 18 };
-            }
-            return { address: TOKEN_B, symbol: 'BBB', decimals: 6 };
-        }),
         getOrderStatus: vi.fn(() => status),
         getCurrentTimestamp: vi.fn(() => currentTimestamp)
     };
@@ -22,7 +16,13 @@ describe('ordersComponentHelpers', () => {
         const ws = createWsStub();
         const pricing = {
             getPrice: vi.fn(() => 999),
-            isPriceEstimated: vi.fn((address) => address.toLowerCase() === TOKEN_A)
+            isPriceEstimated: vi.fn((address) => address.toLowerCase() === TOKEN_A),
+            getTokenInfo: vi.fn(async (address) => {
+                if (address.toLowerCase() === TOKEN_A) {
+                    return { address: TOKEN_A, symbol: 'AAA', decimals: 18 };
+                }
+                return { address: TOKEN_B, symbol: 'BBB', decimals: 6 };
+            })
         };
         const tokenDisplaySymbolMap = new Map([
             [TOKEN_A, 'AAA.issuer'],
@@ -64,7 +64,13 @@ describe('ordersComponentHelpers', () => {
         const ws = createWsStub({ status: 'Filled' });
         const pricing = {
             getPrice: vi.fn((address) => (address.toLowerCase() === TOKEN_A ? 3 : 7)),
-            isPriceEstimated: vi.fn(() => false)
+            isPriceEstimated: vi.fn(() => false),
+            getTokenInfo: vi.fn(async (address) => {
+                if (address.toLowerCase() === TOKEN_A) {
+                    return { address: TOKEN_A, symbol: 'AAA', decimals: 18 };
+                }
+                return { address: TOKEN_B, symbol: 'BBB', decimals: 6 };
+            })
         };
         const order = {
             sellToken: TOKEN_A,

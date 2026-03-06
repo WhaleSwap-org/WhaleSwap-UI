@@ -30,7 +30,7 @@ export class CreateOrder extends BaseComponent {
         this.initialized = false;
         this.isRendered = false;
         this.hasLoadedData = false;
-        // Token cache removed - use WebSocket's centralized token cache via ctx.getWebSocket()
+        // Token metadata is centralized in PricingService via ctx.getPricing()
         this.boundCreateOrderHandler = this.handleCreateOrder.bind(this);
         this.isSubmitting = false;
         this.tokens = [];
@@ -1369,9 +1369,9 @@ export class CreateOrder extends BaseComponent {
                     this.debug('Post-order cache clear/refresh failed:', refreshError);
                 }
 
-                const ws = this.ctx.getWebSocket();
-                if (ws) {
-                    await ws.syncAllOrders(this.contract);
+                const pricing = this.ctx.getPricing();
+                if (pricing) {
+                    await pricing.syncAllOrders();
                 }
 
                 progressToast.updateStep(confirmStepId, {
@@ -2196,8 +2196,8 @@ export class CreateOrder extends BaseComponent {
     }
 
     /**
-     * Get token decimals using WebSocket's centralized token cache
-     * Falls back to direct contract call if WebSocket not available
+     * Get token decimals using PricingService's centralized token cache
+     * Falls back to direct contract call if PricingService is unavailable
      * @param {string} tokenAddress - Token contract address
      * @returns {Promise<number>} Token decimals
      */
@@ -2205,10 +2205,9 @@ export class CreateOrder extends BaseComponent {
         try {
             const normalizedAddress = tokenAddress.toLowerCase();
             
-            // Use WebSocket's centralized token cache
-            const ws = this.ctx.getWebSocket();
-            if (ws && typeof ws.getTokenInfo === 'function') {
-                const tokenInfo = await ws.getTokenInfo(normalizedAddress);
+            const pricing = this.ctx.getPricing();
+            if (pricing && typeof pricing.getTokenInfo === 'function') {
+                const tokenInfo = await pricing.getTokenInfo(normalizedAddress);
                 if (tokenInfo?.decimals !== undefined) {
                     this.debug(`Cache hit for decimals: ${tokenAddress} = ${tokenInfo.decimals}`);
                     return tokenInfo.decimals;

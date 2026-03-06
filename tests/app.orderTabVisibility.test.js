@@ -22,8 +22,7 @@ function createAppWithContext({
     const AppCtor = window.app.constructor;
     const app = new AppCtor();
 
-    const ws = {
-        waitForInitialization: vi.fn(async () => true),
+    const pricing = {
         waitForOrderSync: vi.fn(async () => true),
         hasCompletedOrderSync: true,
         orderCache: new Map(orders.map((order, index) => [index + 1, order]))
@@ -34,14 +33,15 @@ function createAppWithContext({
             isWalletConnected: () => isConnected,
             getAccount: () => account
         }),
-        getWebSocket: () => ws
+        getPricing: () => pricing,
+        getWebSocket: () => ({})
     };
     app.isWalletOnSelectedNetwork = vi.fn(() => networkMatch);
     app.updateTabRailOverflowState = vi.fn();
     app.showTab = vi.fn(async () => {});
     app.currentTab = currentTab;
 
-    return { app, ws };
+    return { app, pricing };
 }
 
 afterEach(() => {

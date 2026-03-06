@@ -16,7 +16,7 @@
  * 
  *   // In components, access via this.ctx:
  *   const account = this.ctx.wallet.getAccount();
- *   const orders = this.ctx.ws.getOrders();
+ *   const orders = this.ctx.pricing.getOrders();
  */
 
 /**

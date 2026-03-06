@@ -24,8 +24,8 @@ export async function buildOrderRowContext({
     pricing,
     tokenDisplaySymbolMap
 }) {
-    const sellTokenInfo = await ws.getTokenInfo(order.sellToken);
-    const buyTokenInfo = await ws.getTokenInfo(order.buyToken);
+    const sellTokenInfo = await pricing.getTokenInfo(order.sellToken);
+    const buyTokenInfo = await pricing.getTokenInfo(order.buyToken);
     const sellDisplaySymbol = getDisplaySymbol(sellTokenInfo, tokenDisplaySymbolMap);
     const buyDisplaySymbol = getDisplaySymbol(buyTokenInfo, tokenDisplaySymbolMap);
 

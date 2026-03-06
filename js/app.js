@@ -54,6 +54,8 @@ class App {
 		this.claimVisibilityCacheTtlMs = 1500;
 		this.claimVisibilityCheckedAtMs = 0;
 		this.claimVisibilityCacheKey = null;
+		this.pricingOrderStateHandler = null;
+		this.pricingOrderStateSource = null;
 
 		// Replace debug initialization with LogService
 		const logger = createLogger('APP');
@@ -214,17 +216,16 @@ class App {
 				return await applyVisibility(noOrderTabsVisibility);
 			}
 
-			const ws = this.ctx?.getWebSocket?.();
-			await ws?.waitForInitialization?.();
-			if (!ws) {
+			const pricing = this.ctx?.getPricing?.();
+			if (!pricing) {
 				return await applyVisibility(noOrderTabsVisibility);
 			}
 
-			if (force || !ws.hasCompletedOrderSync) {
-				await ws.waitForOrderSync({ triggerIfNeeded: true });
+			if (force || !pricing.hasCompletedOrderSync) {
+				await pricing.waitForOrderSync({ triggerIfNeeded: true });
 			}
 
-			const orders = Array.from(ws.orderCache?.values?.() || []);
+			const orders = Array.from(pricing.orderCache?.values?.() || []);
 			const visibility = this.buildOrderTabVisibilityFromOrders(orders, account);
 			return await applyVisibility(visibility);
 		} catch (error) {
@@ -398,22 +399,6 @@ class App {
 		} catch (error) {
 			this.debug('Failed to refresh active orders tab after sync:', error);
 		}
-	}
-
-	startInitialOrderSync(ws = this.ctx?.getWebSocket?.()) {
-		if (!ws || this.initialOrderSyncPromise) return;
-
-		this.initialOrderSyncPromise = (async () => {
-			this.debug('Starting background initial order sync...');
-			await ws.waitForOrderSync({ triggerIfNeeded: true });
-			this.debug('Background initial order sync complete');
-		})()
-			.catch((error) => {
-				this.debug('Background initial order sync failed:', error);
-			})
-			.finally(() => {
-				this.initialOrderSyncPromise = null;
-			});
 	}
 
 	initializeTabRail() {
@@ -1077,9 +1062,7 @@ class App {
 					this.scheduleOrderTabVisibilityRefresh();
 				});
 
-				ws.subscribe('orderSyncComplete', () => {
-					this.scheduleOrderTabVisibilityRefresh({ force: false });
-				});
+				this.ensurePricingOrderStateSubscription();
 
 				ws.subscribe('claimsUpdated', (eventData) => {
 					this.scheduleClaimTabVisibilityRefresh(eventData);
@@ -1211,12 +1194,6 @@ class App {
 
 		// Remove loading overlay after initialization
 		this.hideGlobalLoader();
-
-		// Start initial order sync in the background so first render is not blocked.
-		if (ws) {
-			this.startInitialOrderSync(ws);
-		}
-
 		this.lastDisconnectNotification = 0;
 		} finally {
 			this.hideGlobalLoader();
@@ -1236,6 +1213,45 @@ class App {
 		});
 
 		this.initializeTabRail();
+	}
+
+	ensurePricingOrderStateSubscription(pricing = this.ctx?.getPricing?.()) {
+		if (!pricing) {
+			return;
+		}
+
+		if (!this.pricingOrderStateHandler) {
+			this.pricingOrderStateHandler = (eventName, data) => {
+				if (eventName === 'orderSyncComplete') {
+					this.wsInitialized = true;
+					this.debug('Initial order sync complete, showing content');
+					void this.refreshActiveOrdersTab();
+					this.scheduleOrderTabVisibilityRefresh({ force: false });
+					return;
+				}
+
+				if (eventName === 'orderSyncProgress') {
+					try {
+						const { fetched, total, batch, totalBatches } = data || {};
+						const textEl = this.loadingOverlay?.querySelector?.('.loading-text');
+						if (textEl && typeof fetched === 'number' && typeof total === 'number') {
+							textEl.textContent = `Loading orders ${Math.min(fetched, total)}/${total} (batch ${batch}/${totalBatches})`;
+						}
+					} catch (_) {}
+				}
+			};
+		}
+
+		if (this.pricingOrderStateSource === pricing) {
+			return;
+		}
+
+		if (this.pricingOrderStateSource?.unsubscribe && this.pricingOrderStateHandler) {
+			this.pricingOrderStateSource.unsubscribe(this.pricingOrderStateHandler);
+		}
+
+		pricing.subscribe(this.pricingOrderStateHandler);
+		this.pricingOrderStateSource = pricing;
 	}
 
 	async initializeWalletManager() {
@@ -1261,6 +1277,7 @@ class App {
 
 			// Add to context
 			this.ctx.pricing = pricingService;
+			this.ensurePricingOrderStateSubscription(pricingService);
 			await pricingService.initialize();
 
 			this.debug('Pricing service initialized');
@@ -1278,40 +1295,13 @@ class App {
 				pricingService: pricingService
 			});
 
-			// Subscribe to orderSyncComplete event before initialization
-			webSocketService.subscribe('orderSyncComplete', () => {
-				this.wsInitialized = true;
-				this.debug('WebSocket order sync complete, showing content');
-				this.refreshActiveOrdersTab();
-			});
-
-			// Subscribe to order sync progress updates for UX
-			webSocketService.subscribe('orderSyncProgress', ({ fetched, total, batch, totalBatches }) => {
-				try {
-					const textEl = this.loadingOverlay?.querySelector?.('.loading-text');
-					if (textEl && typeof fetched === 'number' && typeof total === 'number') {
-						textEl.textContent = `Loading orders ${Math.min(fetched, total)}/${total} (batch ${batch}/${totalBatches})`;
-					}
-				} catch (_) {}
-			});
-
 			const wsInitialized = await webSocketService.initialize();
 			if (!wsInitialized) {
 				this.debug('WebSocket initialization failed, falling back to HTTP');
 			}
 
-			// Add to context and update pricing service with webSocket reference
+			// Add to context
 			this.ctx.ws = webSocketService;
-
-			if (pricingService?.hasCompletedOrderSync) {
-				webSocketService.notifySubscribers('orderSyncComplete', Object.fromEntries(pricingService.orderCache));
-				webSocketService.notifySubscribers('ordersUpdated', pricingService.getOrders());
-			}
-
-			// Update PricingService with WebSocket reference for deal updates
-			if (pricingService) {
-				pricingService.webSocket = webSocketService;
-			}
 
 			// Update ContractService with WebSocket reference
 			try {
@@ -1638,15 +1628,15 @@ class App {
 			// Reinitialize all components in connected mode
 			await this.initializeComponents(false);
 
-			// Ensure WebSocket is initialized and synced when preserving orders
-			if (preserveOrders && ws) {
+			// Ensure order cache is populated when preserving orders
+			const pricing = this.ctx.getPricing();
+			if (preserveOrders && pricing) {
 				try {
-					await ws.waitForInitialization();
-					if (ws.orderCache.size === 0) {
-						await ws.syncAllOrders();
+					if (pricing.orderCache.size === 0) {
+						await pricing.syncAllOrders();
 					}
 				} catch (e) {
-					this.debug('WebSocket not ready during reinit (preserveOrders)', e);
+					this.debug('Pricing not ready during reinit (preserveOrders)', e);
 				}
 			}
 

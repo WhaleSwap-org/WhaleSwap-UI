@@ -27,7 +27,7 @@ function createRenderer(tokens, chainId = '0x89', preferredSymbolSuffixes = null
             return element;
         },
         ctx: {
-            getWebSocket: () => ({
+            getPricing: () => ({
                 tokenCache: new Map(tokenEntries)
             }),
             getWalletChainId: () => chainId

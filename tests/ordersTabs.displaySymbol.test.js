@@ -18,7 +18,6 @@ const TOKEN_INFO = {
 };
 
 function createWsStub({
-    includeCache = false,
     tokenInfoMap = TOKEN_INFO,
     orderStatus = 'Active',
     currentTimestamp = 1_700_000_000,
@@ -32,12 +31,6 @@ function createWsStub({
         canFillOrder: vi.fn(() => canFillOrder)
     };
 
-    if (includeCache) {
-        ws.tokenCache = new Map(
-            Object.values(tokenInfoMap).map((token) => [token.address.toLowerCase(), token])
-        );
-    }
-
     return ws;
 }
 
@@ -46,16 +39,26 @@ function createContext(
     walletAddress = MAKER,
     {
         pricingByToken = {},
-        estimatedTokens = []
+        estimatedTokens = [],
+        tokenInfoMap = TOKEN_INFO
     } = {}
 ) {
+    const tokenCache = new Map(
+        Object.values(tokenInfoMap).map((token) => [token.address.toLowerCase(), token])
+    );
+    const pricing = {
+        getPrice: (token) => pricingByToken[token?.toLowerCase?.()] ?? undefined,
+        isPriceEstimated: (token) => estimatedTokens.includes(token?.toLowerCase?.()),
+        getTokenInfo: vi.fn(async (address) => tokenCache.get(address?.toLowerCase?.()) || null),
+        tokenCache,
+        subscribe: vi.fn(),
+        unsubscribe: vi.fn()
+    };
+
     return {
         getWebSocket: () => ws,
         getWalletChainId: () => '0x89',
-        getPricing: () => ({
-            getPrice: (token) => pricingByToken[token?.toLowerCase?.()] ?? undefined,
-            isPriceEstimated: (token) => estimatedTokens.includes(token?.toLowerCase?.())
-        }),
+        getPricing: () => pricing,
         getWallet: () => ({
             getAccount: () => walletAddress,
             isWalletConnected: () => true
@@ -113,15 +116,24 @@ describe('orders tabs display symbol rendering', () => {
     it('renders MyOrders filter dropdown with display symbols', async () => {
         document.body.innerHTML = '<div id="my-orders"></div>';
 
-        const ws = {
+        const ws = createWsStub();
+        const pricing = {
+            getPrice: () => undefined,
+            isPriceEstimated: () => false,
+            getTokenInfo: vi.fn(async () => null),
             tokenCache: new Map([
                 [POLYGON_LINK_POS, { address: POLYGON_LINK_POS, symbol: 'LINK', name: 'ChainLink Token' }],
                 [OTHER_LINK, { address: OTHER_LINK, symbol: 'LINK', name: 'ChainLink Token' }],
                 [TOKEN_C, TOKEN_INFO[TOKEN_C]]
-            ])
+            ]),
+            subscribe: vi.fn(),
+            unsubscribe: vi.fn()
         };
         const component = new MyOrders();
-        component.setContext(createContext(ws));
+        component.setContext({
+            ...createContext(ws),
+            getPricing: () => pricing
+        });
         component.setupEventListeners = vi.fn();
 
         await component.setupTable();
@@ -204,6 +216,7 @@ describe('orders tabs display symbol rendering', () => {
         const ws = createWsStub({ tokenInfoMap, orderStatus: 'Active', currentTimestamp: 1_700_000_000 });
         const component = new ViewOrders();
         component.setContext(createContext(ws, MAKER, {
+            tokenInfoMap,
             pricingByToken: {
                 [TOKEN_A]: 2,
                 [TOKEN_B]: 3
@@ -249,6 +262,7 @@ describe('orders tabs display symbol rendering', () => {
         });
         const component = new TakerOrders();
         component.setContext(createContext(ws, TAKER, {
+            tokenInfoMap,
             pricingByToken: {
                 [TOKEN_A]: 2,
                 [TOKEN_B]: 3

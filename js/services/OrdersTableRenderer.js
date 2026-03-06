@@ -96,8 +96,8 @@ export class OrdersTableRenderer {
         const filterControls = this.component.createElement('div', 'filter-controls');
         
         // Get tokens for filters
-        const ws = this.component.ctx.getWebSocket();
-        const tokens = Array.from(ws.tokenCache.values());
+        const pricing = this.component.ctx.getPricing();
+        const tokens = Array.from(pricing.tokenCache.values());
         const chainId = this.component.ctx?.getWalletChainId?.();
         const preferredSymbolSuffixes = this.component?.preferredSymbolSuffixes;
         const tokenDisplaySymbolMap = buildTokenDisplaySymbolMap(tokens, chainId, preferredSymbolSuffixes);
@@ -518,8 +518,9 @@ export class OrdersTableRenderer {
 
             const orderId = row.dataset.orderId;
             const ws = this.component.ctx.getWebSocket();
+            const pricing = this.component.ctx.getPricing();
             const wallet = this.component.ctx.getWallet();
-            const order = ws.orderCache.get(Number(orderId));
+            const order = pricing.orderCache.get(Number(orderId));
             if (!order) return;
 
             await ws.ensureChainTimeInitialized();
