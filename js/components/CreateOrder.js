@@ -16,6 +16,7 @@ import {
     handleTransactionError,
     isUserRejection,
 } from '../utils/ui.js';
+import { escapeHtmlText } from '../utils/html.js';
 import { getExplorerUrl } from '../utils/orderUtils.js';
 import { buildTokenDisplaySymbolMap, getDisplaySymbol } from '../utils/tokenDisplay.js';
 
@@ -2035,11 +2036,12 @@ export class CreateOrder extends BaseComponent {
                         this.renderTokenIcon(searchResults[index], iconContainer);
                     });
                 } else {
+                    const escapedSearchTerm = escapeHtmlText(searchTerm);
                     contractResult.innerHTML = `
                         <div class="token-section">
                             <h4>Search Results</h4>
                             <div class="token-list-empty">
-                                No tokens found matching "${searchTerm}"
+                                No tokens found matching "${escapedSearchTerm}"
                             </div>
                         </div>
                     `;
