@@ -55,7 +55,6 @@ class App {
 		this.claimVisibilityCacheKey = null;
 		this.pricingOrderStateHandler = null;
 		this.pricingOrderStateSource = null;
-		this.pricingBootstrapPromise = null;
 		this.webSocketBootstrapPromise = null;
 
 		// Replace debug initialization with LogService
@@ -1168,9 +1167,6 @@ class App {
 				.then(() => this.refreshOrderTabVisibility())
 				.catch((error) => this.debug('Deferred order-tab visibility check failed:', error));
 
-		// Add new property to track WebSocket readiness
-		this.wsInitialized = false;
-
 		// Alias for legacy references in WebSocket init callbacks
 		this.loadingOverlay = this.globalLoader;
 
@@ -1224,7 +1220,6 @@ class App {
 		if (!this.pricingOrderStateHandler) {
 			this.pricingOrderStateHandler = (eventName, data) => {
 				if (eventName === 'orderSyncComplete') {
-					this.wsInitialized = true;
 					this.debug('Initial order sync complete, showing content');
 					void this.refreshActiveOrdersTab();
 					this.scheduleOrderTabVisibilityRefresh({ force: false });
@@ -1232,13 +1227,11 @@ class App {
 				}
 
 				if (eventName === 'orderSyncProgress') {
-					try {
-						const { fetched, total, batch, totalBatches } = data || {};
-						const textEl = this.loadingOverlay?.querySelector?.('.loading-text');
-						if (textEl && typeof fetched === 'number' && typeof total === 'number') {
-							textEl.textContent = `Loading orders ${Math.min(fetched, total)}/${total} (batch ${batch}/${totalBatches})`;
-						}
-					} catch (_) {}
+					const { fetched, total, batch, totalBatches } = data || {};
+					const textEl = this.loadingOverlay?.querySelector?.('.loading-text');
+					if (textEl && typeof fetched === 'number' && typeof total === 'number') {
+						textEl.textContent = `Loading orders ${Math.min(fetched, total)}/${total} (batch ${batch}/${totalBatches})`;
+					}
 				}
 			};
 		}
@@ -1279,7 +1272,7 @@ class App {
 			this.ctx.pricing = pricingService;
 			this.ensurePricingOrderStateSubscription(pricingService);
 
-			this.pricingBootstrapPromise = Promise.resolve(pricingService.initialize())
+			void Promise.resolve(pricingService.initialize())
 				.then((result) => {
 					this.debug('Pricing service bootstrap complete');
 					return result;
@@ -1499,12 +1492,11 @@ class App {
 		return this.toast.showToast(message, type, duration);
 	}
 
-	async showTab(tabId, readOnlyOverride = null, options = {}) {
+	async showTab(tabId, readOnlyOverride = null) {
 		let loadingOverlay = null;
 		const requestId = ++this.activeTabRequestId;
 		try {
 			this.debug('Switching to tab:', tabId);
-			const { skipInitialize = false } = options;
 
 				if (tabId === 'admin') {
 					const isOwner = await this.refreshAdminTabVisibility();
@@ -1559,7 +1551,7 @@ class App {
 
 				// Initialize component for this tab
 				const component = this.components[tabId];
-				if (!skipInitialize && component?.initialize) {
+				if (component?.initialize) {
 					const wallet = this.ctx.getWallet();
 					const computedReadOnly = readOnlyOverride !== null
 						? !!readOnlyOverride
