@@ -648,17 +648,6 @@ export class PricingService {
         };
     }
 
-    async fetchAllowedTokensPrices() {
-        if (this.allowedTokens.size === 0) {
-            await this.getAllowedTokens();
-        }
-        const result = await this.refreshPrices();
-        return {
-            ...result,
-            updatedCount: this.prices.size
-        };
-    }
-
     async waitForOrderSync({ triggerIfNeeded = true } = {}) {
         if (this.orderSyncPromise) {
             return this.orderSyncPromise;
@@ -767,7 +756,6 @@ export class PricingService {
                     });
                 }
 
-                this.validateOrderCache();
                 this.hasCompletedOrderSync = true;
                 this.notifySubscribers('orderSyncComplete', Object.fromEntries(this.orderCache));
                 this.notifySubscribers('ordersUpdated', this.getOrders());
@@ -785,20 +773,6 @@ export class PricingService {
         })();
 
         return this.orderSyncPromise;
-    }
-
-    validateOrderCache() {
-        const orders = Array.from(this.orderCache.values());
-        const summary = orders.reduce((acc, order) => {
-            const status = order.status || 'Unknown';
-            acc[status] = (acc[status] || 0) + 1;
-            return acc;
-        }, {});
-
-        this.debug('Order cache validation:', {
-            total: orders.length,
-            byStatus: summary
-        });
     }
 
     getOrders(filterStatus = null) {

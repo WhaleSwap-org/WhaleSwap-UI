@@ -70,7 +70,6 @@ export class WebSocketService {
         this.warn = logger.warn.bind(logger);
         
         this.tokenCache = new Map();  // Add token cache
-        this.pricingUpdateHandler = null;
         this.pricingStateHandler = null;
     }
 
@@ -88,34 +87,6 @@ export class WebSocketService {
 
     set tokenCache(value) {
         this._tokenCache = value instanceof Map ? value : new Map();
-    }
-
-    bindPricingStateBridge() {
-        const pricing = this.pricingService;
-        if (!pricing?.subscribe || this.pricingStateHandler) {
-            return;
-        }
-
-        this.pricingStateHandler = (eventName, data) => {
-            if (eventName === 'orderSyncComplete') {
-                this.hasCompletedOrderSync = true;
-                this.notifySubscribers('orderSyncComplete', data);
-                return;
-            }
-
-            if (eventName === 'orderSyncProgress' || eventName === 'ordersUpdated') {
-                this.notifySubscribers(eventName, data);
-            }
-        };
-
-        pricing.subscribe(this.pricingStateHandler);
-    }
-
-    unbindPricingStateBridge() {
-        if (this.pricingStateHandler && this.pricingService?.unsubscribe) {
-            this.pricingService.unsubscribe(this.pricingStateHandler);
-        }
-        this.pricingStateHandler = null;
     }
 
     clearReconnectTimer() {
@@ -622,7 +593,20 @@ export class WebSocketService {
                 
                 const pricing = this.pricingService;
                 if (pricing) {
-                    this.bindPricingStateBridge();
+                    if (!this.pricingStateHandler) {
+                        this.pricingStateHandler = (eventName, data) => {
+                            if (eventName === 'orderSyncComplete') {
+                                this.hasCompletedOrderSync = true;
+                                this.notifySubscribers('orderSyncComplete', data);
+                                return;
+                            }
+
+                            if (eventName === 'orderSyncProgress' || eventName === 'ordersUpdated') {
+                                this.notifySubscribers(eventName, data);
+                            }
+                        };
+                        pricing.subscribe(this.pricingStateHandler);
+                    }
                     if (pricing.hasCompletedOrderSync) {
                         this.hasCompletedOrderSync = true;
                     }
@@ -813,12 +797,9 @@ export class WebSocketService {
                     this.notifySubscribers("AllowedTokensUpdated", eventPayload);
 
                     const pricing = this.pricingService;
-                    if (pricing?.getAllowedTokens && pricing?.fetchAllowedTokensPrices) {
-                        Promise.resolve()
-                            .then(async () => {
-                                await pricing.getAllowedTokens();
-                                await pricing.fetchAllowedTokensPrices();
-                            })
+                    if (pricing?.getAllowedTokens && pricing?.refreshPrices) {
+                        void pricing.getAllowedTokens()
+                            .then(() => pricing.refreshPrices())
                             .catch(error => {
                                 this.debug('Failed to refresh pricing after AllowedTokensUpdated:', error);
                             });
@@ -1052,7 +1033,10 @@ export class WebSocketService {
             this.debug('Cleaning up WebSocket service...');
             this.stopHealthMonitor();
             this.clearReconnectTimer();
-            this.unbindPricingStateBridge();
+            if (this.pricingStateHandler && this.pricingService?.unsubscribe) {
+                this.pricingService.unsubscribe(this.pricingStateHandler);
+            }
+            this.pricingStateHandler = null;
             
             // Remove provider event listeners
             if (this.provider) {
