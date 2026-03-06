@@ -1,8 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ethers } from 'ethers';
 import { CreateOrder } from '../js/components/CreateOrder.js';
 import { buildTokenDisplaySymbolMap } from '../js/utils/tokenDisplay.js';
-import { contractService } from '../js/services/ContractService.js';
 import { walletManager } from '../js/services/WalletManager.js';
 
 const TOKEN_A = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -37,11 +35,37 @@ function createContextStub() {
 function createComponent() {
     document.body.innerHTML = `
         <div id="create-order"></div>
-        <div id="sellContractResult"></div>
+        <div id="sellTokenModal">
+            <input id="sellTokenSearch" value="" />
+            <div id="sellTokenResultsSection" class="token-section hidden" aria-hidden="true">
+                <h4>Results</h4>
+                <div id="sellTokenResultsList"></div>
+            </div>
+            <h4 id="sellTokenListHeading">Allowed tokens</h4>
+            <div id="sellAllowedTokenList"></div>
+        </div>
+        <div id="buyTokenModal">
+            <input id="buyTokenSearch" value="" />
+            <div id="buyTokenResultsSection" class="token-section hidden" aria-hidden="true">
+                <h4>Results</h4>
+                <div id="buyTokenResultsList"></div>
+            </div>
+            <h4 id="buyTokenListHeading">Allowed tokens</h4>
+            <div id="buyAllowedTokenList"></div>
+        </div>
     `;
     const component = new CreateOrder();
     component.setContext(createContextStub());
     return component;
+}
+
+function setAllowedTokens(component, tokens) {
+    component.tokenDisplaySymbolMap = buildTokenDisplaySymbolMap(tokens, '0x89', TEST_SUFFIXES);
+    const normalizedTokens = tokens.map((token) => component.normalizeTokenDisplay(token));
+    component.tokens = normalizedTokens;
+    component.allowedTokens = normalizedTokens;
+    component.tokensLoading = false;
+    return normalizedTokens;
 }
 
 beforeEach(() => {
@@ -78,30 +102,51 @@ describe('CreateOrder display symbol wiring', () => {
             { address: TOKEN_A, symbol: 'AAA', name: 'Alpha Issuer', balance: '1', iconUrl: 'fallback' },
             { address: TOKEN_B, symbol: 'AAA', name: 'Alpha Default', balance: '1', iconUrl: 'fallback' }
         ];
-        component.tokenDisplaySymbolMap = buildTokenDisplaySymbolMap(tokens, '0x89', TEST_SUFFIXES);
-        component.tokens = tokens.map((token) => component.normalizeTokenDisplay(token));
-        component.tokensLoading = false;
-        component.renderTokenIcon = vi.fn();
+        setAllowedTokens(component, tokens);
 
         await component.handleTokenSearch('issuer', 'sell');
 
         const resultSymbols = Array.from(
-            document.querySelectorAll('#sellContractResult .token-item-symbol')
+            document.querySelectorAll('#sellTokenResultsList .token-item-symbol')
+        ).map((element) => element.textContent.trim());
+        const allowedSymbols = Array.from(
+            document.querySelectorAll('#sellAllowedTokenList .token-item-symbol')
         ).map((element) => element.textContent.trim());
 
         expect(resultSymbols).toEqual(['AAA.issuer']);
+        expect(allowedSymbols).toEqual(['AAA', 'AAA.issuer']);
+        expect(document.getElementById('sellTokenResultsSection')?.getAttribute('aria-hidden')).toBe('false');
+    });
+
+    it('allows searching by allowed token address locally', async () => {
+        const component = createComponent();
+        const tokens = [
+            { address: TOKEN_A, symbol: 'AAA', name: 'Alpha Issuer', balance: '1', iconUrl: 'fallback' },
+            { address: TOKEN_B, symbol: 'BBB', name: 'Beta Default', balance: '1', iconUrl: 'fallback' }
+        ];
+
+        setAllowedTokens(component, tokens);
+
+        await component.handleTokenSearch(TOKEN_B, 'sell');
+
+        const resultSymbols = Array.from(
+            document.querySelectorAll('#sellTokenResultsList .token-item-symbol')
+        ).map((element) => element.textContent.trim());
+
+        expect(resultSymbols).toEqual(['BBB']);
     });
 
     it('renders unmatched token search text safely as plain text', async () => {
         const component = createComponent();
         const payload = '<img src=x onerror=alert(1)>';
 
+        component.allowedTokens = [];
         component.tokens = [];
         component.tokensLoading = false;
 
         await component.handleTokenSearch(payload, 'sell');
 
-        const resultContainer = document.getElementById('sellContractResult');
+        const resultContainer = document.getElementById('sellTokenResultsList');
         const emptyState = resultContainer?.querySelector('.token-list-empty');
 
         expect(emptyState?.textContent).toContain(payload);
@@ -113,38 +158,62 @@ describe('CreateOrder display symbol wiring', () => {
     it('keeps plain unmatched token search messaging unchanged', async () => {
         const component = createComponent();
 
+        component.allowedTokens = [];
         component.tokens = [];
         component.tokensLoading = false;
 
         await component.handleTokenSearch('missing-token', 'sell');
 
-        expect(document.querySelector('#sellContractResult .token-list-empty')?.textContent)
+        expect(document.querySelector('#sellTokenResultsList .token-list-empty')?.textContent)
             .toContain('No tokens found matching "missing-token"');
     });
 
-    it('shows invalid contract error for valid addresses with unsupported token metadata', async () => {
+    it('restores the full allowed token list when search is cleared', async () => {
         const component = createComponent();
-        const validAddress = '0x1111111111111111111111111111111111111111';
-        const unsupportedContract = {
-            name: vi.fn().mockRejectedValue(new Error('name unsupported')),
-            symbol: vi.fn().mockRejectedValue(new Error('symbol unsupported')),
-            decimals: vi.fn().mockRejectedValue(new Error('decimals unsupported')),
-            balanceOf: vi.fn().mockRejectedValue(new Error('balance unsupported'))
-        };
+        const tokens = [
+            { address: TOKEN_A, symbol: 'AAA', name: 'Alpha Issuer', balance: '1', iconUrl: 'fallback' },
+            { address: TOKEN_B, symbol: 'BBB', name: 'Beta Default', balance: '1', iconUrl: 'fallback' }
+        ];
 
-        vi.spyOn(walletManager, 'getCurrentAddress').mockResolvedValue(validAddress);
-        vi.spyOn(ethers, 'Contract').mockImplementation(() => unsupportedContract);
-        const isTokenAllowedSpy = vi.spyOn(contractService, 'isTokenAllowed');
+        setAllowedTokens(component, tokens);
 
-        await component.handleTokenSearch(validAddress, 'sell');
+        await component.handleTokenSearch('issuer', 'sell');
+        await component.handleTokenSearch('', 'sell');
 
-        const resultContainer = document.getElementById('sellContractResult');
-        const errorState = resultContainer?.querySelector('.contract-error');
+        const resultSymbols = Array.from(
+            document.querySelectorAll('#sellAllowedTokenList .token-item-symbol')
+        ).map((element) => element.textContent.trim());
 
-        expect(errorState?.textContent).toContain('Invalid or unsupported token contract');
-        expect(resultContainer?.querySelector('.contract-loading')).toBeNull();
-        expect(resultContainer?.querySelector('.token-item')).toBeNull();
-        expect(isTokenAllowedSpy).not.toHaveBeenCalled();
+        expect(resultSymbols).toEqual(['AAA.issuer', 'BBB']);
+        expect(document.getElementById('sellTokenResultsSection')?.getAttribute('aria-hidden')).toBe('true');
+        expect(document.querySelectorAll('#sellTokenResultsList .token-item-symbol')).toHaveLength(0);
+    });
+
+    it('preserves the filtered view when modal lists refresh', () => {
+        const component = createComponent();
+        const tokens = [
+            { address: TOKEN_A, symbol: 'AAA', name: 'Alpha Issuer', balance: '1', iconUrl: 'fallback' },
+            { address: TOKEN_B, symbol: 'BBB', name: 'Beta Default', balance: '1', iconUrl: 'fallback' }
+        ];
+
+        setAllowedTokens(component, tokens);
+
+        const sellModal = document.getElementById('sellTokenModal');
+        const searchInput = document.getElementById('sellTokenSearch');
+        sellModal.style.display = 'block';
+        searchInput.value = 'issuer';
+
+        component.refreshOpenTokenModals();
+
+        const resultSymbols = Array.from(
+            document.querySelectorAll('#sellTokenResultsList .token-item-symbol')
+        ).map((element) => element.textContent.trim());
+        const allowedSymbols = Array.from(
+            document.querySelectorAll('#sellAllowedTokenList .token-item-symbol')
+        ).map((element) => element.textContent.trim());
+
+        expect(resultSymbols).toEqual(['AAA.issuer']);
+        expect(allowedSymbols).toEqual(['AAA.issuer', 'BBB']);
     });
 
     it('uses displaySymbol in zero-balance warning for sell selection', async () => {
