@@ -991,6 +991,27 @@ button.info-icon.order-tooltip-icon {
   position: relative;
 }
 
+.refresh-container--top {
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+.refresh-container--top .refresh-status {
+  position: static;
+  transform: none;
+  margin-left: 0;
+  order: 1;
+}
+
+.refresh-container--top .last-updated {
+  margin-left: 0;
+  order: 2;
+}
+
+.refresh-container--top .refresh-prices-button {
+  order: 3;
+}
+
 .refresh-prices-button {
   border-radius: 4px;
   padding: 6px 16px;
@@ -1421,7 +1442,7 @@ th[data-sort].active-sort .sort-icon {
     min-height: 40px;
   }
 
-  .refresh-container--mobile {
+  .refresh-container--top {
     display: flex;
     order: 3;
     width: 100%;
@@ -1435,20 +1456,20 @@ th[data-sort].active-sort .sort-icon {
     border-top: 1px solid var(--border-color);
   }
 
-  .refresh-container--mobile .refresh-prices-button {
+  .refresh-container--top .refresh-prices-button {
     width: 100%;
     min-height: 42px;
     font-size: 0.875rem;
   }
 
-  .refresh-container--mobile .refresh-status {
+  .refresh-container--top .refresh-status {
     position: static;
     transform: none;
     margin-left: 0;
     white-space: normal;
   }
 
-  .refresh-container--mobile .last-updated {
+  .refresh-container--top .last-updated {
     margin-left: 0;
     white-space: normal;
     font-size: 0.75rem;
