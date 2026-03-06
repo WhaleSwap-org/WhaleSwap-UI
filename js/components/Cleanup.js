@@ -221,8 +221,8 @@ export class Cleanup extends BaseComponent {
                 return this.checkCleanupOpportunities();
             }
 
-            // Get all orders from WebSocket cache
-            const orders = this.webSocket.getOrders();
+            const pricing = this.ctx.getPricing();
+            const orders = pricing.getOrders();
             await this.webSocket.ensureChainTimeInitialized();
             const currentTime = this.webSocket.getCurrentTimestamp();
             
@@ -263,7 +263,7 @@ export class Cleanup extends BaseComponent {
 
                     this.debug('Fee info from contract:', { feeToken, feeAmount: feeAmount.toString() });
 
-                    const tokenInfo = await this.webSocket.getTokenInfo(feeToken);
+                    const tokenInfo = await pricing.getTokenInfo(feeToken);
                     
                     // Format with proper decimals and round to 6 decimal places
                     const formattedAmount = parseFloat(
@@ -352,10 +352,18 @@ export class Cleanup extends BaseComponent {
             this.checkCleanupOpportunities();
         });
 
-        this.webSocket.subscribe('orderSyncComplete', () => {
-            this.debug('Order sync complete event received');
-            this.checkCleanupOpportunities();
-        });
+        const pricing = this.ctx.getPricing();
+        if (!this.orderSyncCompleteHandler && pricing) {
+            this.orderSyncCompleteHandler = (eventName) => {
+                if (eventName !== 'orderSyncComplete') {
+                    return;
+                }
+
+                this.debug('Order sync complete event received');
+                this.checkCleanupOpportunities();
+            };
+            pricing.subscribe(this.orderSyncCompleteHandler);
+        }
 
         // Add wallet connection event listeners
         const wallet = this.ctx.getWallet();
@@ -410,7 +418,8 @@ export class Cleanup extends BaseComponent {
             this.cleanupButton.disabled = true;
             this.cleanupButton.textContent = 'Cleaning...';
 
-            const orders = this.webSocket.getOrders();
+            const pricing = this.ctx.getPricing();
+            const orders = pricing.getOrders();
             await this.webSocket.ensureChainTimeInitialized();
             const currentTime = this.webSocket.getCurrentTimestamp();
             if (!Number.isFinite(currentTime)) {
@@ -546,7 +555,8 @@ export class Cleanup extends BaseComponent {
         const userFeeEvent = feeEvents.find(f => f.recipient.toLowerCase() === userAddress);
         if (userFeeEvent) {
             try {
-                const tokenInfo = await this.webSocket.getTokenInfo(userFeeEvent.feeToken);
+                const pricing = this.ctx.getPricing();
+                const tokenInfo = await pricing.getTokenInfo(userFeeEvent.feeToken);
                 const formattedAmount = parseFloat(
                     ethers.utils.formatUnits(userFeeEvent.amount, tokenInfo.decimals)
                 ).toFixed(6);
@@ -578,7 +588,7 @@ export class Cleanup extends BaseComponent {
         const cleanedOrderIds = cleanedEvents.map(e => e.orderId);
 
         if (cleanedOrderIds.length > 0) {
-            this.webSocket.removeOrders(cleanedOrderIds);
+            this.ctx.getPricing().removeOrders(cleanedOrderIds);
         }
     }
 
@@ -653,6 +663,11 @@ export class Cleanup extends BaseComponent {
         if (this.intervalId) {
             this.debug('Cleaning up cleanup check interval');
             clearInterval(this.intervalId);
+        }
+
+        if (this.orderSyncCompleteHandler) {
+            this.ctx.getPricing()?.unsubscribe(this.orderSyncCompleteHandler);
+            this.orderSyncCompleteHandler = null;
         }
         
         // Remove wallet listeners

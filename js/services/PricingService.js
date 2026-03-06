@@ -8,7 +8,7 @@ import { contractService } from './ContractService.js';
 import { tokenIconService } from './TokenIconService.js';
 
 export class PricingService {
-    constructor(options = {}) {
+    constructor() {
         this.prices = new Map();
         this.orderCache = new Map();
         this.tokenCache = new Map();
@@ -17,9 +17,6 @@ export class PricingService {
         this.subscribers = new Set();
         this.rateLimitDelay = 250; // Ensure we stay under 300 requests/minute
         this.networkConfig = getNetworkConfig();
-
-        // Injected dependencies (preferred over window globals)
-        this.webSocket = options.webSocket || null;
 
         // Simplified: Track allowed tokens for pre-fetching
         this.allowedTokens = new Set();
@@ -86,11 +83,7 @@ export class PricingService {
     }
 
     ensureContractServiceInitialized() {
-        try {
-            contractService.initialize({ webSocket: this.webSocket || null });
-        } catch (error) {
-            this.debug('ContractService initialization skipped/failed:', error);
-        }
+        contractService.initialize();
     }
 
     getRpcUrls() {

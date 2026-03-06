@@ -93,12 +93,13 @@ export class TakerOrders extends BaseComponent {
 
             // Get all orders and filter for taker
             const ws = this.ctx.getWebSocket();
+            const pricing = this.ctx.getPricing();
             this.tokenDisplaySymbolMap = buildTokenDisplaySymbolMap(
-                Array.from(ws.tokenCache.values()),
+                Array.from(pricing.tokenCache.values()),
                 this.ctx?.getWalletChainId?.()
             );
             await ws.ensureChainTimeInitialized();
-            let ordersToDisplay = Array.from(ws.orderCache.values())
+            let ordersToDisplay = pricing.getOrders()
                 .filter(order => 
                     order?.taker && 
                     order.taker.toLowerCase() === userAddress.toLowerCase()
@@ -205,9 +206,12 @@ export class TakerOrders extends BaseComponent {
             await this.helper.setupWebSocket(() => this.refreshOrdersView());
 
             // Add taker-specific event handling
-            const ws = this.ctx.getWebSocket();
-            if (ws && !this._takerSyncHandler) {
-                this._takerSyncHandler = async (orders) => {
+            const pricing = this.ctx.getPricing();
+            if (pricing && !this._takerSyncHandler) {
+                this._takerSyncHandler = async (eventName, orders) => {
+                    if (eventName !== 'orderSyncComplete') {
+                        return;
+                    }
                     if (this.isProcessingFill) {
                         this.debug('Skipping sync while processing fill');
                         return;
@@ -225,14 +229,8 @@ export class TakerOrders extends BaseComponent {
                     this.debug(`Synced ${takerOrders.length} taker orders`);
                     await this.refreshOrdersView();
                 };
-                
-                ws.subscribe('orderSyncComplete', this._takerSyncHandler);
-                if (this.eventSubscriptions) {
-                    this.eventSubscriptions.add({ 
-                        event: 'orderSyncComplete', 
-                        callback: this._takerSyncHandler 
-                    });
-                }
+
+                pricing.subscribe(this._takerSyncHandler);
             }
         } catch (error) {
             this.error('Error setting up WebSocket:', error);
@@ -408,8 +406,8 @@ export class TakerOrders extends BaseComponent {
         
         // Cleanup taker-specific handler
         if (this._takerSyncHandler) {
-            const ws = this.ctx.getWebSocket();
-            ws?.unsubscribe('orderSyncComplete', this._takerSyncHandler);
+            const pricing = this.ctx.getPricing();
+            pricing?.unsubscribe(this._takerSyncHandler);
             this._takerSyncHandler = null;
         }
         

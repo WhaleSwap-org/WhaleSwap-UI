@@ -209,6 +209,7 @@ export class ContractParams extends BaseComponent {
     }
 
     async fetchParameters(ws) {
+        const pricing = this.ctx.getPricing();
         const wsReady = await this.readWithTimeout(
             () => ws.waitForInitialization(),
             'WebSocket initialization'
@@ -222,9 +223,8 @@ export class ContractParams extends BaseComponent {
             throw new Error('Contract not initialized');
         }
 
-        // Non-blocking read: only wait if a sync is already in flight.
-        // App.startInitialOrderSync() owns the first triggerIfNeeded:true call.
-        void ws.waitForOrderSync({ triggerIfNeeded: false }).catch((error) => {
+        // Non-blocking read: only wait if a pricing sync is already in flight.
+        void pricing.waitForOrderSync({ triggerIfNeeded: false }).catch((error) => {
             this.debug('Failed while checking order sync state:', error);
         });
 
@@ -278,7 +278,7 @@ export class ContractParams extends BaseComponent {
         if (params.feeToken) {
             try {
                 const tokenInfo = await this.readWithTimeout(
-                    () => ws.getTokenInfo(params.feeToken),
+                    () => pricing.getTokenInfo(params.feeToken),
                     `token info for ${params.feeToken}`
                 );
                 params.tokenSymbol = tokenInfo.symbol;
@@ -298,9 +298,7 @@ export class ContractParams extends BaseComponent {
         }
 
         try {
-            const orders = typeof ws.getOrders === 'function'
-                ? ws.getOrders()
-                : Array.from(ws.orderCache?.values?.() || []);
+            const orders = pricing.getOrders();
 
             for (const order of orders) {
                 const orderFeeToken = this.normalizeAddress(order?.feeToken);
@@ -324,7 +322,7 @@ export class ContractParams extends BaseComponent {
                                 `accumulated fees for ${tokenAddress}`,
                             ),
                             this.readWithTimeout(
-                                () => ws.getTokenInfo(tokenAddress),
+                                () => pricing.getTokenInfo(tokenAddress),
                                 `token info for ${tokenAddress}`
                             )
                         ]);

@@ -12,7 +12,7 @@ function normalizeAddress(address) {
     return safeGetAddress(address, null);
 }
 
-async function getTokenMetadata(ws, tokenAddress) {
+async function getTokenMetadata(pricing, tokenAddress) {
     const fallbackSymbol = `${tokenAddress.slice(0, 6)}...${tokenAddress.slice(-4)}`;
     const fallback = {
         symbol: fallbackSymbol,
@@ -21,12 +21,12 @@ async function getTokenMetadata(ws, tokenAddress) {
         iconUrl: 'fallback'
     };
 
-    if (!ws || typeof ws.getTokenInfo !== 'function') {
+    if (!pricing || typeof pricing.getTokenInfo !== 'function') {
         return fallback;
     }
 
     try {
-        const info = await ws.getTokenInfo(tokenAddress);
+        const info = await pricing.getTokenInfo(tokenAddress);
         if (!info) return fallback;
 
         const decimals = Number.isInteger(info.decimals) ? info.decimals : 18;
@@ -43,7 +43,7 @@ async function getTokenMetadata(ws, tokenAddress) {
 
 export async function getClaimableSnapshot({
     contract,
-    ws = null,
+    pricing = null,
     userAddress,
     includeMetadata = false
 }) {
@@ -103,7 +103,7 @@ export async function getClaimableSnapshot({
             };
         }
 
-        const metadata = await getTokenMetadata(ws, token);
+        const metadata = await getTokenMetadata(pricing, token);
         return {
             token,
             tokenLower: token.toLowerCase(),

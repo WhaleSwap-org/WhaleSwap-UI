@@ -99,31 +99,17 @@ export class OrdersComponentHelper {
         
         // Subscribe to pricing updates
         if (this.component.pricingService && !this.component._boundPricingHandler) {
-            this.component._boundPricingHandler = (event) => {
-                if (event === 'refreshComplete') {
-                    this.debug('Prices updated, refreshing orders view');
+            this.component._boundPricingHandler = (eventName) => {
+                if (eventName === 'refreshComplete' || eventName === 'ordersUpdated') {
+                    this.debug('Pricing state updated, refreshing orders view');
                     if (onRefresh) {
                         onRefresh().catch(error => {
-                            this.component.error('Error refreshing orders after price update:', error);
+                            this.component.error('Error refreshing orders after pricing update:', error);
                         });
                     }
                 }
             };
             this.component.pricingService.subscribe(this.component._boundPricingHandler);
-        }
-
-        // Subscribe to WebSocket updates
-        const ws = this.component.ctx.getWebSocket();
-        if (ws && !this.component._boundOrdersUpdatedHandler) {
-            this.component._boundOrdersUpdatedHandler = () => {
-                this.debug('Orders updated via WebSocket, refreshing view');
-                if (onRefresh) {
-                    onRefresh().catch(error => {
-                        this.component.error('Error refreshing orders after WebSocket update:', error);
-                    });
-                }
-            };
-            ws.subscribe("ordersUpdated", this.component._boundOrdersUpdatedHandler);
         }
     }
 
@@ -427,7 +413,8 @@ export class OrdersComponentHelper {
 
             // Load cached order and verify current on-chain status/time constraints.
             const ws = this.component.ctx.getWebSocket();
-            const order = ws.orderCache.get(normalizedOrderId);
+            const pricing = this.component.ctx.getPricing();
+            const order = pricing.orderCache.get(normalizedOrderId);
             this.debug('Order details:', order);
 
             if (!order) {
@@ -686,12 +673,6 @@ export class OrdersComponentHelper {
         if (this.component.pricingService && this.component._boundPricingHandler) {
             this.component.pricingService.unsubscribe(this.component._boundPricingHandler);
             this.component._boundPricingHandler = null;
-        }
-
-        // Unsubscribe from WebSocket ordersUpdated
-        if (ws && this.component._boundOrdersUpdatedHandler) {
-            ws.unsubscribe("ordersUpdated", this.component._boundOrdersUpdatedHandler);
-            this.component._boundOrdersUpdatedHandler = null;
         }
 
         // Remove wallet listener

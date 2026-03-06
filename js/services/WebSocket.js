@@ -1,10 +1,7 @@
 import { ethers } from 'ethers';
 import { ORDER_CONSTANTS } from '../config/index.js';
 import { getNetworkConfig } from '../config/networks.js';
-import { tryAggregate as multicallTryAggregate, isMulticallAvailable } from './MulticallService.js';
-import { erc20Abi } from '../abi/erc20.js';
 import { createLogger } from './LogService.js';
-import { tokenIconService } from './TokenIconService.js';
 
 export class WebSocketService {
     constructor(options = {}) {
@@ -15,7 +12,6 @@ export class WebSocketService {
         this.reconnectDelay = 1000;
         this.reconnectPromise = null;
         this.reconnectTimer = null;
-        this.orderCache = new Map();
         this.isInitialized = false;
         this.contractAddress = null;
         this.contractABI = null;
@@ -51,10 +47,6 @@ export class WebSocketService {
         this.chainTimeRetryCooldownMs = 10000;
         this.lastChainTimeBootstrapFailureAtMonotonicMs = null;
 
-        // Order sync lifecycle state
-        this.orderSyncPromise = null;
-        this.hasCompletedOrderSync = false;
-
         // Contract disabled-state cache
         this.contractDisabledCache = null;
         this.contractDisabledFetchedAt = 0;
@@ -68,25 +60,6 @@ export class WebSocketService {
         this.debug = logger.debug.bind(logger);
         this.error = logger.error.bind(logger);
         this.warn = logger.warn.bind(logger);
-        
-        this.tokenCache = new Map();  // Add token cache
-        this.pricingStateHandler = null;
-    }
-
-    get orderCache() {
-        return this.pricingService?.orderCache || this._orderCache;
-    }
-
-    set orderCache(value) {
-        this._orderCache = value instanceof Map ? value : new Map();
-    }
-
-    get tokenCache() {
-        return this.pricingService?.tokenCache || this._tokenCache;
-    }
-
-    set tokenCache(value) {
-        this._tokenCache = value instanceof Map ? value : new Map();
     }
 
     clearReconnectTimer() {
@@ -590,29 +563,8 @@ export class WebSocketService {
                     orderExpiry: this.orderExpiry.toString(),
                     gracePeriod: this.gracePeriod.toString()
                 });
-                
-                const pricing = this.pricingService;
-                if (pricing) {
-                    if (!this.pricingStateHandler) {
-                        this.pricingStateHandler = (eventName, data) => {
-                            if (eventName === 'orderSyncComplete') {
-                                this.hasCompletedOrderSync = true;
-                                this.notifySubscribers('orderSyncComplete', data);
-                                return;
-                            }
 
-                            if (eventName === 'orderSyncProgress' || eventName === 'ordersUpdated') {
-                                this.notifySubscribers(eventName, data);
-                            }
-                        };
-                        pricing.subscribe(this.pricingStateHandler);
-                    }
-                    if (pricing.hasCompletedOrderSync) {
-                        this.hasCompletedOrderSync = true;
-                    }
-                } else {
-                    this.debug('Warning: PricingService not available');
-                }
+                await this.setupEventListeners(this.contract);
                 
                 this.isInitialized = true;
                 this.startHealthMonitor();
@@ -697,12 +649,7 @@ export class WebSocketService {
                     };
 
                     const pricing = this.pricingService;
-                    if (pricing?.upsertOrder) {
-                        orderData = await pricing.upsertOrder(orderData, { computeDeal: true });
-                    } else {
-                        orderData = await this.calculateDealMetrics(orderData);
-                        this.orderCache.set(orderId.toNumber(), orderData);
-                    }
+                    orderData = await pricing.upsertOrder(orderData, { computeDeal: true });
                     
                     // Notify subscribers
                     this.notifySubscribers("OrderCreated", orderData);
@@ -716,13 +663,7 @@ export class WebSocketService {
                 const [orderId] = args;
                 const orderIdNum = orderId.toNumber();
                 const pricing = this.pricingService;
-                const order = pricing?.updateOrderStatus
-                    ? pricing.updateOrderStatus(orderIdNum, 'Filled')
-                    : this.orderCache.get(orderIdNum);
-                if (!pricing && order) {
-                    order.status = 'Filled';
-                    this.orderCache.set(orderIdNum, order);
-                }
+                const order = pricing.updateOrderStatus(orderIdNum, 'Filled');
                 if (order) {
                     this.debug('Cache updated for filled order:', order);
                     this.notifySubscribers("OrderFilled", order);
@@ -732,13 +673,7 @@ export class WebSocketService {
             contract.on("OrderCanceled", (orderId, maker, timestamp, event) => {
                 const orderIdNum = orderId.toNumber();
                 const pricing = this.pricingService;
-                const order = pricing?.updateOrderStatus
-                    ? pricing.updateOrderStatus(orderIdNum, 'Canceled')
-                    : this.orderCache.get(orderIdNum);
-                if (!pricing && order) {
-                    order.status = 'Canceled';
-                    this.orderCache.set(orderIdNum, order);
-                }
+                const order = pricing.updateOrderStatus(orderIdNum, 'Canceled');
                 if (order) {
                     this.debug('Updated order to Canceled:', orderIdNum);
                     this.notifySubscribers("OrderCanceled", order);
@@ -748,9 +683,7 @@ export class WebSocketService {
             contract.on("OrderCleanedUp", orderId => {
                 const orderIdNum = orderId.toNumber();
                 const pricing = this.pricingService;
-                const didRemove = pricing?.removeOrder
-                    ? pricing.removeOrder(orderIdNum)
-                    : this.orderCache.delete(orderIdNum);
+                const didRemove = pricing.removeOrder(orderIdNum);
                 if (didRemove) {
                     this.debug('Removed cleaned up order:', orderIdNum);
                     this.notifySubscribers("OrderCleanedUp", { id: orderIdNum });
@@ -797,13 +730,11 @@ export class WebSocketService {
                     this.notifySubscribers("AllowedTokensUpdated", eventPayload);
 
                     const pricing = this.pricingService;
-                    if (pricing?.getAllowedTokens && pricing?.refreshPrices) {
-                        void pricing.getAllowedTokens()
-                            .then(() => pricing.refreshPrices())
-                            .catch(error => {
-                                this.debug('Failed to refresh pricing after AllowedTokensUpdated:', error);
-                            });
-                    }
+                    void pricing.getAllowedTokens()
+                        .then(() => pricing.refreshPrices())
+                        .catch(error => {
+                            this.debug('Failed to refresh pricing after AllowedTokensUpdated:', error);
+                        });
                 });
             } else {
                 this.debug('AllowedTokensUpdated event not found in ABI, skipping listener registration');
@@ -859,184 +790,11 @@ export class WebSocketService {
         }
     }
 
-    /**
-     * Fetch a contiguous range of orders via Multicall2.
-     * Returns an array of decoded order objects (filtered for non-zero maker).
-     * If multicall is unavailable, returns null to signal fallback.
-     * Uses this.contract.interface so decode shape always matches the deployment ABI.
-     */
-    async fetchOrdersViaMulticall(startIndex, endIndex) {
-        try {
-            if (!isMulticallAvailable()) {
-                this.debug('Multicall not available, skipping multicall path');
-                return null;
-            }
-
-            const iface = this.contract.interface;
-            const calls = [];
-            for (let i = startIndex; i < endIndex; i++) {
-                calls.push({
-                    target: this.contract.address,
-                    callData: iface.encodeFunctionData('orders', [i])
-                });
-            }
-
-            // Try once, then retry once on failure before falling back
-            let results = await this.withTimeout(
-                multicallTryAggregate(calls, { requireSuccess: false }),
-                5000,
-                'multicall timeout'
-            );
-            if (!results) {
-                this.debug('Multicall returned null, retrying once after short delay...');
-                await new Promise(r => setTimeout(r, 150));
-                try {
-                    results = await this.withTimeout(
-                        multicallTryAggregate(calls, { requireSuccess: false }),
-                        5000,
-                        'multicall timeout'
-                    );
-                } catch (_) {
-                    results = null;
-                }
-                if (!results) {
-                    this.debug('Multicall retry failed');
-                    return null;
-                }
-            }
-
-            const orders = [];
-            for (let i = 0; i < results.length; i++) {
-                const result = results[i];
-                const orderId = startIndex + i;
-                if (!result || result.success !== true) {
-                    continue;
-                }
-                try {
-                    const decoded = iface.decodeFunctionResult('orders', result.returnData);
-                    const [maker, taker, sellToken, sellAmount, buyToken, buyAmount, timestamp, status, feeToken, orderCreationFee] = decoded;
-                    if (maker === ethers.constants.AddressZero) {
-                        continue;
-                    }
-                    orders.push({
-                        id: orderId,
-                        maker,
-                        taker,
-                        sellToken,
-                        sellAmount,
-                        buyToken,
-                        buyAmount,
-                        timestamp: timestamp.toNumber(),
-                        status: ORDER_CONSTANTS.STATUS_MAP[Number(status)],
-                        feeToken,
-                        orderCreationFee
-                    });
-                } catch (e) {
-                    this.debug(`Failed to decode order ${orderId} from multicall`, e);
-                }
-            }
-            return orders;
-        } catch (error) {
-            this.debug('fetchOrdersViaMulticall error:', error);
-            return null;
-        }
-    }
-
-    /**
-     * Fallback: fetch orders individually with small concurrency.
-     */
-    async fetchOrdersIndividually(startIndex, endIndex, concurrency = 3) {
-        const indices = [];
-        for (let i = startIndex; i < endIndex; i++) indices.push(i);
-        const results = [];
-
-        let cursor = 0;
-        const worker = async () => {
-            while (true) {
-                const idx = cursor++;
-                if (idx >= indices.length) break;
-                const orderId = indices[idx];
-                try {
-                    const order = await this.contract.orders(orderId);
-                    if (order.maker === ethers.constants.AddressZero) {
-                        continue;
-                    }
-                    results.push({
-                        id: orderId,
-                        maker: order.maker,
-                        taker: order.taker,
-                        sellToken: order.sellToken,
-                        sellAmount: order.sellAmount,
-                        buyToken: order.buyToken,
-                        buyAmount: order.buyAmount,
-                        timestamp: order.timestamp.toNumber(),
-                        status: ORDER_CONSTANTS.STATUS_MAP[Number(order.status)],
-                        feeToken: order.feeToken,
-                        orderCreationFee: order.orderCreationFee
-                    });
-                } catch (e) {
-                    this.debug(`Failed to read order ${orderId} via fallback`, e);
-                }
-            }
-        };
-
-        const workers = Array.from({ length: Math.min(concurrency, indices.length) }, () => worker());
-        await Promise.all(workers);
-        // Keep results sorted by id
-        results.sort((a, b) => a.id - b.id);
-        return results;
-    }
-
-    /**
-     * High-level helper: fetch orders in batches using multicall with fallback.
-     * Returns an array of decoded orders (without timing expansion).
-     */
-    async fetchOrdersBatched(totalOrders, batchSize = 50) {
-        const all = [];
-        if (!this.contract) {
-            throw new Error('Contract not initialized. Call initialize() first.');
-        }
-        const totalBatches = Math.ceil(totalOrders / batchSize);
-        this.debug(`Batched order fetch: ${totalOrders} orders in ${totalBatches} batches of ${batchSize}`);
-        let fetchedSoFar = 0;
-
-        for (let batch = 0; batch < totalBatches; batch++) {
-            const startIndex = batch * batchSize;
-            const endIndex = Math.min(startIndex + batchSize, totalOrders);
-            this.debug(`Fetching batch ${batch + 1}/${totalBatches} (orders ${startIndex}-${endIndex - 1})`);
-            let batchOrders = await this.fetchOrdersViaMulticall(startIndex, endIndex);
-            if (!batchOrders) {
-                batchOrders = await this.fetchOrdersIndividually(startIndex, endIndex, 3);
-            }
-            all.push(...batchOrders);
-            fetchedSoFar += batchOrders.length;
-            // Emit progress for UI consumers
-            try {
-                this.notifySubscribers('orderSyncProgress', {
-                    fetched: fetchedSoFar,
-                    total: totalOrders,
-                    batch: batch + 1,
-                    totalBatches
-                });
-            } catch (_) {}
-            if (batch < totalBatches - 1) {
-                // Short delay between batches
-                await new Promise(resolve => setTimeout(resolve, 200));
-            }
-        }
-        this.debug(`Batched order fetch complete: ${all.length} orders retrieved`);
-        return all;
-    }
-
     cleanup() {
         try {
             this.debug('Cleaning up WebSocket service...');
             this.stopHealthMonitor();
             this.clearReconnectTimer();
-            if (this.pricingStateHandler && this.pricingService?.unsubscribe) {
-                this.pricingService.unsubscribe(this.pricingStateHandler);
-            }
-            this.pricingStateHandler = null;
             
             // Remove provider event listeners
             if (this.provider) {
@@ -1070,15 +828,10 @@ export class WebSocketService {
                 }
             }
             
-            // Clear cache
-            this._orderCache?.clear?.();
-            this._tokenCache?.clear?.();
             this.lastKnownChainTimestamp = null;
             this.chainTimeSyncedAtMonotonicMs = null;
             this.chainTimeSyncPromise = null;
             this.lastChainTimeBootstrapFailureAtMonotonicMs = null;
-            this.orderSyncPromise = null;
-            this.hasCompletedOrderSync = false;
             this.isInitialized = false;
             this.provider = null;
             this.contract = null;
@@ -1094,155 +847,6 @@ export class WebSocketService {
             this.debug('WebSocket service cleanup complete');
         } catch (error) {
             this.debug('Error during cleanup:', error);
-        }
-    }
-
-    async waitForOrderSync({ triggerIfNeeded = true } = {}) {
-        const pricing = this.pricingService;
-        if (pricing?.waitForOrderSync) {
-            const result = await pricing.waitForOrderSync({ triggerIfNeeded });
-            this.hasCompletedOrderSync = pricing.hasCompletedOrderSync;
-            return result;
-        }
-        if (this.orderSyncPromise) {
-            return this.orderSyncPromise;
-        }
-        if (this.hasCompletedOrderSync) {
-            return true;
-        }
-        if (!triggerIfNeeded) {
-            return false;
-        }
-        return this.syncAllOrders();
-    }
-
-    async syncAllOrders() {
-        const pricing = this.pricingService;
-        if (pricing?.syncAllOrders) {
-            const result = await pricing.syncAllOrders();
-            this.hasCompletedOrderSync = pricing.hasCompletedOrderSync;
-            return result;
-        }
-        if (this.orderSyncPromise) {
-            this.debug('Order sync already in progress; waiting for existing sync');
-            return this.orderSyncPromise;
-        }
-
-        this.orderSyncPromise = (async () => {
-            this.debug('Starting order sync with existing contract...');
-
-            try {
-                if (!this.contract) {
-                    throw new Error('Contract not initialized. Call initialize() first.');
-                }
-                this.debug('Starting order sync with contract:', this.contract.address);
-
-                let nextOrderId = 0;
-                try {
-                    nextOrderId = await this.contract.nextOrderId();
-                    this.debug('nextOrderId result:', nextOrderId.toString());
-                } catch (error) {
-                    this.debug('nextOrderId call failed, using default value:', error);
-                }
-
-                // Clear existing cache before sync
-                this.orderCache.clear();
-
-                // Use optimized batched fetch (multicall with fallback)
-                const fetchedOrders = await this.fetchOrdersBatched(Number(nextOrderId), 50);
-
-                // Enrich with timings and populate cache
-                for (const o of fetchedOrders) {
-                    const orderData = {
-                        ...o,
-                        timings: this.buildOrderTimings(o.timestamp)
-                    };
-                    // Calculate deal metrics for the order
-                    try {
-                        const enrichedOrderData = await this.calculateDealMetrics(orderData);
-                        this.orderCache.set(o.id, enrichedOrderData);
-                        this.debug('Added order to cache with deal metrics:', enrichedOrderData);
-                    } catch (error) {
-                        this.debug('Failed to calculate deal metrics for order', o.id, ':', error);
-                        // Still add the order without deal metrics as fallback
-                        this.orderCache.set(o.id, orderData);
-                        this.debug('Added order to cache without deal metrics:', orderData);
-                    }
-                }
-
-                // Validate and summarize order cache
-                try {
-                    this.validateOrderCache();
-                } catch (_) {}
-
-                this.debug('Order sync complete. Cache size:', this.orderCache.size);
-                this.notifySubscribers('orderSyncComplete', Object.fromEntries(this.orderCache));
-                this.debug('Setting up event listeners...');
-                await this.setupEventListeners(this.contract);
-                this.hasCompletedOrderSync = true;
-                return true;
-            } catch (error) {
-                this.debug('Order sync failed:', error);
-                this.orderCache.clear();
-                this.notifySubscribers('orderSyncComplete', {});
-                this.hasCompletedOrderSync = false;
-                return false;
-            } finally {
-                this.orderSyncPromise = null;
-            }
-        })();
-
-        return this.orderSyncPromise;
-    }
-
-    // Basic validation and summary for testing/diagnostics
-    validateOrderCache() {
-        const orders = Array.from(this.orderCache.values());
-        const summary = orders.reduce((acc, o) => {
-            const s = o.status || 'Unknown';
-            acc[s] = (acc[s] || 0) + 1;
-            return acc;
-        }, {});
-        this.debug('Order cache validation:', {
-            total: orders.length,
-            byStatus: summary
-        });
-        // Spot-check required fields on a few entries
-        for (let i = 0; i < Math.min(3, orders.length); i++) {
-            const o = orders[i];
-            if (!o.maker || !o.sellToken || !o.buyToken) {
-                this.warn('Order missing critical fields:', o.id);
-            }
-        }
-    }
-
-    getOrders(filterStatus = null) {
-        const pricing = this.pricingService;
-        if (pricing?.getOrders) {
-            return pricing.getOrders(filterStatus);
-        }
-        try {
-            this.debug('Getting orders with filter:', filterStatus);
-            const orders = Array.from(this.orderCache.values());
-            
-            // Add detailed logging of order cache
-            this.debug('Current order cache:', {
-                size: this.orderCache.size,
-                orderStatuses: orders.map(o => ({
-                    id: o.id,
-                    status: o.status,
-                    timestamp: o.timestamp
-                }))
-            });
-            
-            if (filterStatus) {
-                return orders.filter(order => order.status === filterStatus);
-            }
-            
-            return orders;
-        } catch (error) {
-            this.debug('Error getting orders:', error);
-            return [];
         }
     }
 
@@ -1272,33 +876,6 @@ export class WebSocketService {
                 subscribers.forEach(callback => callback(event));
             }
         });
-    }
-
-    updateOrderCache(orderId, orderData) {
-        this.orderCache.set(orderId, orderData);
-    }
-
-    removeOrder(orderId) {
-        this.orderCache.delete(orderId);
-    }
-
-    removeOrders(orderIds) {
-        const pricing = this.pricingService;
-        if (pricing?.removeOrders) {
-            return pricing.removeOrders(orderIds);
-        }
-        if (!Array.isArray(orderIds)) {
-            console.warn('[WebSocket] removeOrders called with non-array:', orderIds);
-            return;
-        }
-        
-        this.debug('Removing orders:', orderIds);
-        orderIds.forEach(orderId => {
-            this.orderCache.delete(orderId);
-        });
-        
-        // Notify subscribers of the update
-        this.notifySubscribers('ordersUpdated', this.getOrders());
     }
 
     notifySubscribers(eventName, data) {
@@ -1344,185 +921,6 @@ export class WebSocketService {
         return null;
     }
 
-    // Deal = buy USD value / sell USD value using token-normalized (decimal-adjusted) amounts.
-    async calculateDealMetrics(orderData) {
-        const buyTokenInfo = await this.getTokenInfo(orderData.buyToken); // maker wants to receive this
-        const sellTokenInfo = await this.getTokenInfo(orderData.sellToken); // maker offers this
-
-        const buyTokenDecimals = Number.isInteger(buyTokenInfo?.decimals) ? buyTokenInfo.decimals : 18;
-        const sellTokenDecimals = Number.isInteger(sellTokenInfo?.decimals) ? sellTokenInfo.decimals : 18;
-
-        const formattedBuyAmount = ethers.utils.formatUnits(orderData.buyAmount || 0, buyTokenDecimals);
-        const formattedSellAmount = ethers.utils.formatUnits(orderData.sellAmount || 0, sellTokenDecimals);
-
-        const buyAmount = Number(formattedBuyAmount);
-        const sellAmount = Number(formattedSellAmount);
-
-        if (!Number.isFinite(buyAmount) || !Number.isFinite(sellAmount) || sellAmount <= 0) {
-            this.debug('Invalid normalized token amounts, skipping deal calculation for order:', orderData.id);
-            return {
-                ...orderData,
-                dealMetrics: {
-                    ...orderData.dealMetrics,
-                    formattedBuyAmount,
-                    formattedSellAmount
-                }
-            };
-        }
-
-        const pricing = this.pricingService;
-        if (!pricing) {
-            this.debug('PricingService not available for deal calculation');
-            return {
-                ...orderData,
-                dealMetrics: {
-                    ...orderData.dealMetrics,
-                    formattedBuyAmount,
-                    formattedSellAmount
-                }
-            };
-        }
-
-        const buyTokenUsdPrice = pricing.getPrice(orderData.buyToken);
-        const sellTokenUsdPrice = pricing.getPrice(orderData.sellToken);
-        if (
-            buyTokenUsdPrice === undefined ||
-            sellTokenUsdPrice === undefined ||
-            buyTokenUsdPrice <= 0 ||
-            sellTokenUsdPrice <= 0
-        ) {
-            this.debug('Missing price data, skipping deal calculation for order:', orderData.id);
-            return {
-                ...orderData,
-                dealMetrics: {
-                    ...orderData.dealMetrics,
-                    formattedBuyAmount,
-                    formattedSellAmount,
-                    buyTokenUsdPrice,
-                    sellTokenUsdPrice
-                }
-            };
-        }
-
-        const buyValue = buyAmount * buyTokenUsdPrice;
-        const sellValue = sellAmount * sellTokenUsdPrice;
-
-        if (!Number.isFinite(buyValue) || !Number.isFinite(sellValue) || sellValue <= 0) {
-            this.debug('Invalid USD values, skipping deal calculation for order:', orderData.id);
-            return {
-                ...orderData,
-                dealMetrics: {
-                    ...orderData.dealMetrics,
-                    formattedBuyAmount,
-                    formattedSellAmount,
-                    buyTokenUsdPrice,
-                    sellTokenUsdPrice
-                }
-            };
-        }
-
-        const deal = buyValue / sellValue;
-
-        return {
-            ...orderData,
-            dealMetrics: {
-                ...orderData.dealMetrics,
-                formattedBuyAmount,
-                formattedSellAmount,
-                buyTokenUsdPrice,
-                sellTokenUsdPrice,
-                buyValue,
-                sellValue,
-                deal
-            }
-        };
-    }
-
-    async getTokenInfo(tokenAddress) {
-        const pricing = this.pricingService;
-        if (pricing?.getTokenInfo) {
-            return pricing.getTokenInfo(tokenAddress);
-        }
-        try {
-            // Normalize address to lowercase for consistent comparison
-            const normalizedAddress = tokenAddress.toLowerCase();
-
-            // 1. First check cache
-            if (this.tokenCache.has(normalizedAddress)) {
-                this.debug('Token info found in cache:', normalizedAddress);
-                return this.tokenCache.get(normalizedAddress);
-            }
-
-            // 2. Fetch from contract using queueRequest
-            this.debug('Fetching token info from contract:', normalizedAddress);
-            return await this.queueRequest(async () => {
-                const contract = new ethers.Contract(tokenAddress, erc20Abi, this.provider);
-                const [symbol, decimals, name] = await Promise.all([
-                    contract.symbol(),
-                    contract.decimals(),
-                    contract.name()
-                ]);
-
-                // Get icon URL for the token
-                let iconUrl = null;
-                try {
-                    const chainId = Number.parseInt(getNetworkConfig().chainId, 16) || 137;
-                    iconUrl = await tokenIconService.getIconUrl(tokenAddress, chainId);
-                } catch (err) {
-                    this.debug(`Failed to get icon for token ${tokenAddress}:`, err);
-                }
-
-                const tokenInfo = {
-                    address: normalizedAddress,
-                    symbol,
-                    decimals: Number(decimals),
-                    name,
-                    iconUrl: iconUrl
-                };
-
-                // Cache the result
-                this.tokenCache.set(normalizedAddress, tokenInfo);
-                this.debug('Added token to cache:', tokenInfo);
-
-                return tokenInfo;
-            });
-
-        } catch (error) {
-            this.debug('Error getting token info:', error);
-            // Return a basic fallback object
-            const fallback = {
-                address: tokenAddress.toLowerCase(),
-                symbol: `${tokenAddress.slice(0, 4)}...${tokenAddress.slice(-4)}`,
-                decimals: 18,
-                name: 'Unknown Token'
-            };
-            this.tokenCache.set(tokenAddress.toLowerCase(), fallback);
-            return fallback;
-        }
-    }
-
-    // Update all deals when prices change
-    // Will be used with refresh button in the UI 
-    async updateAllDeals() {
-        const pricing = this.pricingService;
-        if (!pricing) {
-            this.debug('Cannot update deals: PricingService not available');
-            return;
-        }
-
-        this.debug('Updating deal metrics for all orders...');
-        for (const [orderId, order] of this.orderCache.entries()) {
-            try {
-                const updatedOrder = await this.calculateDealMetrics(order);
-                this.orderCache.set(orderId, updatedOrder);
-            } catch (error) {
-                this.debug('Error updating deal metrics for order:', orderId, error);
-            }
-        }
-
-        // Notify subscribers about the updates
-        this.notifySubscribers("ordersUpdated", Array.from(this.orderCache.values()));
-    }
 
     // Check if an order can be filled by the current account
     // Use this to determine to provide a fill button in the UI

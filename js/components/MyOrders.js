@@ -109,25 +109,11 @@ export class MyOrders extends BaseComponent {
                 this.debug('Table already exists, skipping setup');
             }
 
-            // Check if WebSocket cache is already available
-            const ws = this.ctx.getWebSocket();
-            if (ws?.orderCache.size > 0) {
-                this.debug('Using existing WebSocket cache');
+            const pricing = this.ctx.getPricing();
+            if (pricing?.orderCache.size > 0 || pricing?.hasCompletedOrderSync) {
+                this.debug('Using existing pricing cache');
                 await this.refreshOrdersView();
                 return;
-            }
-
-            // If no cache, then wait for WebSocket initialization
-            if (!ws?.isInitialized) {
-                this.warn('WebSocket not initialized, waiting...');
-                await new Promise(resolve => {
-                    const checkInterval = setInterval(() => {
-                        if (ws?.isInitialized) {
-                            clearInterval(checkInterval);
-                            resolve();
-                        }
-                    }, 100);
-                });
             }
 
             // Refresh view
@@ -152,13 +138,14 @@ export class MyOrders extends BaseComponent {
             
             // Get all orders first
             const ws = this.ctx.getWebSocket();
+            const pricing = this.ctx.getPricing();
             const wallet = this.ctx.getWallet();
             this.tokenDisplaySymbolMap = buildTokenDisplaySymbolMap(
-                Array.from(ws.tokenCache.values()),
+                Array.from(pricing.tokenCache.values()),
                 this.ctx?.getWalletChainId?.()
             );
             await ws.ensureChainTimeInitialized();
-            let ordersToDisplay = Array.from(ws.orderCache.values());
+            let ordersToDisplay = pricing.getOrders();
             
             // Filter for user's orders only
             const userAddress = wallet?.getAccount()?.toLowerCase();
@@ -252,14 +239,14 @@ export class MyOrders extends BaseComponent {
         const existingCheckbox = this.container.querySelector('#fillable-orders-toggle');
         const showOnlyCancellable = existingCheckbox?.checked ?? true; // Default to true if no existing state
         
-        // Get tokens from WebSocket's tokenCache first
-        const ws = this.ctx.getWebSocket();
+        // Get tokens from PricingService token cache first
+        const pricing = this.ctx.getPricing();
         const tokenDisplaySymbolMap = buildTokenDisplaySymbolMap(
-            Array.from(ws.tokenCache.values()),
+            Array.from(pricing.tokenCache.values()),
             this.ctx?.getWalletChainId?.()
         );
         this.tokenDisplaySymbolMap = tokenDisplaySymbolMap;
-        const tokens = Array.from(ws.tokenCache.values())
+        const tokens = Array.from(pricing.tokenCache.values())
             .map((token) => ({
                 ...token,
                 displaySymbol: getDisplaySymbol(token, tokenDisplaySymbolMap)
@@ -625,10 +612,10 @@ export class MyOrders extends BaseComponent {
             tr.dataset.orderId = order.id.toString();
             tr.dataset.timestamp = order.timings?.createdAt?.toString() || '0';
 
-            // Get token info from WebSocket cache
             const ws = this.ctx.getWebSocket();
-            const sellTokenInfo = await ws.getTokenInfo(order.sellToken);
-            const buyTokenInfo = await ws.getTokenInfo(order.buyToken);
+            const pricing = this.ctx.getPricing();
+            const sellTokenInfo = await pricing.getTokenInfo(order.sellToken);
+            const buyTokenInfo = await pricing.getTokenInfo(order.buyToken);
             const sellDisplaySymbol = getDisplaySymbol(sellTokenInfo, this.tokenDisplaySymbolMap);
             const buyDisplaySymbol = getDisplaySymbol(buyTokenInfo, this.tokenDisplaySymbolMap);
 
@@ -654,7 +641,6 @@ export class MyOrders extends BaseComponent {
                     : '0');
 
             // Determine prices with fallback to current pricing service map
-            const pricing = this.ctx.getPricing();
             const resolvedSellPrice = typeof sellTokenUsdPrice !== 'undefined' 
                 ? sellTokenUsdPrice 
                 : (pricing ? pricing.getPrice(order.sellToken) : undefined);

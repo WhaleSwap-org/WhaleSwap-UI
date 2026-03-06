@@ -58,7 +58,7 @@ export class BaseComponent {
         // App context (injected via setContext, falls back to global)
         this._ctx = null;
         
-        // Token cache removed - use WebSocketService.getTokenInfo() via ctx.getWebSocket()
+        // Token metadata is centralized in PricingService via ctx.getPricing()
         // Balance cache for user-specific balance lookups
         this.balanceCache = new Map();
         
@@ -271,7 +271,7 @@ export class BaseComponent {
 
     /**
      * Get token details for one or more addresses
-     * Uses WebSocket's centralized token cache for symbol/decimals/name,
+     * Uses PricingService's centralized token cache for symbol/decimals/name,
      * and fetches balance on-demand for the connected user.
      * 
      * @param {string|string[]} tokenAddresses - Token address(es) to look up
@@ -302,19 +302,16 @@ export class BaseComponent {
                 return addressArray.map(() => null);
             }
 
-            // Get WebSocket service for centralized token cache
-            const ws = this.ctx.getWebSocket();
+            const pricing = this.ctx.getPricing();
 
             const results = await Promise.all(validAddresses.map(async (tokenAddress) => {
                 try {
-                    // Use WebSocket's centralized token cache for symbol/decimals/name
-                    // WebSocket is always available via context
-                    if (!ws || typeof ws.getTokenInfo !== 'function') {
-                        this.warn('WebSocket service not available for token info');
+                    if (!pricing || typeof pricing.getTokenInfo !== 'function') {
+                        this.warn('Pricing service not available for token info');
                         return null;
                     }
                     
-                    const tokenInfo = await ws.getTokenInfo(tokenAddress);
+                    const tokenInfo = await pricing.getTokenInfo(tokenAddress);
                     if (!tokenInfo) {
                         this.warn(`Token info not found for: ${tokenAddress}`);
                         return null;

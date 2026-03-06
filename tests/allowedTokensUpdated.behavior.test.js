@@ -51,7 +51,7 @@ describe('AllowedTokensUpdated behavior coverage', () => {
     it('given websocket listeners are setup when AllowedTokensUpdated fires then it notifies subscribers with normalized payload and refreshes pricing', async () => {
         const pricing = {
             getAllowedTokens: vi.fn(async () => []),
-            fetchAllowedTokensPrices: vi.fn(async () => ({ success: true }))
+            refreshPrices: vi.fn(async () => ({ success: true }))
         };
         const service = new WebSocketService({ pricingService: pricing });
         const notifySpy = vi.spyOn(service, 'notifySubscribers');
@@ -88,7 +88,7 @@ describe('AllowedTokensUpdated behavior coverage', () => {
             timestamp: '1700000000'
         });
         expect(pricing.getAllowedTokens).toHaveBeenCalledTimes(1);
-        expect(pricing.fetchAllowedTokensPrices).toHaveBeenCalledTimes(1);
+        expect(pricing.refreshPrices).toHaveBeenCalledTimes(1);
     });
 
     it('given CreateOrder subscribed to AllowedTokensUpdated when event fires then it requests forced token refresh', () => {
