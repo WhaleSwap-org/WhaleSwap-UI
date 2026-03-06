@@ -193,7 +193,7 @@ export class MyOrders extends BaseComponent {
                 const endIndex = startIndex + pageSize;
                 ordersToDisplay = ordersToDisplay.slice(startIndex, endIndex);
             }
-            const hasCompletedOrderSync = Boolean(pricing?.hasCompletedOrderSync || ws?.hasCompletedOrderSync);
+            const hasCompletedOrderSync = Boolean(pricing?.hasCompletedOrderSync);
 
             // Render orders using renderer
             if (ordersToDisplay.length === 0) {
