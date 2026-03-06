@@ -68,6 +68,42 @@ function chooseDisplayAmount(currentValue, cachedValue, tokenInfo) {
     return currentValue;
 }
 
+function resolveDealValue({
+    formattedBuyAmount,
+    formattedSellAmount,
+    resolvedBuyPrice,
+    resolvedSellPrice,
+    cachedDeal
+}) {
+    const normalizedCachedDeal = Number(cachedDeal);
+    if (Number.isFinite(normalizedCachedDeal) && normalizedCachedDeal > 0) {
+        return normalizedCachedDeal;
+    }
+
+    const buyAmount = Number(formattedBuyAmount);
+    const sellAmount = Number(formattedSellAmount);
+    const buyPrice = Number(resolvedBuyPrice);
+    const sellPrice = Number(resolvedSellPrice);
+
+    if (
+        Number.isFinite(buyAmount) &&
+        buyAmount > 0 &&
+        Number.isFinite(sellAmount) &&
+        sellAmount > 0 &&
+        Number.isFinite(buyPrice) &&
+        buyPrice > 0 &&
+        Number.isFinite(sellPrice) &&
+        sellPrice > 0
+    ) {
+        const liveDeal = (buyAmount * buyPrice) / (sellAmount * sellPrice);
+        if (Number.isFinite(liveDeal) && liveDeal > 0) {
+            return liveDeal;
+        }
+    }
+
+    return undefined;
+}
+
 export async function resolveOrderDisplayValues({ order, pricing, tokenDisplaySymbolMap }) {
     const sellTokenInfo = await pricing.getTokenInfo(order.sellToken);
     const buyTokenInfo = await pricing.getTokenInfo(order.buyToken);
@@ -105,6 +141,13 @@ export async function resolveOrderDisplayValues({ order, pricing, tokenDisplaySy
     const sellPriceClass = (pricing && pricing.isPriceEstimated(order.sellToken)) ? 'price-estimate' : '';
     const buyPriceClass = (pricing && pricing.isPriceEstimated(order.buyToken)) ? 'price-estimate' : '';
     const isPriceLoading = Boolean(pricing?.isInitialPriceLoadPending?.());
+    const resolvedDeal = resolveDealValue({
+        formattedBuyAmount: safeFormattedBuyAmount,
+        formattedSellAmount: safeFormattedSellAmount,
+        resolvedBuyPrice,
+        resolvedSellPrice,
+        cachedDeal: order?.dealMetrics?.deal
+    });
 
     return {
         sellTokenInfo,
@@ -119,7 +162,8 @@ export async function resolveOrderDisplayValues({ order, pricing, tokenDisplaySy
         buyValueText: getValueDisplayText(resolvedBuyPrice, safeFormattedBuyAmount, isPriceLoading),
         sellPriceClass,
         buyPriceClass,
-        isPriceLoading
+        isPriceLoading,
+        resolvedDeal
     };
 }
 
@@ -142,9 +186,10 @@ export async function buildOrderRowContext({
         buyValueText,
         sellPriceClass,
         buyPriceClass,
-        isPriceLoading
+        isPriceLoading,
+        resolvedDeal
     } = await resolveOrderDisplayValues({ order, pricing, tokenDisplaySymbolMap });
-    const buyerDealRatio = order.dealMetrics?.deal > 0 ? 1 / order.dealMetrics.deal : undefined;
+    const buyerDealRatio = resolvedDeal > 0 ? 1 / resolvedDeal : undefined;
 
     const orderStatus = ws.getOrderStatus(order);
     const expiryEpoch = order?.timings?.expiresAt;

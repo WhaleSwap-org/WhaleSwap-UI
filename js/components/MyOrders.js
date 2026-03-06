@@ -626,7 +626,8 @@ export class MyOrders extends BaseComponent {
                 buyValueText,
                 sellPriceClass,
                 buyPriceClass,
-                isPriceLoading
+                isPriceLoading,
+                resolvedDeal
             } = await resolveOrderDisplayValues({
                 order,
                 pricing,
@@ -649,7 +650,7 @@ export class MyOrders extends BaseComponent {
             const wallet = this.ctx.getWallet();
             const userAddress = wallet?.getAccount()?.toLowerCase();
             const { counterpartyAddress, isZeroAddr, formattedAddress } = processOrderAddress(order, userAddress);
-            const formattedDeal = formatDealValue(order.dealMetrics?.deal);
+            const formattedDeal = formatDealValue(resolvedDeal);
             const dealText = formattedDeal !== 'N/A' ? formattedDeal : (isPriceLoading ? 'Loading...' : 'N/A');
             tr.innerHTML = `
                 <td>${order.id}</td>

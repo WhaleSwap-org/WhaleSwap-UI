@@ -244,7 +244,7 @@ describe('orders tabs display symbol rendering', () => {
         expect(tokenPrices).toEqual(['$4.00', '$1.50']);
         expect(tokenPriceClasses).toEqual([true, false]);
         expect(expiryText).toBe('1H 0M');
-        expect(dealText).toBe('N/A');
+        expect(dealText).toBe('2.666667');
     });
 
     it('uses fallback formatting, price classes, and expiry text in TakerOrders rows', async () => {
@@ -292,6 +292,6 @@ describe('orders tabs display symbol rendering', () => {
         expect(tokenPriceClasses).toEqual([true, false]);
         expect(expiryText).toBe('1H 0M');
         expect(dealLabel).toContain('Deal');
-        expect(dealText).toBe('N/A');
+        expect(dealText).toBe('2.666667');
     });
 });

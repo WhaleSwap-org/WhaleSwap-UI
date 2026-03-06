@@ -1453,6 +1453,8 @@ export class CreateOrder extends BaseComponent {
             // Trigger price fetching for allowed tokens
             const pricing = this.ctx.getPricing();
             if (pricing && normalizedAllowed.length > 0) {
+                pricing.seedTokenMetadata(normalizedAllowed);
+
                 try {
                     this.debug('Triggering price fetching for allowed tokens...');
                     const allowedAddresses = normalizedAllowed.map(token => token.address);
