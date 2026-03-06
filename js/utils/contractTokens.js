@@ -3,7 +3,7 @@ import { getNetworkConfig } from '../config/networks.js';
 import { contractService } from '../services/ContractService.js';
 import { createLogger } from '../services/LogService.js';
 import { tokenIconService } from '../services/TokenIconService.js';
-import { tryAggregate as multicallTryAggregate } from '../services/MulticallService.js';
+import { tryAggregate as multicallTryAggregate, readViaRpcProviders } from '../services/MulticallService.js';
 import { erc20Abi } from '../abi/erc20.js';
 
 const ERC20_INTERFACE = new ethers.utils.Interface(erc20Abi);
@@ -320,8 +320,6 @@ async function getTokenMetadata(tokenAddress) {
             return cached.value;
         }
 
-        const provider = contractService.getProvider();
-
         // Prepare multicall for symbol, name, decimals (single ABI source: erc20.js)
         const calls = [
             { target: tokenAddress, callData: ERC20_INTERFACE.encodeFunctionData('symbol', []) },
@@ -338,20 +336,24 @@ async function getTokenMetadata(tokenAddress) {
                 name = ERC20_INTERFACE.decodeFunctionResult('name', mcResult[1].returnData)[0];
                 decimals = ERC20_INTERFACE.decodeFunctionResult('decimals', mcResult[2].returnData)[0];
             } catch (_) {
+                [symbol, name, decimals] = await readViaRpcProviders(async (provider) => {
+                    const tokenContract = new ethers.Contract(tokenAddress, erc20Abi, provider);
+                    return await Promise.all([
+                        tokenContract.symbol(),
+                        tokenContract.name(),
+                        tokenContract.decimals()
+                    ]);
+                });
+            }
+        } else {
+            [symbol, name, decimals] = await readViaRpcProviders(async (provider) => {
                 const tokenContract = new ethers.Contract(tokenAddress, erc20Abi, provider);
-                [symbol, name, decimals] = await Promise.all([
+                return await Promise.all([
                     tokenContract.symbol(),
                     tokenContract.name(),
                     tokenContract.decimals()
                 ]);
-            }
-        } else {
-            const tokenContract = new ethers.Contract(tokenAddress, erc20Abi, provider);
-            [symbol, name, decimals] = await Promise.all([
-                tokenContract.symbol(),
-                tokenContract.name(),
-                tokenContract.decimals()
-            ]);
+            });
         }
 
         const metadata = {
@@ -412,8 +414,6 @@ async function getUserTokenBalance(tokenAddress) {
             return cached.value;
         }
         
-        const provider = contractService.getProvider();
-
         // First, try multicall for decimals and balanceOf (single ABI source: erc20.js)
         const calls = [
             { target: tokenAddress, callData: ERC20_INTERFACE.encodeFunctionData('balanceOf', [userAddress]) },
@@ -426,18 +426,22 @@ async function getUserTokenBalance(tokenAddress) {
                 rawBalance = ERC20_INTERFACE.decodeFunctionResult('balanceOf', mcResult[0].returnData)[0];
                 decimals = ERC20_INTERFACE.decodeFunctionResult('decimals', mcResult[1].returnData)[0];
             } catch (_) {
+                [rawBalance, decimals] = await readViaRpcProviders(async (provider) => {
+                    const tokenContract = new ethers.Contract(tokenAddress, erc20Abi, provider);
+                    return await Promise.all([
+                        tokenContract.balanceOf(userAddress),
+                        tokenContract.decimals()
+                    ]);
+                });
+            }
+        } else {
+            [rawBalance, decimals] = await readViaRpcProviders(async (provider) => {
                 const tokenContract = new ethers.Contract(tokenAddress, erc20Abi, provider);
-                [rawBalance, decimals] = await Promise.all([
+                return await Promise.all([
                     tokenContract.balanceOf(userAddress),
                     tokenContract.decimals()
                 ]);
-            }
-        } else {
-            const tokenContract = new ethers.Contract(tokenAddress, erc20Abi, provider);
-            [rawBalance, decimals] = await Promise.all([
-                tokenContract.balanceOf(userAddress),
-                tokenContract.decimals()
-            ]);
+            });
         }
 
         const balance = ethers.utils.formatUnits(rawBalance, decimals);
