@@ -1,6 +1,22 @@
 import { ethers } from 'ethers';
-import { formatTimeDiff } from './orderUtils.js';
+import { calculateTotalValue, formatDealValue, formatTimeDiff } from './orderUtils.js';
 import { getDisplaySymbol } from './tokenDisplay.js';
+
+function getValueDisplayText(price, amount, isPriceLoading) {
+    const text = calculateTotalValue(price, amount);
+    if (text !== 'N/A') {
+        return text;
+    }
+    return isPriceLoading ? 'Loading...' : 'N/A';
+}
+
+function getDealDisplayText(deal, isPriceLoading) {
+    const text = formatDealValue(deal);
+    if (text !== 'N/A') {
+        return text;
+    }
+    return isPriceLoading ? 'Loading...' : 'N/A';
+}
 
 export async function buildOrderRowContext({
     order,
@@ -40,6 +56,8 @@ export async function buildOrderRowContext({
 
     const sellPriceClass = (pricing && pricing.isPriceEstimated(order.sellToken)) ? 'price-estimate' : '';
     const buyPriceClass = (pricing && pricing.isPriceEstimated(order.buyToken)) ? 'price-estimate' : '';
+    const isPriceLoading = Boolean(pricing?.isInitialPriceLoadPending?.());
+    const buyerDealRatio = order.dealMetrics?.deal > 0 ? 1 / order.dealMetrics?.deal : undefined;
 
     const orderStatus = ws.getOrderStatus(order);
     const expiryEpoch = order?.timings?.expiresAt;
@@ -58,10 +76,13 @@ export async function buildOrderRowContext({
         formattedBuyAmount: safeFormattedBuyAmount,
         resolvedSellPrice,
         resolvedBuyPrice,
+        sellValueText: getValueDisplayText(resolvedSellPrice, safeFormattedSellAmount, isPriceLoading),
+        buyValueText: getValueDisplayText(resolvedBuyPrice, safeFormattedBuyAmount, isPriceLoading),
         sellPriceClass,
         buyPriceClass,
         orderStatus,
         expiryText,
-        buyerDealRatio: order.dealMetrics?.deal > 0 ? 1 / order.dealMetrics?.deal : undefined
+        buyerDealRatio,
+        dealText: getDealDisplayText(buyerDealRatio, isPriceLoading)
     };
 }

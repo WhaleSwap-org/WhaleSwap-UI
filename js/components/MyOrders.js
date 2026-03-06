@@ -665,6 +665,15 @@ export class MyOrders extends BaseComponent {
             // Mark as estimate if not explicitly present in pricing map
             const sellPriceClass = (pricing && pricing.isPriceEstimated(order.sellToken)) ? 'price-estimate' : '';
             const buyPriceClass = (pricing && pricing.isPriceEstimated(order.buyToken)) ? 'price-estimate' : '';
+            const isPriceLoading = Boolean(pricing?.isInitialPriceLoadPending?.());
+            const sellValueText = (() => {
+                const text = calculateTotalValue(resolvedSellPrice, safeFormattedSellAmount);
+                return text !== 'N/A' ? text : (isPriceLoading ? 'Loading...' : 'N/A');
+            })();
+            const buyValueText = (() => {
+                const text = calculateTotalValue(resolvedBuyPrice, safeFormattedBuyAmount);
+                return text !== 'N/A' ? text : (isPriceLoading ? 'Loading...' : 'N/A');
+            })();
 
             const currentTime = ws.getCurrentTimestamp();
             const timeUntilExpiry = Number.isFinite(currentTime) && order?.timings?.expiresAt
@@ -682,7 +691,8 @@ export class MyOrders extends BaseComponent {
             const wallet = this.ctx.getWallet();
             const userAddress = wallet?.getAccount()?.toLowerCase();
             const { counterpartyAddress, isZeroAddr, formattedAddress } = processOrderAddress(order, userAddress);
-            const dealText = formatDealValue(deal);
+            const formattedDeal = formatDealValue(deal);
+            const dealText = formattedDeal !== 'N/A' ? formattedDeal : (isPriceLoading ? 'Loading...' : 'N/A');
             tr.innerHTML = `
                 <td>${order.id}</td>
                 <td>
@@ -691,7 +701,7 @@ export class MyOrders extends BaseComponent {
                         <div class="token-details">
                             <div class="token-symbol-row">
                                 <span class="token-symbol">${sellDisplaySymbol}</span>
-                                <span class="token-price ${sellPriceClass}">${calculateTotalValue(resolvedSellPrice, safeFormattedSellAmount)}</span>
+                                <span class="token-price ${sellPriceClass}">${sellValueText}</span>
                             </div>
                             <span class="token-amount">${safeFormattedSellAmount}</span>
                         </div>
@@ -703,7 +713,7 @@ export class MyOrders extends BaseComponent {
                         <div class="token-details">
                             <div class="token-symbol-row">
                                 <span class="token-symbol">${buyDisplaySymbol}</span>
-                                <span class="token-price ${buyPriceClass}">${calculateTotalValue(resolvedBuyPrice, safeFormattedBuyAmount)}</span>
+                                <span class="token-price ${buyPriceClass}">${buyValueText}</span>
                             </div>
                             <span class="token-amount">${safeFormattedBuyAmount}</span>
                         </div>

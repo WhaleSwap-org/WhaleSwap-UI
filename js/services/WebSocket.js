@@ -71,6 +71,51 @@ export class WebSocketService {
         
         this.tokenCache = new Map();  // Add token cache
         this.pricingUpdateHandler = null;
+        this.pricingStateHandler = null;
+    }
+
+    get orderCache() {
+        return this.pricingService?.orderCache || this._orderCache;
+    }
+
+    set orderCache(value) {
+        this._orderCache = value instanceof Map ? value : new Map();
+    }
+
+    get tokenCache() {
+        return this.pricingService?.tokenCache || this._tokenCache;
+    }
+
+    set tokenCache(value) {
+        this._tokenCache = value instanceof Map ? value : new Map();
+    }
+
+    bindPricingStateBridge() {
+        const pricing = this.pricingService;
+        if (!pricing?.subscribe || this.pricingStateHandler) {
+            return;
+        }
+
+        this.pricingStateHandler = (eventName, data) => {
+            if (eventName === 'orderSyncComplete') {
+                this.hasCompletedOrderSync = true;
+                this.notifySubscribers('orderSyncComplete', data);
+                return;
+            }
+
+            if (eventName === 'orderSyncProgress' || eventName === 'ordersUpdated') {
+                this.notifySubscribers(eventName, data);
+            }
+        };
+
+        pricing.subscribe(this.pricingStateHandler);
+    }
+
+    unbindPricingStateBridge() {
+        if (this.pricingStateHandler && this.pricingService?.unsubscribe) {
+            this.pricingService.unsubscribe(this.pricingStateHandler);
+        }
+        this.pricingStateHandler = null;
     }
 
     clearReconnectTimer() {
@@ -575,27 +620,12 @@ export class WebSocketService {
                     gracePeriod: this.gracePeriod.toString()
                 });
                 
-                // Subscribe to pricing service after everything else is ready
                 const pricing = this.pricingService;
                 if (pricing) {
-                    if (!this.pricingUpdateHandler) {
-                        this.pricingUpdateHandler = () => {
-                            this.debug('Price update received, updating all deals...');
-                            this.updateAllDeals();
-                        };
-                        this.debug('Subscribing to pricing service...');
-                        pricing.subscribe(this.pricingUpdateHandler);
+                    this.bindPricingStateBridge();
+                    if (pricing.hasCompletedOrderSync) {
+                        this.hasCompletedOrderSync = true;
                     }
-                    // Trigger initial allowed token price fetch in background.
-                    // Do not block initial UI readiness on pricing API requests.
-                    Promise.resolve()
-                        .then(async () => {
-                            await pricing.getAllowedTokens();
-                            await pricing.fetchAllowedTokensPrices();
-                        })
-                        .catch((err) => {
-                            this.debug('Initial allowed token fetch after WS init failed:', err);
-                        });
                 } else {
                     this.debug('Warning: PricingService not available');
                 }
@@ -682,25 +712,16 @@ export class WebSocketService {
                         orderCreationFee
                     };
 
-                    // Calculate and add deal metrics
-                    orderData = await this.calculateDealMetrics(orderData);
-                    
-                    // Add to cache
-                    this.orderCache.set(orderId.toNumber(), orderData);
-                    
-                    // Debug logging
-                    this.debug('New order added to cache:', {
-                        id: orderData.id,
-                        maker: orderData.maker,
-                        status: orderData.status,
-                        timestamp: orderData.timings?.createdAt || 0
-                    });
+                    const pricing = this.pricingService;
+                    if (pricing?.upsertOrder) {
+                        orderData = await pricing.upsertOrder(orderData, { computeDeal: true });
+                    } else {
+                        orderData = await this.calculateDealMetrics(orderData);
+                        this.orderCache.set(orderId.toNumber(), orderData);
+                    }
                     
                     // Notify subscribers
                     this.notifySubscribers("OrderCreated", orderData);
-                    
-                    // Force UI update
-                    this.notifySubscribers("ordersUpdated", Array.from(this.orderCache.values()));
                 } catch (error) {
                     this.debug('Error in OrderCreated handler:', error);
                     console.error('Failed to process OrderCreated event:', error);
@@ -710,10 +731,15 @@ export class WebSocketService {
             contract.on("OrderFilled", (...args) => {
                 const [orderId] = args;
                 const orderIdNum = orderId.toNumber();
-                const order = this.orderCache.get(orderIdNum);
-                if (order) {
+                const pricing = this.pricingService;
+                const order = pricing?.updateOrderStatus
+                    ? pricing.updateOrderStatus(orderIdNum, 'Filled')
+                    : this.orderCache.get(orderIdNum);
+                if (!pricing && order) {
                     order.status = 'Filled';
                     this.orderCache.set(orderIdNum, order);
+                }
+                if (order) {
                     this.debug('Cache updated for filled order:', order);
                     this.notifySubscribers("OrderFilled", order);
                 }
@@ -721,10 +747,15 @@ export class WebSocketService {
 
             contract.on("OrderCanceled", (orderId, maker, timestamp, event) => {
                 const orderIdNum = orderId.toNumber();
-                const order = this.orderCache.get(orderIdNum);
-                if (order) {
+                const pricing = this.pricingService;
+                const order = pricing?.updateOrderStatus
+                    ? pricing.updateOrderStatus(orderIdNum, 'Canceled')
+                    : this.orderCache.get(orderIdNum);
+                if (!pricing && order) {
                     order.status = 'Canceled';
                     this.orderCache.set(orderIdNum, order);
+                }
+                if (order) {
                     this.debug('Updated order to Canceled:', orderIdNum);
                     this.notifySubscribers("OrderCanceled", order);
                 }
@@ -732,8 +763,11 @@ export class WebSocketService {
 
             contract.on("OrderCleanedUp", (orderId) => {
                 const orderIdNum = orderId.toNumber();
-                if (this.orderCache.has(orderIdNum)) {
-                    this.orderCache.delete(orderIdNum);
+                const pricing = this.pricingService;
+                const didRemove = pricing?.removeOrder
+                    ? pricing.removeOrder(orderIdNum)
+                    : this.orderCache.delete(orderIdNum);
+                if (didRemove) {
                     this.debug('Removed cleaned up order:', orderIdNum);
                     this.notifySubscribers("OrderCleanedUp", { id: orderIdNum });
                 }
@@ -1018,6 +1052,7 @@ export class WebSocketService {
             this.debug('Cleaning up WebSocket service...');
             this.stopHealthMonitor();
             this.clearReconnectTimer();
+            this.unbindPricingStateBridge();
             
             // Remove provider event listeners
             if (this.provider) {
@@ -1052,7 +1087,8 @@ export class WebSocketService {
             }
             
             // Clear cache
-            this.orderCache.clear();
+            this._orderCache?.clear?.();
+            this._tokenCache?.clear?.();
             this.lastKnownChainTimestamp = null;
             this.chainTimeSyncedAtMonotonicMs = null;
             this.chainTimeSyncPromise = null;
@@ -1078,6 +1114,12 @@ export class WebSocketService {
     }
 
     async waitForOrderSync({ triggerIfNeeded = true } = {}) {
+        const pricing = this.pricingService;
+        if (pricing?.waitForOrderSync) {
+            const result = await pricing.waitForOrderSync({ triggerIfNeeded });
+            this.hasCompletedOrderSync = pricing.hasCompletedOrderSync;
+            return result;
+        }
         if (this.orderSyncPromise) {
             return this.orderSyncPromise;
         }
@@ -1091,6 +1133,12 @@ export class WebSocketService {
     }
 
     async syncAllOrders() {
+        const pricing = this.pricingService;
+        if (pricing?.syncAllOrders) {
+            const result = await pricing.syncAllOrders();
+            this.hasCompletedOrderSync = pricing.hasCompletedOrderSync;
+            return result;
+        }
         if (this.orderSyncPromise) {
             this.debug('Order sync already in progress; waiting for existing sync');
             return this.orderSyncPromise;
@@ -1185,6 +1233,10 @@ export class WebSocketService {
     }
 
     getOrders(filterStatus = null) {
+        const pricing = this.pricingService;
+        if (pricing?.getOrders) {
+            return pricing.getOrders(filterStatus);
+        }
         try {
             this.debug('Getting orders with filter:', filterStatus);
             const orders = Array.from(this.orderCache.values());
@@ -1239,14 +1291,26 @@ export class WebSocketService {
     }
 
     updateOrderCache(orderId, orderData) {
+        const pricing = this.pricingService;
+        if (pricing?.upsertOrder) {
+            return pricing.upsertOrder(orderData, { computeDeal: false });
+        }
         this.orderCache.set(orderId, orderData);
     }
 
     removeOrder(orderId) {
+        const pricing = this.pricingService;
+        if (pricing?.removeOrder) {
+            return pricing.removeOrder(orderId);
+        }
         this.orderCache.delete(orderId);
     }
 
     removeOrders(orderIds) {
+        const pricing = this.pricingService;
+        if (pricing?.removeOrders) {
+            return pricing.removeOrders(orderIds);
+        }
         if (!Array.isArray(orderIds)) {
             console.warn('[WebSocket] removeOrders called with non-array:', orderIds);
             return;
@@ -1399,6 +1463,10 @@ export class WebSocketService {
     }
 
     async getTokenInfo(tokenAddress) {
+        const pricing = this.pricingService;
+        if (pricing?.getTokenInfo) {
+            return pricing.getTokenInfo(tokenAddress);
+        }
         try {
             // Normalize address to lowercase for consistent comparison
             const normalizedAddress = tokenAddress.toLowerCase();
@@ -1461,6 +1529,9 @@ export class WebSocketService {
     // Will be used with refresh button in the UI 
     async updateAllDeals() {
         const pricing = this.pricingService;
+        if (pricing?.updateAllDeals) {
+            return pricing.updateAllDeals();
+        }
         if (!pricing) {
             this.debug('Cannot update deals: PricingService not available');
             return;
