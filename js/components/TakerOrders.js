@@ -32,7 +32,7 @@ export class TakerOrders extends BaseComponent {
         this.helper = new OrdersComponentHelper(this);
         this.renderer = new OrdersTableRenderer(this, {
             rowRenderer: (order) => this.createOrderRow(order),
-            showRefreshButton: false
+            showRefreshButton: true
         });
     }
 

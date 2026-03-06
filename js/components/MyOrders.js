@@ -312,12 +312,11 @@ export class MyOrders extends BaseComponent {
                             </label>
                         </div>
                     </div>
-                    ${paginationControls}
-                </div>
-                <div class="refresh-container refresh-container--mobile">
-                    <button class="refresh-prices-button js-refresh-prices" type="button">↻ Refresh Prices</button>
-                    <span class="refresh-status"></span>
-                    <span class="last-updated js-last-updated"></span>
+                    <div class="refresh-container refresh-container--top">
+                        <span class="refresh-status"></span>
+                        <span class="last-updated js-last-updated"></span>
+                        <button class="refresh-prices-button js-refresh-prices" type="button">Refresh Prices</button>
+                    </div>
                 </div>
                 <div class="advanced-filters" style="display: none;">
                     <div class="filter-row">
@@ -346,11 +345,6 @@ export class MyOrders extends BaseComponent {
         const bottomControls = `
             <div class="filter-controls bottom-controls">
                 <div class="filter-row">
-                    <div class="refresh-container">
-                        <button class="refresh-prices-button js-refresh-prices" type="button">↻ Refresh Prices</button>
-                        <span class="refresh-status"></span>
-                        <span class="last-updated js-last-updated"></span>
-                    </div>
                     ${paginationControls}
                 </div>
             </div>
@@ -454,8 +448,8 @@ export class MyOrders extends BaseComponent {
             });
         });
 
-        // Setup pagination for both top and bottom controls
-        const controls = this.container.querySelectorAll('.filter-controls');
+        // Setup pagination for the remaining bottom controls
+        const controls = this.container.querySelectorAll('.pagination-controls');
         controls.forEach(setupPaginationListeners);
 
         // Add filter toggle listener
@@ -476,7 +470,7 @@ export class MyOrders extends BaseComponent {
     }
 
     setupEventListeners() {
-        // Refresh controls are rendered in top (mobile) + bottom (desktop), share one in-flight state.
+        // Refresh controls share one in-flight state.
         const refreshControls = Array.from(this.container.querySelectorAll('.refresh-container')).map((container) => ({
             button: container.querySelector('.js-refresh-prices'),
             status: container.querySelector('.refresh-status'),
@@ -494,7 +488,7 @@ export class MyOrders extends BaseComponent {
         const setRefreshState = ({ isLoading = false, text = '', statusClass = '' }) => {
             refreshControls.forEach((control) => {
                 control.button.disabled = isLoading;
-                control.button.textContent = isLoading ? '↻ Refreshing...' : '↻ Refresh Prices';
+                control.button.textContent = isLoading ? 'Refreshing...' : 'Refresh Prices';
                 control.status.className = `refresh-status${statusClass ? ` ${statusClass}` : ''}`;
                 control.status.textContent = text;
                 control.status.style.opacity = text || isLoading ? 1 : 0;
@@ -512,8 +506,8 @@ export class MyOrders extends BaseComponent {
                     if (result.success) {
                         setRefreshState({
                             isLoading: false,
-                            text: `Updated ${new Date().toLocaleTimeString()}`,
-                            statusClass: 'success'
+                            text: '',
+                            statusClass: ''
                         });
                         refreshControls.forEach((entry) => {
                             if (entry.timestamp) {
@@ -545,64 +539,6 @@ export class MyOrders extends BaseComponent {
                 }
             });
         });
-
-        // Add pagination event listeners for both top and bottom controls
-        const controls = this.container.querySelectorAll('.filter-controls');
-        controls.forEach(control => {
-            const prevButton = control.querySelector('.prev-page');
-            const nextButton = control.querySelector('.next-page');
-            
-            if (prevButton) {
-                prevButton.addEventListener('click', () => {
-                    if (this.currentPage > 1) {
-                        this.currentPage--;
-                        this.refreshOrdersView();
-                    }
-                });
-            }
-            
-            if (nextButton) {
-                nextButton.addEventListener('click', () => {
-                    const totalPages = this.getTotalPages();
-                    this.debug('Next button clicked', { 
-                        currentPage: this.currentPage, 
-                        totalPages, 
-                        totalOrders: this.totalOrders 
-                    });
-                    if (this.currentPage < totalPages) {
-                        this.currentPage++;
-                        this.refreshOrdersView();
-                    }
-                });
-            }
-        });
-
-        // Add filter toggle listener
-        const filterToggle = this.container.querySelector('#fillable-orders-toggle');
-        if (filterToggle) {
-            filterToggle.addEventListener('change', () => {
-                this.currentPage = 1; // Reset to first page when filter changes
-                this.refreshOrdersView();
-            });
-        }
-
-        // Add token filter listeners
-        const tokenFilters = this.container.querySelectorAll('.token-filter');
-        tokenFilters.forEach(filter => {
-            filter.addEventListener('change', () => {
-                this.currentPage = 1; // Reset to first page when filter changes
-                this.refreshOrdersView();
-            });
-        });
-
-        // Add sort listener
-        const sortSelect = this.container.querySelector('#order-sort');
-        if (sortSelect) {
-            sortSelect.addEventListener('change', () => {
-                this.currentPage = 1; // Reset to first page when sort changes
-                this.refreshOrdersView();
-            });
-        }
     }
 
     // Update last updated timestamp
@@ -614,8 +550,8 @@ export class MyOrders extends BaseComponent {
             element.textContent = `Last updated: ${lastUpdateTime}`;
             element.style.display = 'inline';
         } else {
-            element.textContent = 'No prices loaded yet';
-            element.style.display = 'inline';
+            element.textContent = '';
+            element.style.display = 'none';
         }
     }
 
@@ -932,3 +868,4 @@ export class MyOrders extends BaseComponent {
         this.debug('MyOrders cleanup complete');
     }
 }
+
