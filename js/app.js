@@ -56,6 +56,8 @@ class App {
 		this.pricingOrderStateHandler = null;
 		this.pricingOrderStateSource = null;
 		this.webSocketBootstrapPromise = null;
+		this.pricingBootstrapScheduled = false;
+		this.pricingBootstrapStarted = false;
 
 		// Replace debug initialization with LogService
 		const logger = createLogger('APP');
@@ -863,12 +865,12 @@ class App {
 			this.walletUI.setContext(this.ctx);
 			this.components['wallet-info'] = this.walletUI;
 
-			// Initialize wallet UI early (it's always visible, not a tab)
-			try {
-				await this.walletUI.initialize();
-			} catch (e) {
-				this.warn('WalletUI failed to initialize', e);
-			}
+			// Keep first paint focused on the shell; the wallet header can finish booting in background.
+			Promise.resolve()
+				.then(() => this.walletUI.initialize())
+				.catch((e) => {
+					this.warn('WalletUI failed to initialize', e);
+				});
 
 			// Initialize footer (persists across tabs)
 			try {
@@ -1150,7 +1152,7 @@ class App {
 
 				this.scrollActiveTabIntoView({ behavior: 'auto' });
 
-				this.scheduleOrderTabVisibilityRefresh();
+				this.scheduleOrderTabVisibilityRefresh({ force: false });
 				this.scheduleClaimTabVisibilityRefresh();
 			};
 
@@ -1164,7 +1166,7 @@ class App {
 				.then(() => this.refreshClaimTabVisibility())
 				.catch((error) => this.debug('Deferred claim visibility check failed:', error));
 			Promise.resolve()
-				.then(() => this.refreshOrderTabVisibility())
+				.then(() => this.refreshOrderTabVisibility({ force: false }))
 				.catch((error) => this.debug('Deferred order-tab visibility check failed:', error));
 
 		// Alias for legacy references in WebSocket init callbacks
@@ -1272,15 +1274,7 @@ class App {
 			this.ctx.pricing = pricingService;
 			this.ensurePricingOrderStateSubscription(pricingService);
 
-			void Promise.resolve(pricingService.initialize())
-				.then((result) => {
-					this.debug('Pricing service bootstrap complete');
-					return result;
-				})
-				.catch((error) => {
-					this.debug('Pricing service bootstrap failed:', error);
-					return false;
-				});
+			this.schedulePricingBootstrap(pricingService);
 
 			this.debug('Pricing service initialized');
 			return pricingService;
@@ -1290,6 +1284,29 @@ class App {
 		}
 	}
 
+	schedulePricingBootstrap(pricingService = this.ctx?.getPricing?.()) {
+		if (!pricingService || this.pricingBootstrapScheduled || this.pricingBootstrapStarted) {
+			return;
+		}
+
+		const startBootstrap = () => {
+			this.pricingBootstrapScheduled = false;
+			this.pricingBootstrapStarted = true;
+
+			void Promise.resolve(pricingService.initialize())
+				.then((result) => {
+					this.debug('Pricing service bootstrap complete');
+					return result;
+				})
+				.catch((error) => {
+					this.debug('Pricing service bootstrap failed:', error);
+					return false;
+				});
+		};
+
+		this.pricingBootstrapScheduled = true;
+		setTimeout(startBootstrap, 0);
+	}
 	async initializeWebSocket() {
 		try {
 			this.debug('Initializing WebSocket...');
@@ -1699,8 +1716,12 @@ window.getToast = getToast; // Keep for external/debug access if needed
 document.addEventListener('DOMContentLoaded', async () => {
 	window.app.showGlobalLoader('Checking for updates...');
 	try {
-		// Check version first, before anything else happens
-		await versionService.initialize();
+		// Avoid blocking first paint on version checks; a detected update can still trigger reload.
+		Promise.resolve()
+			.then(() => versionService.initialize())
+			.catch((error) => {
+				window.app.debug('Deferred version initialization failed:', error);
+			});
 
 		await window.app.load();
 

@@ -258,6 +258,53 @@ export async function getContractAllowedTokens(options = {}) {
 }
 
 /**
+ * Hydrate an existing allowed-token list with wallet balances only.
+ * Reuses the current token metadata instead of re-fetching the full token payload.
+ * @param {Array} tokens - Existing token objects
+ * @returns {Promise<Array>} Tokens with refreshed balances
+ */
+export async function hydrateAllowedTokenBalances(tokens = []) {
+    try {
+        if (!Array.isArray(tokens) || tokens.length === 0) {
+            return [];
+        }
+
+        const tokenAddresses = tokens
+            .map((token) => token?.address)
+            .filter(Boolean);
+
+        if (tokenAddresses.length === 0) {
+            return tokens.map((token) => ({
+                ...token,
+                balance: token?.balance ?? '0',
+                balanceLoading: false
+            }));
+        }
+
+        const userAddress = await contractService.getUserAddress();
+        const balanceMap = await getBatchTokenBalances(tokenAddresses, userAddress);
+
+        return tokens.map((token) => {
+            const address = String(token?.address || '').toLowerCase();
+            const balance = balanceMap.get(address)?.formatted || '0';
+
+            return {
+                ...token,
+                balance,
+                balanceLoading: false
+            };
+        });
+    } catch (err) {
+        error('Failed to hydrate allowed token balances:', err);
+        return tokens.map((token) => ({
+            ...token,
+            balance: token?.balance ?? '0',
+            balanceLoading: false
+        }));
+    }
+}
+
+/**
  * Get token metadata (symbol, name, decimals)
  * @param {string} tokenAddress - The token address
  * @returns {Promise<Object>} Token metadata
