@@ -4,7 +4,7 @@ import { getNetworkConfig } from '../config/networks.js';
 import { walletManager } from '../services/WalletManager.js';
 import { setVisibility } from '../utils/ui.js';
 import { erc20Abi } from '../abi/erc20.js';
-import { getAllWalletTokens, getContractAllowedTokens, clearTokenCaches } from '../utils/contractTokens.js';
+import { hydrateAllowedTokenBalances, getContractAllowedTokens, clearTokenCaches } from '../utils/contractTokens.js';
 import { contractService } from '../services/ContractService.js';
 import { createLogger } from '../services/LogService.js';
 import { validateSellBalance } from '../utils/balanceValidation.js';
@@ -21,6 +21,8 @@ import { buildTokenDisplaySymbolMap, getDisplaySymbol } from '../utils/tokenDisp
 
 const CREATE_ORDER_RELOAD_STATE_KEY = 'whaleswap:create-order:reload-state:v1';
 const CREATE_ORDER_RELOAD_STATE_MAX_AGE_MS = 5 * 60 * 1000;
+const CREATE_ORDER_ALLOWED_TOKENS_CACHE_KEY = 'whaleswap:create-order:allowed-tokens:v1';
+const CREATE_ORDER_ALLOWED_TOKENS_CACHE_MAX_AGE_MS = 2 * 60 * 1000;
 
 export class CreateOrder extends BaseComponent {
     constructor() {
@@ -46,6 +48,7 @@ export class CreateOrder extends BaseComponent {
         this.contractDisabledHandler = null;
         this.pendingFeeConfigRefresh = false;
         this.pendingAllowedTokensRefresh = false;
+        this.allowedTokensHydratedFromCache = false;
         this.sellToken = null;
         this.buyToken = null;
         this.isContractDisabled = false;
@@ -139,6 +142,7 @@ export class CreateOrder extends BaseComponent {
         this.feeLoadPromise = null;
         this.pendingFeeConfigRefresh = false;
         this.pendingAllowedTokensRefresh = false;
+        this.allowedTokensHydratedFromCache = false;
         this.feeToken = null;
         this.isContractDisabled = false;
         this.contractStateReadError = false;
@@ -239,6 +243,130 @@ export class CreateOrder extends BaseComponent {
         } catch (error) {
             this.debug('Unable to clear pending create-order reload state:', error);
         }
+    }
+
+    getAllowedTokensCacheContext() {
+        const selectedChainSlug = this.ctx?.getSelectedChainSlug?.() || getNetworkConfig()?.slug || null;
+        const accountAddress = this.ctx?.getWallet?.()?.getAccount?.() || null;
+
+        return {
+            selectedChainSlug,
+            accountAddress: accountAddress ? accountAddress.toLowerCase() : null
+        };
+    }
+
+    persistAllowedTokensCache(tokens = this.allowedTokens) {
+        try {
+            if (typeof window === 'undefined' || !window.sessionStorage) {
+                return false;
+            }
+
+            if (!Array.isArray(tokens) || tokens.length === 0) {
+                window.sessionStorage.removeItem(CREATE_ORDER_ALLOWED_TOKENS_CACHE_KEY);
+                return false;
+            }
+
+            const { selectedChainSlug, accountAddress } = this.getAllowedTokensCacheContext();
+            const snapshot = {
+                savedAt: Date.now(),
+                selectedChainSlug,
+                accountAddress,
+                tokens: tokens.map((token) => ({
+                    address: token?.address || '',
+                    symbol: token?.symbol || '',
+                    displaySymbol: token?.displaySymbol || token?.symbol || '',
+                    name: token?.name || '',
+                    decimals: Number.isFinite(Number(token?.decimals)) ? Number(token.decimals) : 18,
+                    balance: token?.balance ?? '0',
+                    balanceLoading: Boolean(token?.balanceLoading),
+                    iconUrl: token?.iconUrl ?? null
+                })).filter((token) => token.address)
+            };
+
+            window.sessionStorage.setItem(CREATE_ORDER_ALLOWED_TOKENS_CACHE_KEY, JSON.stringify(snapshot));
+            return true;
+        } catch (error) {
+            this.debug('Unable to persist allowed-token cache:', error);
+            return false;
+        }
+    }
+
+    readAllowedTokensCache() {
+        try {
+            if (typeof window === 'undefined' || !window.sessionStorage) {
+                return null;
+            }
+
+            const raw = window.sessionStorage.getItem(CREATE_ORDER_ALLOWED_TOKENS_CACHE_KEY);
+            if (!raw) {
+                return null;
+            }
+
+            const parsed = JSON.parse(raw);
+            const savedAt = Number(parsed?.savedAt || 0);
+            if (!savedAt || (Date.now() - savedAt) > CREATE_ORDER_ALLOWED_TOKENS_CACHE_MAX_AGE_MS) {
+                window.sessionStorage.removeItem(CREATE_ORDER_ALLOWED_TOKENS_CACHE_KEY);
+                return null;
+            }
+
+            const currentContext = this.getAllowedTokensCacheContext();
+            if (
+                parsed?.selectedChainSlug !== currentContext.selectedChainSlug
+                || (parsed?.accountAddress || null) !== currentContext.accountAddress
+            ) {
+                return null;
+            }
+
+            if (!Array.isArray(parsed?.tokens) || parsed.tokens.length === 0) {
+                return null;
+            }
+
+            return parsed.tokens;
+        } catch (error) {
+            this.debug('Unable to read allowed-token cache:', error);
+            try {
+                window.sessionStorage?.removeItem?.(CREATE_ORDER_ALLOWED_TOKENS_CACHE_KEY);
+            } catch (_) {}
+            return null;
+        }
+    }
+
+    renderAllowedTokensIntoModals(tokens = this.allowedTokens) {
+        ['sell', 'buy'].forEach(type => {
+            const modal = document.getElementById(`${type}TokenModal`);
+            if (!modal) {
+                this.debug(`No modal found for ${type}`);
+                return;
+            }
+
+            const allowedTokensList = modal.querySelector(`#${type}AllowedTokenList`);
+            if (allowedTokensList) {
+                this.displayTokens(tokens, allowedTokensList, type);
+            }
+        });
+    }
+
+    hydrateAllowedTokensFromCache() {
+        if (Array.isArray(this.allowedTokens) && this.allowedTokens.length > 0) {
+            return false;
+        }
+
+        const cachedTokens = this.readAllowedTokensCache();
+        if (!cachedTokens) {
+            return false;
+        }
+
+        this.tokenDisplaySymbolMap = buildTokenDisplaySymbolMap(
+            cachedTokens,
+            this.ctx?.getWalletChainId?.()
+        );
+        const normalizedAllowed = cachedTokens.map(token => this.normalizeTokenDisplay(token));
+        this.tokens = normalizedAllowed;
+        this.allowedTokens = normalizedAllowed;
+        this.allowedTokensHydratedFromCache = true;
+        this.renderAllowedTokensIntoModals(normalizedAllowed);
+        this.debug('Hydrated allowed tokens from session cache');
+        return true;
     }
 
     setTakerExpanded(isExpanded) {
@@ -448,7 +576,9 @@ export class CreateOrder extends BaseComponent {
                 this.populateTokenDropdowns();
             }
             if (!Array.isArray(this.allowedTokens) || this.allowedTokens.length === 0) {
-                this.setAllowedTokenListsLoadingState('Loading allowed tokens...');
+                if (!this.hydrateAllowedTokensFromCache()) {
+                    this.setAllowedTokenListsLoadingState('Loading allowed tokens...');
+                }
             }
             this.setupCreateOrderListener();
 
@@ -582,9 +712,11 @@ export class CreateOrder extends BaseComponent {
 
     requestAllowedTokensRefresh({ forceFresh = false, source = 'unknown' } = {}) {
         const hasAllowedTokens = Array.isArray(this.allowedTokens) && this.allowedTokens.length > 0;
+        const shouldRefreshHydratedCache = !forceFresh && hasAllowedTokens && this.allowedTokensHydratedFromCache;
         if (forceFresh) {
             this.tokens = [];
             this.allowedTokens = [];
+            this.allowedTokensHydratedFromCache = false;
         }
 
         if (this.allowedTokensLoadPromise) {
@@ -594,12 +726,14 @@ export class CreateOrder extends BaseComponent {
             return this.allowedTokensLoadPromise;
         }
 
-        if (!forceFresh && hasAllowedTokens) {
+        if (!forceFresh && hasAllowedTokens && !shouldRefreshHydratedCache) {
             return Promise.resolve(this.allowedTokens);
         }
 
         this.tokensLoading = true;
-        this.setAllowedTokenListsLoadingState('Loading allowed tokens...');
+        if (!hasAllowedTokens || forceFresh) {
+            this.setAllowedTokenListsLoadingState('Loading allowed tokens...');
+        }
         this.allowedTokensLoadPromise = this.loadContractTokens()
             .catch((error) => {
                 this.debug(`Allowed token refresh failed (${source}):`, error);
@@ -744,6 +878,11 @@ export class CreateOrder extends BaseComponent {
             return 'loading...';
         }
 
+        const numericBalance = Number(balance) || 0;
+        if (numericBalance <= 0) {
+            return '$0.00';
+        }
+
         const pricing = this.ctx.getPricing();
         if (pricing?.shouldShowPriceLoading?.(tokenAddress)) {
             return 'loading...';
@@ -754,7 +893,7 @@ export class CreateOrder extends BaseComponent {
             return 'N/A';
         }
 
-        const usdValue = (Number(balance) || 0) * usdPrice;
+        const usdValue = numericBalance * usdPrice;
         return usdValue.toLocaleString(undefined, {
             style: 'currency',
             currency: 'USD',
@@ -763,20 +902,40 @@ export class CreateOrder extends BaseComponent {
         });
     }
 
+    formatBalanceChipUsdValue(balanceUSD) {
+        const normalizedValue = typeof balanceUSD === 'string'
+            ? balanceUSD.trim()
+            : '';
+
+        if (!normalizedValue) {
+            return '• N/A';
+        }
+
+        if (normalizedValue === 'loading...' || normalizedValue === 'N/A') {
+            return `• ${normalizedValue}`;
+        }
+
+        return normalizedValue.startsWith('$')
+            ? `• ${normalizedValue}`
+            : `• $${normalizedValue}`;
+    }
+
     refreshAllowedTokenBalancesInBackground() {
         if (this.allowedTokensBalanceLoadPromise) {
             return this.allowedTokensBalanceLoadPromise;
         }
 
-        this.allowedTokensBalanceLoadPromise = getAllWalletTokens()
+        this.allowedTokensBalanceLoadPromise = hydrateAllowedTokenBalances(this.allowedTokens)
             .then((allowedTokens) => {
-                const normalizedAllowed = allowedTokens.map(token => this.normalizeTokenDisplay(token));
-                this.tokens = normalizedAllowed;
-                this.allowedTokens = normalizedAllowed;
-                this.syncSelectedTokensWithAllowedList();
-                this.refreshTokenModalLists();
-                return normalizedAllowed;
-            })
+            const normalizedAllowed = allowedTokens.map(token => this.normalizeTokenDisplay(token));
+            this.tokens = normalizedAllowed;
+            this.allowedTokens = normalizedAllowed;
+            this.allowedTokensHydratedFromCache = false;
+            this.syncSelectedTokensWithAllowedList();
+            this.refreshTokenModalLists();
+            this.persistAllowedTokensCache(normalizedAllowed);
+            return normalizedAllowed;
+        })
             .catch((error) => {
                 this.debug('Error fetching allowed token balances:', error);
                 return this.allowedTokens;
@@ -817,11 +976,7 @@ export class CreateOrder extends BaseComponent {
             }
 
             const balance = Number(updatedToken.balance) || 0;
-            const pricing = this.ctx.getPricing();
-            const usdPrice = pricing?.getPrice(updatedToken.address);
-            const balanceUsd = usdPrice !== undefined
-                ? (balance * usdPrice).toFixed(2)
-                : 'N/A';
+            const balanceUsd = this.formatTokenListUsdValue(updatedToken.address, balance);
 
             this.updateBalanceDisplay(
                 type,
@@ -996,7 +1151,7 @@ export class CreateOrder extends BaseComponent {
             if (balanceDisplay && balanceAmount && balanceUSDElement) {
                 // Update the balance values
                 balanceAmount.textContent = formattedBalance;
-                balanceUSDElement.textContent = `• $${balanceUSD}`;
+                balanceUSDElement.textContent = this.formatBalanceChipUsdValue(balanceUSD);
                 
                 // Show the balance display without layout shift
                 setVisibility(balanceDisplay, true);
@@ -1007,7 +1162,7 @@ export class CreateOrder extends BaseComponent {
                     balanceBtn.setAttribute('aria-label', `Click to fill ${type} amount with available balance: ${formattedBalance}`);
                 }
                 
-                this.debug(`Updated ${type} balance display: ${formattedBalance} ($${balanceUSD})`);
+                this.debug(`Updated ${type} balance display: ${formattedBalance} (${balanceUSD})`);
             }
         } catch (error) {
             this.error(`Error updating ${type} balance display:`, error);
@@ -1650,6 +1805,7 @@ export class CreateOrder extends BaseComponent {
 
             this.tokens = normalizedAllowed; // Keep allowed tokens for backward compatibility
             this.allowedTokens = normalizedAllowed;
+            this.allowedTokensHydratedFromCache = false;
             
             this.debug('Loaded allowed tokens:', normalizedAllowed);
             await this.reconcileSelectedTokensWithAllowedList();
@@ -1676,19 +1832,8 @@ export class CreateOrder extends BaseComponent {
                 this.debug(`Token ${token.symbol} has iconUrl: ${!!token.iconUrl}`, token.iconUrl);
             }
 
-            ['sell', 'buy'].forEach(type => {
-                const modal = document.getElementById(`${type}TokenModal`);
-                if (!modal) {
-                    this.debug(`No modal found for ${type}`);
-                    return;
-                }
-
-                // Display allowed tokens
-                const allowedTokensList = modal.querySelector(`#${type}AllowedTokenList`);
-                if (allowedTokensList) {
-                    this.displayTokens(normalizedAllowed, allowedTokensList, type);
-                }
-            });
+            this.renderAllowedTokensIntoModals(normalizedAllowed);
+            this.persistAllowedTokensCache(normalizedAllowed);
         } catch (error) {
             this.debug('Error loading wallet tokens:', error);
             this.setAllowedTokenListsErrorState('Failed to load allowed tokens. Please retry shortly.');

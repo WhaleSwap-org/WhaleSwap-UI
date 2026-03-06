@@ -145,4 +145,36 @@ describe('CreateOrder display symbol wiring', () => {
         expect(document.getElementById('buyTokenSelector')?.textContent).not.toContain('AAA.issuer');
         expect(document.getElementById('buyToken')?.value).toBe('');
     });
+
+    it('formats balance chip USD text without duplicating the dollar sign', () => {
+        const component = createComponent();
+
+        document.body.insertAdjacentHTML('beforeend', `
+            <button id="sellTokenBalanceBtn" type="button"></button>
+            <div id="sellTokenBalanceDisplay"></div>
+            <div id="sellTokenBalanceAmount"></div>
+            <div id="sellTokenBalanceUSD"></div>
+        `);
+
+        component.updateBalanceDisplay('sell', '1.25', '$3.50');
+        expect(document.getElementById('sellTokenBalanceUSD')?.textContent).toBe('• $3.50');
+
+        component.updateBalanceDisplay('sell', 'loading...', 'loading...');
+        expect(document.getElementById('sellTokenBalanceUSD')?.textContent).toBe('• loading...');
+    });
+
+    it('returns $0.00 immediately for zero balances even while price loading is pending', () => {
+        const component = createComponent();
+        component.setContext({
+            ...createContextStub(),
+            getPricing: () => ({
+                shouldShowPriceLoading: () => true,
+                getPrice: () => undefined,
+                isPriceEstimated: () => false,
+                fetchPricesForTokens: async () => {}
+            })
+        });
+
+        expect(component.formatTokenListUsdValue(TOKEN_A, '0')).toBe('$0.00');
+    });
 });
