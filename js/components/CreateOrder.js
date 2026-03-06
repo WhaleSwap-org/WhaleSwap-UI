@@ -1842,6 +1842,15 @@ export class CreateOrder extends BaseComponent {
 
             // Check if input is an address
             if (ethers.utils.isAddress(searchTerm)) {
+                const invalidContractMarkup = `
+                    <div class="token-section">
+                        <h4>Token Contract</h4>
+                        <div class="contract-error">
+                            Invalid or unsupported token contract
+                        </div>
+                    </div>
+                `;
+
                 // Show loading state for contract result
                 contractResult.innerHTML = `
                     <div class="token-section">
@@ -1867,93 +1876,89 @@ export class CreateOrder extends BaseComponent {
                         tokenContract.balanceOf(await walletManager.getCurrentAddress()).catch(() => null)
                     ]);
 
-                    if (name && symbol && decimals !== null) {
-                        // Check if token is allowed in the contract
-                        const isAllowed = await contractService.isTokenAllowed(searchTerm);
-                        if (!isAllowed) {
-                            contractResult.innerHTML = `
-                                <div class="token-section">
-                                    <h4>Token Contract</h4>
-                                    <div class="contract-error">
-                                        Token is not allowed for trading on this platform
-                                    </div>
-                                </div>
-                            `;
-                            return;
-                        }
-                        
-                        const token = this.normalizeTokenDisplay({
-                            address: searchTerm,
-                            name,
-                            symbol,
-                            decimals,
-                            balance: balance ? ethers.utils.formatUnits(balance, decimals) : '0'
-                        });
+                    if (!name || !symbol || decimals === null) {
+                        contractResult.innerHTML = invalidContractMarkup;
+                        return;
+                    }
 
-                        // Get USD price and calculate USD value
-                        const formattedUsdValue = this.formatTokenListUsdValue(token.address, token.balance);
-
-                        // Format balance
-                        const formattedBalance = Number(token.balance).toLocaleString(undefined, { 
-                            minimumFractionDigits: 2, 
-                            maximumFractionDigits: 4,
-                            useGrouping: true
-                        });
-
+                    // Check if token is allowed in the contract
+                    const isAllowed = await contractService.isTokenAllowed(searchTerm);
+                    if (!isAllowed) {
                         contractResult.innerHTML = `
                             <div class="token-section">
                                 <h4>Token Contract</h4>
-                                <div class="token-list">
-                                    <div class="token-item token-allowed" data-address="${token.address}">
-                                        <div class="token-item-left">
-                                            <div class="token-icon">
-                                                <div class="loading-spinner"></div>
+                                <div class="contract-error">
+                                    Token is not allowed for trading on this platform
+                                </div>
+                            </div>
+                        `;
+                        return;
+                    }
+                    
+                    const token = this.normalizeTokenDisplay({
+                        address: searchTerm,
+                        name,
+                        symbol,
+                        decimals,
+                        balance: balance ? ethers.utils.formatUnits(balance, decimals) : '0'
+                    });
+
+                    // Get USD price and calculate USD value
+                    const formattedUsdValue = this.formatTokenListUsdValue(token.address, token.balance);
+
+                    // Format balance
+                    const formattedBalance = Number(token.balance).toLocaleString(undefined, { 
+                        minimumFractionDigits: 2, 
+                        maximumFractionDigits: 4,
+                        useGrouping: true
+                    });
+
+                    contractResult.innerHTML = `
+                        <div class="token-section">
+                            <h4>Token Contract</h4>
+                            <div class="token-list">
+                                <div class="token-item token-allowed" data-address="${token.address}">
+                                    <div class="token-item-left">
+                                        <div class="token-icon">
+                                            <div class="loading-spinner"></div>
+                                        </div>
+                                        <div class="token-item-info">
+                                            <div class="token-item-symbol">
+                                                ${token.displaySymbol || token.symbol}
                                             </div>
-                                            <div class="token-item-info">
-                                                <div class="token-item-symbol">
-                                                    ${token.displaySymbol || token.symbol}
-                                                </div>
-                                                <div class="token-item-name">
-                                                    ${token.name}
-                                                    <a href="${getExplorerUrl(token.address)}" 
-                                                       target="_blank"
-                                                       class="token-explorer-link"
-                                                       onclick="event.stopPropagation();">
-                                                        <svg class="token-explorer-icon" viewBox="0 0 24 24">
-                                                            <path fill="currentColor" d="M14,3V5H17.59L7.76,14.83L9.17,16.24L19,6.41V10H21V3M19,19H5V5H12V3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V12H19V19Z" />
-                                                        </svg>
-                                                    </a>
-                                                </div>
+                                            <div class="token-item-name">
+                                                ${token.name}
+                                                <a href="${getExplorerUrl(token.address)}" 
+                                                   target="_blank"
+                                                   class="token-explorer-link"
+                                                   onclick="event.stopPropagation();">
+                                                    <svg class="token-explorer-icon" viewBox="0 0 24 24">
+                                                        <path fill="currentColor" d="M14,3V5H17.59L7.76,14.83L9.17,16.24L19,6.41V10H21V3M19,19H5V5H12V3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V12H19V19Z" />
+                                                    </svg>
+                                                </a>
                                             </div>
                                         </div>
-                                        <div class="token-item-right">
-                                            <div class="token-balance-with-usd">
-                                                <div class="token-balance-amount">${formattedBalance}</div>
-                                                <div class="token-balance-usd">${formattedUsdValue}</div>
-                                            </div>
+                                    </div>
+                                    <div class="token-item-right">
+                                        <div class="token-balance-with-usd">
+                                            <div class="token-balance-amount">${formattedBalance}</div>
+                                            <div class="token-balance-usd">${formattedUsdValue}</div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
-                        `;
-
-                        // Add click handler
-                        const tokenItem = contractResult.querySelector('.token-item');
-                        tokenItem.addEventListener('click', () => this.handleTokenItemClick(type, tokenItem));
-
-                        // Render token icon asynchronously
-                        const iconContainer = tokenItem.querySelector('.token-icon');
-                        this.renderTokenIcon(token, iconContainer);
-                    }
-                } catch (error) {
-                    contractResult.innerHTML = `
-                        <div class="token-section">
-                            <h4>Token Contract</h4>
-                            <div class="contract-error">
-                                Invalid or unsupported token contract
-                            </div>
                         </div>
                     `;
+
+                    // Add click handler
+                    const tokenItem = contractResult.querySelector('.token-item');
+                    tokenItem.addEventListener('click', () => this.handleTokenItemClick(type, tokenItem));
+
+                    // Render token icon asynchronously
+                    const iconContainer = tokenItem.querySelector('.token-icon');
+                    this.renderTokenIcon(token, iconContainer);
+                } catch (error) {
+                    contractResult.innerHTML = invalidContractMarkup;
                 }
             } else {
                 // Search in allowed tokens by name/symbol

@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ethers } from 'ethers';
 import { CreateOrder } from '../js/components/CreateOrder.js';
 import { buildTokenDisplaySymbolMap } from '../js/utils/tokenDisplay.js';
+import { contractService } from '../js/services/ContractService.js';
 import { walletManager } from '../js/services/WalletManager.js';
 
 const TOKEN_A = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -118,6 +120,31 @@ describe('CreateOrder display symbol wiring', () => {
 
         expect(document.querySelector('#sellContractResult .token-list-empty')?.textContent)
             .toContain('No tokens found matching "missing-token"');
+    });
+
+    it('shows invalid contract error for valid addresses with unsupported token metadata', async () => {
+        const component = createComponent();
+        const validAddress = '0x1111111111111111111111111111111111111111';
+        const unsupportedContract = {
+            name: vi.fn().mockRejectedValue(new Error('name unsupported')),
+            symbol: vi.fn().mockRejectedValue(new Error('symbol unsupported')),
+            decimals: vi.fn().mockRejectedValue(new Error('decimals unsupported')),
+            balanceOf: vi.fn().mockRejectedValue(new Error('balance unsupported'))
+        };
+
+        vi.spyOn(walletManager, 'getCurrentAddress').mockResolvedValue(validAddress);
+        vi.spyOn(ethers, 'Contract').mockImplementation(() => unsupportedContract);
+        const isTokenAllowedSpy = vi.spyOn(contractService, 'isTokenAllowed');
+
+        await component.handleTokenSearch(validAddress, 'sell');
+
+        const resultContainer = document.getElementById('sellContractResult');
+        const errorState = resultContainer?.querySelector('.contract-error');
+
+        expect(errorState?.textContent).toContain('Invalid or unsupported token contract');
+        expect(resultContainer?.querySelector('.contract-loading')).toBeNull();
+        expect(resultContainer?.querySelector('.token-item')).toBeNull();
+        expect(isTokenAllowedSpy).not.toHaveBeenCalled();
     });
 
     it('uses displaySymbol in zero-balance warning for sell selection', async () => {
