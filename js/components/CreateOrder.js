@@ -279,7 +279,8 @@ export class CreateOrder extends BaseComponent {
                     decimals: Number.isFinite(Number(token?.decimals)) ? Number(token.decimals) : 18,
                     balance: token?.balance ?? '0',
                     balanceLoading: Boolean(token?.balanceLoading),
-                    iconUrl: token?.iconUrl ?? null
+                    iconUrl: token?.iconUrl ?? null,
+                    lastKnownUsdDisplay: this.getPersistableTokenUsdDisplay(token)
                 })).filter((token) => token.address)
             };
 
@@ -581,6 +582,7 @@ export class CreateOrder extends BaseComponent {
                 }
             }
             this.setupCreateOrderListener();
+            this.startInitialTokenDataLoading();
 
             // Initialize token selectors
             this.initializeTokenSelectors();
@@ -708,6 +710,16 @@ export class CreateOrder extends BaseComponent {
         }
 
         this.requestAllowedTokensRefresh({ source: 'background' });
+    }
+
+    startInitialTokenDataLoading() {
+        try {
+            // Allowed-token reads are HTTP-backed, so they do not need to wait for WebSocket readiness.
+            contractService.initialize();
+            void this.requestAllowedTokensRefresh({ source: 'initial-render' });
+        } catch (error) {
+            this.debug('Unable to start initial allowed-token load:', error);
+        }
     }
 
     requestAllowedTokensRefresh({ forceFresh = false, source = 'unknown' } = {}) {
@@ -856,12 +868,20 @@ export class CreateOrder extends BaseComponent {
         pricing.subscribe(this.pricingUpdatedHandler);
     }
 
+    hasTokenBalanceValue(token) {
+        return token?.balance !== null && token?.balance !== undefined && token?.balance !== '';
+    }
+
     isTokenBalanceLoading(token) {
         return Boolean(token?.balanceLoading);
     }
 
+    shouldShowTokenBalanceLoading(token) {
+        return this.isTokenBalanceLoading(token) && !this.hasTokenBalanceValue(token);
+    }
+
     formatTokenListBalanceValue(token) {
-        if (this.isTokenBalanceLoading(token)) {
+        if (this.shouldShowTokenBalanceLoading(token)) {
             return 'loading...';
         }
 
@@ -873,9 +893,12 @@ export class CreateOrder extends BaseComponent {
         });
     }
 
-    formatTokenListUsdValue(tokenAddress, balance, { isBalanceLoading = false } = {}) {
+    formatTokenListUsdValue(tokenAddress, balance, {
+        isBalanceLoading = false,
+        fallbackDisplayValue = null
+    } = {}) {
         if (isBalanceLoading) {
-            return 'loading...';
+            return fallbackDisplayValue || 'loading...';
         }
 
         const numericBalance = Number(balance) || 0;
@@ -885,12 +908,12 @@ export class CreateOrder extends BaseComponent {
 
         const pricing = this.ctx.getPricing();
         if (pricing?.shouldShowPriceLoading?.(tokenAddress)) {
-            return 'loading...';
+            return fallbackDisplayValue || 'loading...';
         }
 
         const usdPrice = pricing?.getPrice(tokenAddress);
         if (usdPrice === undefined) {
-            return 'N/A';
+            return fallbackDisplayValue || 'N/A';
         }
 
         const usdValue = numericBalance * usdPrice;
@@ -900,6 +923,40 @@ export class CreateOrder extends BaseComponent {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2
         });
+    }
+
+    getPersistableTokenUsdDisplay(token) {
+        if (!token || typeof token !== 'object') {
+            return null;
+        }
+
+        const displayValue = this.formatTokenListUsdValue(token.address, token.balance, {
+            isBalanceLoading: this.shouldShowTokenBalanceLoading(token),
+            fallbackDisplayValue: token?.lastKnownUsdDisplay || null
+        });
+
+        if (displayValue === 'loading...' || displayValue === 'N/A') {
+            return token?.lastKnownUsdDisplay || null;
+        }
+
+        return displayValue;
+    }
+
+    mergeHydratingTokenState(token, previousToken) {
+        if (!previousToken || !token?.balanceLoading) {
+            return token;
+        }
+
+        const mergedToken = { ...token };
+        if (this.hasTokenBalanceValue(previousToken)) {
+            mergedToken.balance = previousToken.balance;
+        }
+
+        if (previousToken.lastKnownUsdDisplay) {
+            mergedToken.lastKnownUsdDisplay = previousToken.lastKnownUsdDisplay;
+        }
+
+        return mergedToken;
     }
 
     formatBalanceChipUsdValue(balanceUSD) {
@@ -967,8 +1024,8 @@ export class CreateOrder extends BaseComponent {
                 displaySymbol: updatedToken.displaySymbol || selectedToken.displaySymbol || updatedToken.symbol
             };
 
-            if (type !== 'sell' || this.isTokenBalanceLoading(updatedToken)) {
-                if (type === 'sell' && this.isTokenBalanceLoading(updatedToken)) {
+            if (type !== 'sell' || this.shouldShowTokenBalanceLoading(updatedToken)) {
+                if (type === 'sell' && this.shouldShowTokenBalanceLoading(updatedToken)) {
                     this.updateBalanceDisplay(type, 'loading...', 'loading...');
                 }
                 this.updateTokenAmounts(type);
@@ -976,7 +1033,9 @@ export class CreateOrder extends BaseComponent {
             }
 
             const balance = Number(updatedToken.balance) || 0;
-            const balanceUsd = this.formatTokenListUsdValue(updatedToken.address, balance);
+            const balanceUsd = this.formatTokenListUsdValue(updatedToken.address, balance, {
+                fallbackDisplayValue: updatedToken.lastKnownUsdDisplay || selectedToken.lastKnownUsdDisplay || null
+            });
 
             this.updateBalanceDisplay(
                 type,
@@ -1797,11 +1856,19 @@ export class CreateOrder extends BaseComponent {
         try {
             this.debug('Loading allowed wallet tokens...');
             const allowedTokens = await getContractAllowedTokens({ includeBalances: false });
+            const previousTokensByAddress = new Map(
+                (Array.isArray(this.allowedTokens) ? this.allowedTokens : [])
+                    .map((token) => [String(token?.address || '').toLowerCase(), token])
+                    .filter(([address]) => Boolean(address))
+            );
             this.tokenDisplaySymbolMap = buildTokenDisplaySymbolMap(
                 allowedTokens,
                 this.ctx?.getWalletChainId?.()
             );
-            const normalizedAllowed = allowedTokens.map(token => this.normalizeTokenDisplay(token));
+            const normalizedAllowed = allowedTokens.map((token) => {
+                const previousToken = previousTokensByAddress.get(String(token?.address || '').toLowerCase());
+                return this.normalizeTokenDisplay(this.mergeHydratingTokenState(token, previousToken));
+            });
 
             this.tokens = normalizedAllowed; // Keep allowed tokens for backward compatibility
             this.allowedTokens = normalizedAllowed;
@@ -2198,11 +2265,12 @@ export class CreateOrder extends BaseComponent {
                             <h4>Search Results</h4>
                             <div class="token-list">
                                 ${searchResults.map(token => {
-                                    const isBalanceLoading = this.isTokenBalanceLoading(token);
+                                    const isBalanceLoading = this.shouldShowTokenBalanceLoading(token);
                                     const balance = Number(token.balance) || 0;
                                     const formattedBalance = this.formatTokenListBalanceValue(token);
                                     const formattedUsdValue = this.formatTokenListUsdValue(token.address, balance, {
-                                        isBalanceLoading
+                                        isBalanceLoading,
+                                        fallbackDisplayValue: token.lastKnownUsdDisplay || null
                                     });
 
                                     return `
@@ -2312,7 +2380,7 @@ export class CreateOrder extends BaseComponent {
         // Add each token to the container
         sortedTokens.forEach(token => {
             const tokenElement = document.createElement('div');
-            const isBalanceLoading = this.isTokenBalanceLoading(token);
+            const isBalanceLoading = this.shouldShowTokenBalanceLoading(token);
             const balance = Number(token.balance) || 0;
             const hasBalance = !isBalanceLoading && balance > 0;
             const tokenLabel = token.displaySymbol || token.symbol;
@@ -2330,7 +2398,8 @@ export class CreateOrder extends BaseComponent {
             
             const formattedBalance = this.formatTokenListBalanceValue(token);
             const formattedUsdValue = this.formatTokenListUsdValue(token.address, balance, {
-                isBalanceLoading
+                isBalanceLoading,
+                fallbackDisplayValue: token.lastKnownUsdDisplay || null
             });
 
             // Generate background color for fallback icon
@@ -2398,9 +2467,9 @@ export class CreateOrder extends BaseComponent {
         });
 
         // Add summary information
-        const balancesLoading = sortedTokens.some(token => this.isTokenBalanceLoading(token));
+        const balancesLoading = sortedTokens.some(token => this.shouldShowTokenBalanceLoading(token));
         const tokensWithBalance = sortedTokens.filter(
-            token => !this.isTokenBalanceLoading(token) && Number(token.balance) > 0
+            token => !this.shouldShowTokenBalanceLoading(token) && Number(token.balance) > 0
         ).length;
         const totalTokens = sortedTokens.length;
         
@@ -2743,9 +2812,12 @@ export class CreateOrder extends BaseComponent {
                         });
                 }
             }
-            const isBalanceLoading = this.isTokenBalanceLoading(token);
+            const isBalanceLoading = this.shouldShowTokenBalanceLoading(token);
             const balance = parseFloat(token.balance) || 0;
-            const balanceUSD = this.formatTokenListUsdValue(token.address, balance, { isBalanceLoading });
+            const balanceUSD = this.formatTokenListUsdValue(token.address, balance, {
+                isBalanceLoading,
+                fallbackDisplayValue: token.lastKnownUsdDisplay || null
+            });
             const formattedBalance = this.formatTokenListBalanceValue(token);
             
             // Store token in the component
@@ -2755,7 +2827,8 @@ export class CreateOrder extends BaseComponent {
                 displaySymbol: token.displaySymbol || token.symbol,
                 decimals: token.decimals || 18,
                 balance: token.balance || '0',
-                balanceLoading: isBalanceLoading,
+                balanceLoading: this.isTokenBalanceLoading(token),
+                lastKnownUsdDisplay: token.lastKnownUsdDisplay || null,
                 usdPrice: usdPrice
             };
 
@@ -2872,7 +2945,7 @@ export class CreateOrder extends BaseComponent {
 
             // For sell tokens, check if balance is zero
             if (type === 'sell') {
-                if (this.isTokenBalanceLoading(token)) {
+                if (this.shouldShowTokenBalanceLoading(token)) {
                     this.showWarning('Balance is still loading for this token. Please try again in a moment.');
                     return;
                 }

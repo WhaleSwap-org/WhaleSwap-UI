@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CreateOrder } from '../js/components/CreateOrder.js';
 import { buildTokenDisplaySymbolMap } from '../js/utils/tokenDisplay.js';
 import { walletManager } from '../js/services/WalletManager.js';
+import { contractService } from '../js/services/ContractService.js';
 
 const TOKEN_A = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const TOKEN_B = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
@@ -176,5 +177,49 @@ describe('CreateOrder display symbol wiring', () => {
         });
 
         expect(component.formatTokenListUsdValue(TOKEN_A, '0')).toBe('$0.00');
+    });
+
+    it('keeps stale cached balance text visible while hydration is pending', () => {
+        const component = createComponent();
+
+        expect(component.formatTokenListBalanceValue({
+            address: TOKEN_A,
+            balance: '2521.294',
+            balanceLoading: true
+        })).toBe('2,521.294');
+    });
+
+    it('keeps stale cached USD text visible while price hydration is pending', () => {
+        const component = createComponent();
+        component.setContext({
+            ...createContextStub(),
+            getPricing: () => ({
+                shouldShowPriceLoading: () => true,
+                getPrice: () => undefined,
+                isPriceEstimated: () => false,
+                fetchPricesForTokens: async () => {}
+            })
+        });
+
+        expect(component.formatTokenListUsdValue(TOKEN_A, '2521.294', {
+            fallbackDisplayValue: '$2,520.63'
+        })).toBe('$2,520.63');
+    });
+
+    it('starts allowed-token refresh during initial render before websocket bootstrap completes', async () => {
+        const component = createComponent();
+        const initializeContractService = vi.spyOn(contractService, 'initialize').mockImplementation(() => {});
+        const requestAllowedTokensRefresh = vi.spyOn(component, 'requestAllowedTokensRefresh').mockReturnValue(Promise.resolve([]));
+        vi.spyOn(component, 'bootstrapWebSocketData').mockReturnValue(new Promise(() => {}));
+        vi.spyOn(component, 'populateTokenDropdowns').mockImplementation(() => {});
+        vi.spyOn(component, 'setupCreateOrderListener').mockImplementation(() => {});
+        vi.spyOn(component, 'initializeTokenSelectors').mockImplementation(() => {});
+        vi.spyOn(component, 'initializeAmountInputs').mockImplementation(() => {});
+        vi.spyOn(component, 'hydrateAllowedTokensFromCache').mockReturnValue(false);
+
+        await component.initialize(true);
+
+        expect(initializeContractService).toHaveBeenCalled();
+        expect(requestAllowedTokensRefresh).toHaveBeenCalledWith({ source: 'initial-render' });
     });
 });
