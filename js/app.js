@@ -1277,17 +1277,12 @@ class App {
 			// Add to context
 			this.ctx.pricing = pricingService;
 			this.ensurePricingOrderStateSubscription(pricingService);
-			void pricingService.initialize()
-				.then((result) => {
-					this.debug('Pricing service initialized');
-					return result;
-				})
-				.catch((error) => {
-					this.debug('Pricing service initialization error:', error);
-					return false;
-				});
+			const result = await pricingService.initialize();
+			this.debug('Pricing service initialized');
+			return result;
 		} catch (error) {
 			this.debug('Pricing service initialization error:', error);
+			return false;
 		}
 	}
 
