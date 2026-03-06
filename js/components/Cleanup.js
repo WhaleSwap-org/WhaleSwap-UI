@@ -16,6 +16,9 @@ export class Cleanup extends BaseComponent {
         this.debug = logger.debug.bind(logger);
         this.error = logger.error.bind(logger);
         this.warn = logger.warn.bind(logger);
+        this.orderSyncCompleteHandler = null;
+        this.pricingOrderStateSource = null;
+        this.pricingSubscriptionRetryTimeout = null;
     }
 
     async initialize(readOnlyMode = true) {
@@ -352,18 +355,7 @@ export class Cleanup extends BaseComponent {
             this.checkCleanupOpportunities();
         });
 
-        const pricing = this.ctx.getPricing();
-        if (!this.orderSyncCompleteHandler && pricing) {
-            this.orderSyncCompleteHandler = (eventName) => {
-                if (eventName !== 'orderSyncComplete') {
-                    return;
-                }
-
-                this.debug('Order sync complete event received');
-                this.checkCleanupOpportunities();
-            };
-            pricing.subscribe(this.orderSyncCompleteHandler);
-        }
+        this.ensurePricingOrderSyncSubscription();
 
         // Add wallet connection event listeners
         const wallet = this.ctx.getWallet();
@@ -378,6 +370,41 @@ export class Cleanup extends BaseComponent {
                 }
             });
         }
+    }
+
+    ensurePricingOrderSyncSubscription() {
+        const pricing = this.ctx.getPricing();
+        if (!pricing) {
+            if (!this.pricingSubscriptionRetryTimeout) {
+                this.pricingSubscriptionRetryTimeout = setTimeout(() => {
+                    this.pricingSubscriptionRetryTimeout = null;
+                    this.ensurePricingOrderSyncSubscription();
+                }, 250);
+            }
+            return;
+        }
+
+        if (!this.orderSyncCompleteHandler) {
+            this.orderSyncCompleteHandler = (eventName) => {
+                if (eventName !== 'orderSyncComplete') {
+                    return;
+                }
+
+                this.debug('Order sync complete event received');
+                this.checkCleanupOpportunities();
+            };
+        }
+
+        if (this.pricingOrderStateSource === pricing) {
+            return;
+        }
+
+        if (this.pricingOrderStateSource && this.orderSyncCompleteHandler) {
+            this.pricingOrderStateSource.unsubscribe(this.orderSyncCompleteHandler);
+        }
+
+        pricing.subscribe(this.orderSyncCompleteHandler);
+        this.pricingOrderStateSource = pricing;
     }
 
     async performCleanup() {
@@ -665,10 +692,16 @@ export class Cleanup extends BaseComponent {
             clearInterval(this.intervalId);
         }
 
+        if (this.pricingSubscriptionRetryTimeout) {
+            clearTimeout(this.pricingSubscriptionRetryTimeout);
+            this.pricingSubscriptionRetryTimeout = null;
+        }
+
         if (this.orderSyncCompleteHandler) {
-            this.ctx.getPricing()?.unsubscribe(this.orderSyncCompleteHandler);
+            this.pricingOrderStateSource?.unsubscribe(this.orderSyncCompleteHandler);
             this.orderSyncCompleteHandler = null;
         }
+        this.pricingOrderStateSource = null;
         
         // Remove wallet listeners
         const wallet = this.ctx.getWallet();

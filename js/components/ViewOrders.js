@@ -30,7 +30,6 @@ export class ViewOrders extends BaseComponent {
         
         // Bound handlers for cleanup
         this._boundPricingHandler = null;
-        this._boundOrdersUpdatedHandler = null;
         this._refreshTimeout = null;
         
         // Initialize helper and renderer

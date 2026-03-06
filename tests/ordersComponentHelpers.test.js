@@ -58,6 +58,7 @@ describe('ordersComponentHelpers', () => {
         expect(result.orderStatus).toBe('Active');
         expect(result.expiryText).toBe('1H 0M');
         expect(result.buyerDealRatio).toBe(0.5);
+        expect(result.dealText).toBe('0.5');
     });
 
     it('builds row context from fallback amount and pricing when metrics are absent', async () => {
@@ -94,7 +95,8 @@ describe('ordersComponentHelpers', () => {
         expect(result.resolvedSellPrice).toBe(3);
         expect(result.resolvedBuyPrice).toBe(7);
         expect(result.expiryText).toBe('');
-        expect(result.buyerDealRatio).toBeUndefined();
+        expect(result.buyerDealRatio).toBeCloseTo(9.5238095238e-13);
+        expect(result.dealText).toBe('0');
     });
 
     it('prefers fresh token decimals over stale cached formatted amounts', async () => {
@@ -129,5 +131,36 @@ describe('ordersComponentHelpers', () => {
 
         expect(result.formattedSellAmount).toBe('1.0');
         expect(result.formattedBuyAmount).toBe('2.0');
+    });
+
+    it('returns loading deal text while initial prices are pending', async () => {
+        const ws = createWsStub();
+        const pricing = {
+            getPrice: vi.fn(() => undefined),
+            isPriceEstimated: vi.fn(() => false),
+            isInitialPriceLoadPending: vi.fn(() => true),
+            getTokenInfo: vi.fn(async (address) => {
+                if (address.toLowerCase() === TOKEN_A) {
+                    return { address: TOKEN_A, symbol: 'AAA', decimals: 18, name: 'Token A' };
+                }
+                return { address: TOKEN_B, symbol: 'BBB', decimals: 18, name: 'Token B' };
+            })
+        };
+        const order = {
+            sellToken: TOKEN_A,
+            buyToken: TOKEN_B,
+            sellAmount: '1000000000000000000',
+            buyAmount: '2000000000000000000'
+        };
+
+        const result = await buildOrderRowContext({
+            order,
+            ws,
+            pricing,
+            tokenDisplaySymbolMap: new Map()
+        });
+
+        expect(result.buyerDealRatio).toBeUndefined();
+        expect(result.dealText).toBe('Loading...');
     });
 });

@@ -46,13 +46,7 @@ export class PricingService {
         this.warn = logger.warn.bind(logger);
     }
 
-    async initialize(options = {}) {
-        const { deferInitialRefresh = false } = options;
-        if (deferInitialRefresh) {
-            this.debug('Deferring initial pricing refresh until allowed tokens are available');
-            return { success: true, message: 'Initial pricing refresh deferred' };
-        }
-
+    async initialize() {
         if (this.initializationPromise) {
             return this.initializationPromise;
         }
@@ -160,6 +154,41 @@ export class PricingService {
 
     unsubscribe(callback) {
         this.subscribers.delete(callback);
+    }
+
+    upsertTokenInfo(tokenInfo = {}) {
+        const normalizedAddress = String(tokenInfo?.address || '').toLowerCase();
+        if (!normalizedAddress) {
+            return null;
+        }
+
+        const existingTokenInfo = this.tokenCache.get(normalizedAddress) || {};
+        const parsedDecimals = Number(tokenInfo?.decimals);
+        const fallbackSymbol = `${normalizedAddress.slice(0, 4)}...${normalizedAddress.slice(-4)}`;
+        const mergedTokenInfo = {
+            ...existingTokenInfo,
+            ...tokenInfo,
+            address: normalizedAddress,
+            symbol: tokenInfo?.symbol || existingTokenInfo.symbol || fallbackSymbol,
+            name: tokenInfo?.name || existingTokenInfo.name || 'Unknown Token',
+            decimals: Number.isFinite(parsedDecimals)
+                ? parsedDecimals
+                : (Number.isInteger(existingTokenInfo.decimals) ? existingTokenInfo.decimals : 18),
+            iconUrl: tokenInfo?.iconUrl ?? existingTokenInfo.iconUrl ?? null
+        };
+
+        this.tokenCache.set(normalizedAddress, mergedTokenInfo);
+        return mergedTokenInfo;
+    }
+
+    seedTokenMetadata(tokens = []) {
+        if (!Array.isArray(tokens)) {
+            return [];
+        }
+
+        return tokens
+            .map((tokenInfo) => this.upsertTokenInfo(tokenInfo))
+            .filter(Boolean);
     }
 
     notifySubscribers(event, data) {
@@ -892,8 +921,7 @@ export class PricingService {
                     };
                 });
 
-                this.tokenCache.set(normalizedAddress, tokenInfo);
-                return tokenInfo;
+                return this.upsertTokenInfo(tokenInfo);
             } catch (error) {
                 this.debug('Error getting token info:', error);
                 return {
