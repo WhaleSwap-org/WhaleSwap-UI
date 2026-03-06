@@ -648,6 +648,10 @@ export class PricingService {
         if (this.hasCompletedOrderSync) {
             return true;
         }
+        if (this.initializationPromise) {
+            const result = await this.initializationPromise;
+            return result?.success !== false;
+        }
         if (!triggerIfNeeded) {
             return false;
         }
@@ -892,14 +896,12 @@ export class PricingService {
                 return tokenInfo;
             } catch (error) {
                 this.debug('Error getting token info:', error);
-                const fallback = {
+                return {
                     address: normalizedAddress,
                     symbol: `${normalizedAddress.slice(0, 4)}...${normalizedAddress.slice(-4)}`,
                     decimals: 18,
                     name: 'Unknown Token'
                 };
-                this.tokenCache.set(normalizedAddress, fallback);
-                return fallback;
             } finally {
                 this.tokenInfoRequests.delete(normalizedAddress);
             }

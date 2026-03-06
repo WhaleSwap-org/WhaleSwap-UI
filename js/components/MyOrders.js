@@ -11,10 +11,11 @@ import {
     setupClickToCopy,
     setupOrderTooltips
 } from '../utils/ui.js';
-import { formatTimeDiff, calculateTotalValue, formatDealValue } from '../utils/orderUtils.js';
+import { formatTimeDiff, formatDealValue } from '../utils/orderUtils.js';
 import { OrdersComponentHelper } from '../services/OrdersComponentHelper.js';
 import { OrdersTableRenderer } from '../services/OrdersTableRenderer.js';
 import { buildTokenDisplaySymbolMap, getDisplaySymbol } from '../utils/tokenDisplay.js';
+import { resolveOrderDisplayValues } from '../utils/ordersComponentHelpers.js';
 
 export class MyOrders extends BaseComponent {
     constructor() {
@@ -614,52 +615,23 @@ export class MyOrders extends BaseComponent {
 
             const ws = this.ctx.getWebSocket();
             const pricing = this.ctx.getPricing();
-            const sellTokenInfo = await pricing.getTokenInfo(order.sellToken);
-            const buyTokenInfo = await pricing.getTokenInfo(order.buyToken);
-            const sellDisplaySymbol = getDisplaySymbol(sellTokenInfo, this.tokenDisplaySymbolMap);
-            const buyDisplaySymbol = getDisplaySymbol(buyTokenInfo, this.tokenDisplaySymbolMap);
-
-            // Use pre-formatted values from dealMetrics
-            const { 
-                formattedSellAmount, 
-                formattedBuyAmount, 
-                deal,
-                sellTokenUsdPrice,
-                buyTokenUsdPrice 
-            } = order.dealMetrics || {};
-
-            // Fallback amount formatting if dealMetrics not yet populated
-            const safeFormattedSellAmount = typeof formattedSellAmount !== 'undefined'
-                ? formattedSellAmount
-                : (order?.sellAmount && sellTokenInfo?.decimals != null
-                    ? ethers.utils.formatUnits(order.sellAmount, sellTokenInfo.decimals)
-                    : '0');
-            const safeFormattedBuyAmount = typeof formattedBuyAmount !== 'undefined'
-                ? formattedBuyAmount
-                : (order?.buyAmount && buyTokenInfo?.decimals != null
-                    ? ethers.utils.formatUnits(order.buyAmount, buyTokenInfo.decimals)
-                    : '0');
-
-            // Determine prices with fallback to current pricing service map
-            const resolvedSellPrice = typeof sellTokenUsdPrice !== 'undefined' 
-                ? sellTokenUsdPrice 
-                : (pricing ? pricing.getPrice(order.sellToken) : undefined);
-            const resolvedBuyPrice = typeof buyTokenUsdPrice !== 'undefined' 
-                ? buyTokenUsdPrice 
-                : (pricing ? pricing.getPrice(order.buyToken) : undefined);
-
-            // Mark as estimate if not explicitly present in pricing map
-            const sellPriceClass = (pricing && pricing.isPriceEstimated(order.sellToken)) ? 'price-estimate' : '';
-            const buyPriceClass = (pricing && pricing.isPriceEstimated(order.buyToken)) ? 'price-estimate' : '';
-            const isPriceLoading = Boolean(pricing?.isInitialPriceLoadPending?.());
-            const sellValueText = (() => {
-                const text = calculateTotalValue(resolvedSellPrice, safeFormattedSellAmount);
-                return text !== 'N/A' ? text : (isPriceLoading ? 'Loading...' : 'N/A');
-            })();
-            const buyValueText = (() => {
-                const text = calculateTotalValue(resolvedBuyPrice, safeFormattedBuyAmount);
-                return text !== 'N/A' ? text : (isPriceLoading ? 'Loading...' : 'N/A');
-            })();
+            const {
+                sellTokenInfo,
+                buyTokenInfo,
+                sellDisplaySymbol,
+                buyDisplaySymbol,
+                formattedSellAmount: safeFormattedSellAmount,
+                formattedBuyAmount: safeFormattedBuyAmount,
+                sellValueText,
+                buyValueText,
+                sellPriceClass,
+                buyPriceClass,
+                isPriceLoading
+            } = await resolveOrderDisplayValues({
+                order,
+                pricing,
+                tokenDisplaySymbolMap: this.tokenDisplaySymbolMap
+            });
 
             const currentTime = ws.getCurrentTimestamp();
             const timeUntilExpiry = Number.isFinite(currentTime) && order?.timings?.expiresAt
@@ -677,7 +649,7 @@ export class MyOrders extends BaseComponent {
             const wallet = this.ctx.getWallet();
             const userAddress = wallet?.getAccount()?.toLowerCase();
             const { counterpartyAddress, isZeroAddr, formattedAddress } = processOrderAddress(order, userAddress);
-            const formattedDeal = formatDealValue(deal);
+            const formattedDeal = formatDealValue(order.dealMetrics?.deal);
             const dealText = formattedDeal !== 'N/A' ? formattedDeal : (isPriceLoading ? 'Loading...' : 'N/A');
             tr.innerHTML = `
                 <td>${order.id}</td>
