@@ -56,6 +56,7 @@ class App {
 		this.pricingOrderStateHandler = null;
 		this.pricingOrderStateSource = null;
 		this.pricingBootstrapPromise = null;
+		this.webSocketBootstrapPromise = null;
 
 		// Replace debug initialization with LogService
 		const logger = createLogger('APP');
@@ -1187,12 +1188,12 @@ class App {
 		// Prefer signer presence + selected-chain match for initial render
 		const initialReadOnlyMode = !hasInitialConnectedContext;
 		this.updateGlobalLoaderText('Preparing interface...');
-		await this.initializeComponents(initialReadOnlyMode);
+		// Keep bootstrap limited to shell setup; tabs initialize behind their own local loaders.
+		void this.showTab(this.currentTab, initialReadOnlyMode).catch((error) => {
+			console.error('[App] Error rendering initial tab:', error);
+		});
 
-		// Show the initial tab based on connection state (force read-only if needed for first paint)
-		await this.showTab(this.currentTab, initialReadOnlyMode, { skipInitialize: true });
-
-		// Remove loading overlay after initialization
+		// Remove loading overlay once the shell is interactive.
 		this.hideGlobalLoader();
 		this.lastDisconnectNotification = 0;
 		} finally {
@@ -1305,11 +1306,6 @@ class App {
 				pricingService: pricingService
 			});
 
-			const wsInitialized = await webSocketService.initialize();
-			if (!wsInitialized) {
-				this.debug('WebSocket initialization failed, falling back to HTTP');
-			}
-
 			// Add to context
 			this.ctx.ws = webSocketService;
 
@@ -1321,9 +1317,24 @@ class App {
 				this.debug('ContractService initialize skipped/failed:', e);
 			}
 
+			this.webSocketBootstrapPromise = Promise.resolve(webSocketService.initialize())
+				.then((wsInitialized) => {
+					if (!wsInitialized) {
+						this.debug('WebSocket initialization failed, falling back to HTTP');
+					}
+					this.debug('WebSocket bootstrap complete');
+					return wsInitialized;
+				})
+				.catch((error) => {
+					this.debug('WebSocket bootstrap failed:', error);
+					return false;
+				});
+
 			this.debug('WebSocket initialized');
+			return webSocketService;
 		} catch (error) {
 			this.debug('WebSocket initialization error:', error);
+			return false;
 		}
 	}
 
