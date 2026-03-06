@@ -2126,6 +2126,16 @@ export class CreateOrder extends BaseComponent {
         if (!container) return;
 
         if (!tokens || tokens.length === 0) {
+            if (this.tokensLoading || this.allowedTokensLoadPromise) {
+                container.innerHTML = `
+                    <div class="token-list-loading">
+                        <div class="spinner"></div>
+                        <div>Loading allowed tokens...</div>
+                    </div>
+                `;
+                return;
+            }
+
             container.innerHTML = `
                 <div class="token-list-empty">
                     <div class="empty-state-icon">🔍</div>
