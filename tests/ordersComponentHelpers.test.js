@@ -96,4 +96,38 @@ describe('ordersComponentHelpers', () => {
         expect(result.expiryText).toBe('');
         expect(result.buyerDealRatio).toBeUndefined();
     });
+
+    it('prefers fresh token decimals over stale cached formatted amounts', async () => {
+        const ws = createWsStub();
+        const pricing = {
+            getPrice: vi.fn(() => undefined),
+            isPriceEstimated: vi.fn(() => false),
+            getTokenInfo: vi.fn(async (address) => {
+                if (address.toLowerCase() === TOKEN_A) {
+                    return { address: TOKEN_A, symbol: 'AAA', decimals: 6, name: 'Token A' };
+                }
+                return { address: TOKEN_B, symbol: 'BBB', decimals: 6, name: 'Token B' };
+            })
+        };
+        const order = {
+            sellToken: TOKEN_A,
+            buyToken: TOKEN_B,
+            sellAmount: '1000000',
+            buyAmount: '2000000',
+            dealMetrics: {
+                formattedSellAmount: '0.000000000001',
+                formattedBuyAmount: '0.000000000002'
+            }
+        };
+
+        const result = await buildOrderRowContext({
+            order,
+            ws,
+            pricing,
+            tokenDisplaySymbolMap: new Map()
+        });
+
+        expect(result.formattedSellAmount).toBe('1.0');
+        expect(result.formattedBuyAmount).toBe('2.0');
+    });
 });

@@ -38,7 +38,6 @@ class App {
 		this.tabRailScrollHandler = null;
 		this.tabRailLeftArrowHandler = null;
 		this.tabRailRightArrowHandler = null;
-		this.initialOrderSyncPromise = null;
 		this.tabReady = new Set();
 		this.activeTabRequestId = 0;
 		this.claimTabVisibilityRequestId = 0;
@@ -827,7 +826,7 @@ class App {
 			this.updateGlobalLoaderText('Initializing wallet...');
 			await this.initializeWalletManager();
 			this.alignSelectedNetworkToRestoredWallet();
-			this.updateGlobalLoaderText('Initializing pricing...');
+			this.updateGlobalLoaderText('Starting market data...');
 			await this.initializePricingService();
 			this.updateGlobalLoaderText('Connecting to order feed...');
 			await this.initializeWebSocket();
@@ -1278,9 +1277,15 @@ class App {
 			// Add to context
 			this.ctx.pricing = pricingService;
 			this.ensurePricingOrderStateSubscription(pricingService);
-			await pricingService.initialize();
-
-			this.debug('Pricing service initialized');
+			void pricingService.initialize()
+				.then((result) => {
+					this.debug('Pricing service initialized');
+					return result;
+				})
+				.catch((error) => {
+					this.debug('Pricing service initialization error:', error);
+					return false;
+				});
 		} catch (error) {
 			this.debug('Pricing service initialization error:', error);
 		}
