@@ -817,7 +817,11 @@ export class CreateOrder extends BaseComponent {
             }
 
             const balance = Number(updatedToken.balance) || 0;
-            const balanceUsd = this.formatTokenListUsdValue(updatedToken.address, balance);
+            const pricing = this.ctx.getPricing();
+            const usdPrice = pricing?.getPrice(updatedToken.address);
+            const balanceUsd = usdPrice !== undefined
+                ? (balance * usdPrice).toFixed(2)
+                : 'N/A';
 
             this.updateBalanceDisplay(
                 type,
@@ -992,7 +996,7 @@ export class CreateOrder extends BaseComponent {
             if (balanceDisplay && balanceAmount && balanceUSDElement) {
                 // Update the balance values
                 balanceAmount.textContent = formattedBalance;
-                balanceUSDElement.textContent = `• ${balanceUSD}`;
+                balanceUSDElement.textContent = `• $${balanceUSD}`;
                 
                 // Show the balance display without layout shift
                 setVisibility(balanceDisplay, true);
@@ -1003,7 +1007,7 @@ export class CreateOrder extends BaseComponent {
                     balanceBtn.setAttribute('aria-label', `Click to fill ${type} amount with available balance: ${formattedBalance}`);
                 }
                 
-                this.debug(`Updated ${type} balance display: ${formattedBalance} (${balanceUSD})`);
+                this.debug(`Updated ${type} balance display: ${formattedBalance} ($${balanceUSD})`);
             }
         } catch (error) {
             this.error(`Error updating ${type} balance display:`, error);
@@ -3202,6 +3206,20 @@ export class CreateOrder extends BaseComponent {
             });
         } catch (error) {
             this.debug('Error refreshing open token modals:', error);
+        }
+    }
+
+    refreshTokenModals() {
+        try {
+            ['sell', 'buy'].forEach(type => {
+                const modal = document.getElementById(`${type}TokenModal`);
+                const allowedTokensList = modal?.querySelector(`#${type}AllowedTokenList`);
+                if (allowedTokensList && Array.isArray(this.allowedTokens)) {
+                    this.displayTokens(this.allowedTokens, allowedTokensList, type);
+                }
+            });
+        } catch (error) {
+            this.debug('Error refreshing token modals:', error);
         }
     }
 }
