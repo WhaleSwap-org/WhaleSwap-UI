@@ -55,6 +55,7 @@ class App {
 		this.claimVisibilityCacheKey = null;
 		this.pricingOrderStateHandler = null;
 		this.pricingOrderStateSource = null;
+		this.pricingBootstrapPromise = null;
 
 		// Replace debug initialization with LogService
 		const logger = createLogger('APP');
@@ -1271,15 +1272,24 @@ class App {
 	async initializePricingService() {
 		try {
 			this.debug('Initializing pricing service...');
-			// Initialize PricingService first (before WebSocket since WS needs it)
+			// Make PricingService available immediately; heavy bootstrap continues in background.
 			const pricingService = new PricingService();
 
-			// Add to context
 			this.ctx.pricing = pricingService;
 			this.ensurePricingOrderStateSubscription(pricingService);
-			const result = await pricingService.initialize();
+
+			this.pricingBootstrapPromise = Promise.resolve(pricingService.initialize())
+				.then((result) => {
+					this.debug('Pricing service bootstrap complete');
+					return result;
+				})
+				.catch((error) => {
+					this.debug('Pricing service bootstrap failed:', error);
+					return false;
+				});
+
 			this.debug('Pricing service initialized');
-			return result;
+			return pricingService;
 		} catch (error) {
 			this.debug('Pricing service initialization error:', error);
 			return false;
