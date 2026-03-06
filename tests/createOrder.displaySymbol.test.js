@@ -90,6 +90,36 @@ describe('CreateOrder display symbol wiring', () => {
         expect(resultSymbols).toEqual(['AAA.issuer']);
     });
 
+    it('renders unmatched token search text safely as plain text', async () => {
+        const component = createComponent();
+        const payload = '<img src=x onerror=alert(1)>';
+
+        component.tokens = [];
+        component.tokensLoading = false;
+
+        await component.handleTokenSearch(payload, 'sell');
+
+        const resultContainer = document.getElementById('sellContractResult');
+        const emptyState = resultContainer?.querySelector('.token-list-empty');
+
+        expect(emptyState?.textContent).toContain(payload);
+        expect(resultContainer?.querySelector('img')).toBeNull();
+        expect(resultContainer?.querySelector('script')).toBeNull();
+        expect(resultContainer?.querySelector('input')).toBeNull();
+    });
+
+    it('keeps plain unmatched token search messaging unchanged', async () => {
+        const component = createComponent();
+
+        component.tokens = [];
+        component.tokensLoading = false;
+
+        await component.handleTokenSearch('missing-token', 'sell');
+
+        expect(document.querySelector('#sellContractResult .token-list-empty')?.textContent)
+            .toContain('No tokens found matching "missing-token"');
+    });
+
     it('uses displaySymbol in zero-balance warning for sell selection', async () => {
         const component = createComponent();
         const warningSpy = vi.fn();
