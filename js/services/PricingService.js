@@ -1,36 +1,46 @@
-import { TOKEN_ICON_CONFIG } from '../config/index.js';
+import { ethers } from 'ethers';
+import { ORDER_CONSTANTS, TOKEN_ICON_CONFIG } from '../config/index.js';
 import { isDebugEnabled } from '../config/debug.js';
 import { getNetworkConfig } from '../config/networks.js';
+import { erc20Abi } from '../abi/erc20.js';
 import { createLogger } from './LogService.js';
 import { contractService } from './ContractService.js';
+import { tokenIconService } from './TokenIconService.js';
 
 export class PricingService {
     constructor(options = {}) {
         this.prices = new Map();
+        this.orderCache = new Map();
+        this.tokenCache = new Map();
         this.lastUpdate = null;
         this.updating = false;
         this.subscribers = new Set();
-        this.rateLimitDelay = 250; // Ensure we stay under 300 requests/minute
+        this.rateLimitDelay = 250;
         this.networkConfig = getNetworkConfig();
-        
-        // Injected dependencies (preferred over window globals)
         this.webSocket = options.webSocket || null;
-        
-        // Simplified: Track allowed tokens for pre-fetching
         this.allowedTokens = new Set();
         this.allowedTokensLastFetched = null;
-        
-        // Performance optimizations
-        this.pendingRequests = new Map(); // Track pending requests to prevent duplicates
-        this.priceCacheExpiry = 5 * 60 * 1000; // 5 minutes cache expiry
-        this.lastPriceFetch = new Map(); // Track when each price was last fetched
-        
+        this.pendingRequests = new Map();
+        this.lastPriceFetch = new Map();
+        this.priceCacheExpiry = 5 * 60 * 1000;
+        this.orderSyncPromise = null;
+        this.hasCompletedOrderSync = false;
+        this.refreshPromise = null;
+        this.initializationPromise = null;
+        this.initialPriceLoadPending = false;
+        this.hasAttemptedInitialPriceLoad = false;
+        this.httpProvider = null;
+        this.httpContract = null;
+        this.httpRpcUrl = null;
+        this.orderExpiry = null;
+        this.gracePeriod = null;
+        this.httpOrderReadConcurrency = 5;
+        this.tokenInfoRequests = new Map();
+
         const logger = createLogger('PRICING');
         this.debug = logger.debug.bind(logger);
         this.error = logger.error.bind(logger);
         this.warn = logger.warn.bind(logger);
-
-        this.refreshPromise = null; // Track current refresh promise
     }
 
     async initialize(options = {}) {
@@ -39,7 +49,110 @@ export class PricingService {
             this.debug('Deferring initial pricing refresh until allowed tokens are available');
             return { success: true, message: 'Initial pricing refresh deferred' };
         }
-        await this.refreshPrices();
+
+        if (this.initializationPromise) {
+            return this.initializationPromise;
+        }
+
+        this.initializationPromise = (async () => {
+            try {
+                this.debug('Starting HTTP bootstrap for pricing, orders, and deals');
+                this.ensureContractServiceInitialized();
+                await this.getAllowedTokens();
+                const priceResult = await this.refreshPrices();
+                const ordersResult = await this.syncAllOrders();
+                await this.updateAllDeals();
+
+                return {
+                    success: priceResult?.success !== false && ordersResult !== false,
+                    message: 'HTTP bootstrap complete',
+                    updatedCount: this.prices.size,
+                    ordersCount: this.orderCache.size
+                };
+            } catch (error) {
+                return this.handleFetchError(error, 'initialize');
+            } finally {
+                this.initializationPromise = null;
+            }
+        })();
+
+        return this.initializationPromise;
+    }
+
+    ensureContractServiceInitialized() {
+        try {
+            contractService.initialize({ webSocket: this.webSocket || null });
+        } catch (error) {
+            this.debug('ContractService initialization skipped/failed:', error);
+        }
+    }
+
+    getRpcUrls() {
+        this.networkConfig = getNetworkConfig();
+        return [...new Set([
+            this.httpRpcUrl,
+            this.networkConfig?.rpcUrl,
+            ...(this.networkConfig?.fallbackRpcUrls || [])
+        ].filter(Boolean))];
+    }
+
+    clearHttpContext() {
+        this.httpProvider = null;
+        this.httpContract = null;
+        this.httpRpcUrl = null;
+        this.orderExpiry = null;
+        this.gracePeriod = null;
+    }
+
+    async readViaHttp(readFn) {
+        this.ensureContractServiceInitialized();
+
+        const rpcUrls = this.getRpcUrls();
+        if (rpcUrls.length === 0) {
+            throw new Error('No HTTP RPC URL configured for current network');
+        }
+
+        let lastError = null;
+        for (const url of rpcUrls) {
+            try {
+                if (!this.httpProvider || !this.httpContract || this.httpRpcUrl !== url) {
+                    this.networkConfig = getNetworkConfig();
+                    this.httpProvider = new ethers.providers.JsonRpcProvider(url);
+                    this.httpContract = new ethers.Contract(
+                        this.networkConfig.contractAddress,
+                        this.networkConfig.contractABI,
+                        this.httpProvider
+                    );
+                    this.httpRpcUrl = url;
+                    this.orderExpiry = null;
+                    this.gracePeriod = null;
+                }
+
+                return await readFn(this.httpContract, this.httpProvider);
+            } catch (error) {
+                lastError = error;
+                this.warn(`HTTP read failed (${url}):`, error?.message || error);
+                if (this.httpRpcUrl === url) {
+                    this.clearHttpContext();
+                }
+            }
+        }
+
+        throw lastError || new Error('All HTTP RPC URLs failed');
+    }
+
+    async ensureContractConstants() {
+        if (this.orderExpiry && this.gracePeriod) {
+            return;
+        }
+
+        const [orderExpiry, gracePeriod] = await this.readViaHttp((contract) => Promise.all([
+            contract.ORDER_EXPIRY(),
+            contract.GRACE_PERIOD()
+        ]));
+
+        this.orderExpiry = orderExpiry;
+        this.gracePeriod = gracePeriod;
     }
 
     subscribe(callback) {
@@ -51,39 +164,58 @@ export class PricingService {
     }
 
     notifySubscribers(event, data) {
-        this.subscribers.forEach(callback => callback(event, data));
+        this.subscribers.forEach((callback) => {
+            try {
+                callback(event, data);
+            } catch (error) {
+                this.debug('Error in PricingService subscriber:', error);
+            }
+        });
+    }
+
+    async getAllowedTokens() {
+        try {
+            this.debug('Fetching allowed tokens from contract via HTTP RPC...');
+            this.ensureContractServiceInitialized();
+            const allowedTokenAddresses = await contractService.getAllowedTokens();
+
+            this.allowedTokens.clear();
+            allowedTokenAddresses.forEach((addr) => this.allowedTokens.add(String(addr || '').toLowerCase()));
+            this.allowedTokensLastFetched = Date.now();
+
+            this.debug(`Fetched ${allowedTokenAddresses.length} allowed tokens:`, allowedTokenAddresses);
+            return allowedTokenAddresses;
+        } catch (error) {
+            this.error('Failed to get allowed tokens:', error);
+            throw error;
+        }
     }
 
     async fetchTokenPrices(tokenAddresses) {
         this.debug('Fetching prices for tokens:', tokenAddresses);
         const prices = new Map();
-        
-        // Validate token addresses
+
         const validAddresses = this.validateTokenAddresses(tokenAddresses);
         if (validAddresses.length === 0) {
             this.warn('No valid token addresses provided for price fetching');
             return prices;
         }
 
-        // First pass: GeckoTerminal simple token-price endpoint (1 call per 30 addresses).
         await this.fetchTokenPricesFromGeckoTerminal(validAddresses, prices);
 
-        // Fallback 1: DefiLlama price endpoint for unresolved tokens.
-        let missingTokens = validAddresses.filter(addr => !prices.has(addr));
+        let missingTokens = validAddresses.filter((addr) => !prices.has(addr));
         if (missingTokens.length > 0) {
             this.debug(`Falling back to DefiLlama for ${missingTokens.length} unresolved tokens`);
             await this.fetchTokenPricesFromDefiLlama(missingTokens, prices);
         }
 
-        // Fallback 2: DexScreener for unresolved tokens.
-        missingTokens = validAddresses.filter(addr => !prices.has(addr));
+        missingTokens = validAddresses.filter((addr) => !prices.has(addr));
         if (missingTokens.length > 0) {
             this.debug(`Falling back to DexScreener for ${missingTokens.length} unresolved tokens`);
             await this.fetchTokenPricesFromDexScreener(missingTokens, prices);
         }
 
-        // Fallback 3: CoinGecko by mapped token IDs for unresolved tokens.
-        missingTokens = validAddresses.filter(addr => !prices.has(addr));
+        missingTokens = validAddresses.filter((addr) => !prices.has(addr));
         if (missingTokens.length > 0) {
             this.debug(`Falling back to CoinGecko ID map for ${missingTokens.length} unresolved tokens`);
             await this.fetchTokenPricesFromCoinGeckoIds(missingTokens, prices);
@@ -155,52 +287,7 @@ export class PricingService {
                 this.error('Error fetching GeckoTerminal chunk prices:', error);
             }
 
-            await new Promise(resolve => setTimeout(resolve, this.rateLimitDelay));
-        }
-    }
-
-    async fetchTokenPricesFromDexScreener(tokenAddresses, prices) {
-        const chunks = this.createSmartBatches(tokenAddresses, 30);
-
-        for (const chunk of chunks) {
-            try {
-                const addresses = chunk.join(',');
-                const url = `https://api.dexscreener.com/latest/dex/tokens/${addresses}`;
-                const response = await fetch(url);
-                const data = await response.json();
-
-                if (data.pairs) {
-                    this.processTokenPairs(data.pairs, prices);
-                }
-            } catch (error) {
-                this.error('Error fetching DexScreener chunk prices:', error);
-            }
-
-            await new Promise(resolve => setTimeout(resolve, this.rateLimitDelay));
-        }
-
-        // Final pass: individual fallback only for still-missing tokens.
-        const missingTokens = tokenAddresses.filter(addr => !prices.has(addr));
-        if (missingTokens.length === 0) {
-            return;
-        }
-
-        this.debug('Fetching missing token prices individually from DexScreener:', missingTokens);
-
-        for (const addr of missingTokens) {
-            try {
-                const url = `https://api.dexscreener.com/latest/dex/tokens/${addr}`;
-                const response = await fetch(url);
-                const data = await response.json();
-
-                if (data.pairs && data.pairs.length > 0) {
-                    this.processTokenPairs(data.pairs, prices);
-                }
-            } catch (error) {
-                this.error('Error fetching individual DexScreener token price:', { token: addr, error });
-            }
-
-            await new Promise(resolve => setTimeout(resolve, this.rateLimitDelay));
+            await new Promise((resolve) => setTimeout(resolve, this.rateLimitDelay));
         }
     }
 
@@ -235,7 +322,7 @@ export class PricingService {
         const chunks = this.createSmartBatches(tokenAddresses, 50);
         for (const chunk of chunks) {
             try {
-                const coinKeys = chunk.map(address => `${defiLlamaChain}:${address}`).join(',');
+                const coinKeys = chunk.map((address) => `${defiLlamaChain}:${address}`).join(',');
                 const url = `https://coins.llama.fi/prices/current/${coinKeys}`;
                 const response = await fetch(url);
 
@@ -267,18 +354,62 @@ export class PricingService {
                 this.error('Error fetching DefiLlama chunk prices:', error);
             }
 
-            await new Promise(resolve => setTimeout(resolve, this.rateLimitDelay));
+            await new Promise((resolve) => setTimeout(resolve, this.rateLimitDelay));
+        }
+    }
+
+    async fetchTokenPricesFromDexScreener(tokenAddresses, prices) {
+        const chunks = this.createSmartBatches(tokenAddresses, 30);
+
+        for (const chunk of chunks) {
+            try {
+                const addresses = chunk.join(',');
+                const url = `https://api.dexscreener.com/latest/dex/tokens/${addresses}`;
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (data.pairs) {
+                    this.processTokenPairs(data.pairs, prices);
+                }
+            } catch (error) {
+                this.error('Error fetching DexScreener chunk prices:', error);
+            }
+
+            await new Promise((resolve) => setTimeout(resolve, this.rateLimitDelay));
+        }
+
+        const missingTokens = tokenAddresses.filter((addr) => !prices.has(addr));
+        if (missingTokens.length === 0) {
+            return;
+        }
+
+        this.debug('Fetching missing token prices individually from DexScreener:', missingTokens);
+
+        for (const addr of missingTokens) {
+            try {
+                const url = `https://api.dexscreener.com/latest/dex/tokens/${addr}`;
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (data.pairs && data.pairs.length > 0) {
+                    this.processTokenPairs(data.pairs, prices);
+                }
+            } catch (error) {
+                this.error('Error fetching individual DexScreener token price:', { token: addr, error });
+            }
+
+            await new Promise((resolve) => setTimeout(resolve, this.rateLimitDelay));
         }
     }
 
     async fetchTokenPricesFromCoinGeckoIds(tokenAddresses, prices) {
         const priceIds = TOKEN_ICON_CONFIG?.COINGECKO_PRICE_IDS || {};
-        const mappedAddresses = tokenAddresses.filter(address => priceIds[address]);
+        const mappedAddresses = tokenAddresses.filter((address) => priceIds[address]);
         if (mappedAddresses.length === 0) {
             return;
         }
 
-        const uniqueIds = [...new Set(mappedAddresses.map(address => priceIds[address]))];
+        const uniqueIds = [...new Set(mappedAddresses.map((address) => priceIds[address]))];
         const idChunks = this.createSmartBatches(uniqueIds, 100);
         const coinGeckoPrices = new Map();
 
@@ -307,7 +438,7 @@ export class PricingService {
                 this.error('Error fetching CoinGecko ID chunk prices:', error);
             }
 
-            await new Promise(resolve => setTimeout(resolve, this.rateLimitDelay));
+            await new Promise((resolve) => setTimeout(resolve, this.rateLimitDelay));
         }
 
         for (const address of mappedAddresses) {
@@ -326,13 +457,6 @@ export class PricingService {
         }
     }
 
-    // New method to fetch prices for specific token addresses
-    /**
-     * Fetches prices for specific token addresses with deduplication and caching.
-     * 
-     * @param {string[]} tokenAddresses - Array of token addresses to fetch prices for
-     * @returns {Promise<Map<string, {price: number, liquidity: number}>>} Map of fetched prices
-     */
     async fetchPricesForTokens(tokenAddresses) {
         if (!Array.isArray(tokenAddresses) || tokenAddresses.length === 0) {
             this.debug('No token addresses provided for price fetching');
@@ -340,11 +464,9 @@ export class PricingService {
         }
 
         this.debug('Fetching prices for specific tokens:', tokenAddresses);
-        
-        // Use deduplicated price fetching for better performance
+
         const newPrices = await this.deduplicatedPriceFetch(tokenAddresses);
-        
-        // Update internal price map with new prices
+
         for (const [address, data] of newPrices.entries()) {
             this.prices.set(address, data.price);
             this.debug(`Updated price for ${address}: ${data.price}`);
@@ -354,8 +476,7 @@ export class PricingService {
     }
 
     processTokenPairs(pairs, prices) {
-        // Sort pairs by liquidity
-        const sortedPairs = pairs.sort((a, b) => 
+        const sortedPairs = pairs.sort((a, b) =>
             (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0)
         );
 
@@ -363,21 +484,19 @@ export class PricingService {
             const baseAddr = pair.baseToken.address.toLowerCase();
             const quoteAddr = pair.quoteToken.address.toLowerCase();
             const priceUsd = parseFloat(pair.priceUsd);
-            
-            // Enhanced price validation
-            if (!isNaN(priceUsd) && this.validatePrice(priceUsd, baseAddr)) {
+
+            if (!Number.isNaN(priceUsd) && this.validatePrice(priceUsd, baseAddr)) {
                 if (!prices.has(baseAddr)) {
                     prices.set(baseAddr, {
                         price: priceUsd,
                         liquidity: pair.liquidity?.usd || 0
                     });
                 }
-                
-                // Calculate and set quote token price if we don't have it yet
+
                 if (!prices.has(quoteAddr)) {
                     const basePrice = prices.get(baseAddr).price;
                     const priceNative = parseFloat(pair.priceNative);
-                    if (!isNaN(priceNative) && priceNative > 0) {
+                    if (!Number.isNaN(priceNative) && priceNative > 0) {
                         const quotePrice = basePrice / priceNative;
                         if (this.validatePrice(quotePrice, quoteAddr)) {
                             prices.set(quoteAddr, {
@@ -395,49 +514,56 @@ export class PricingService {
         if (this.updating) {
             return this.refreshPromise;
         }
-        
+
+        const isInitialAttempt = !this.hasAttemptedInitialPriceLoad;
+        if (isInitialAttempt) {
+            this.initialPriceLoadPending = true;
+        }
+
         this.updating = true;
         this.notifySubscribers('refreshStart');
 
         this.refreshPromise = (async () => {
             try {
-                // Simplified: Get allowed tokens for price fetching
                 const tokenAddresses = Array.from(this.allowedTokens);
 
                 if (tokenAddresses.length === 0) {
                     this.warn('No allowed tokens to fetch prices for');
-                    // Set lastUpdate even when no tokens to fetch
                     this.lastUpdate = Date.now();
+                    await this.updateAllDeals();
                     this.notifySubscribers('refreshComplete');
-                    return { success: true, message: 'No tokens to update' };
+                    return { success: true, message: 'No tokens to update', updatedCount: 0 };
                 }
 
                 this.debug('Fetching prices for allowed tokens:', tokenAddresses);
                 const prices = await this.fetchTokenPrices(tokenAddresses);
-                this.debug('Fetched prices:', prices);
-                
-                // Update internal price map
+
                 this.prices.clear();
                 for (const [address, data] of prices.entries()) {
-                    this.debug(`Setting price for ${address}:`, data.price);
                     this.prices.set(address, data.price);
+                    this.lastPriceFetch.set(address, Date.now());
                 }
-                
-                const ws = this.webSocket;
-                if (ws) {
-                    await ws.updateAllDeals();
-                }
-                
+
+                await this.updateAllDeals();
+
                 this.lastUpdate = Date.now();
                 this.notifySubscribers('refreshComplete');
-                
+
                 this.debug('Prices updated:', Object.fromEntries(this.prices));
-                return { success: true, message: 'Prices updated successfully' };
+                return {
+                    success: true,
+                    message: 'Prices updated successfully',
+                    updatedCount: this.prices.size
+                };
             } catch (error) {
                 const errorResult = this.handleFetchError(error, 'refreshPrices');
                 this.notifySubscribers('refreshError', errorResult);
                 return errorResult;
             } finally {
+                if (isInitialAttempt) {
+                    this.initialPriceLoadPending = false;
+                    this.hasAttemptedInitialPriceLoad = true;
+                }
                 this.updating = false;
                 this.refreshPromise = null;
             }
@@ -447,74 +573,58 @@ export class PricingService {
     }
 
     getPrice(tokenAddress) {
-        const price = this.prices.get(tokenAddress.toLowerCase());
-        
+        const price = this.prices.get(String(tokenAddress || '').toLowerCase());
+
         if (price === undefined) {
-            // Check if we should default to 1 for testing
             if (isDebugEnabled('PRICING_DEFAULT_TO_ONE')) {
-                return 1; // Default to 1 for testing
+                return 1;
             }
-            return undefined; // Return undefined for production
+            return undefined;
         }
-        
+
         return price;
     }
 
     isPriceEstimated(tokenAddress) {
-        return !this.prices.has(tokenAddress.toLowerCase());
+        return !this.prices.has(String(tokenAddress || '').toLowerCase());
+    }
+
+    isInitialPriceLoadPending() {
+        return this.initialPriceLoadPending;
     }
 
     getLastUpdateTime() {
         return this.lastUpdate ? new Date(this.lastUpdate).toLocaleTimeString() : 'Never';
     }
 
-    // Check if price is stale and needs refreshing
-    /**
-     * Checks if a cached price is stale and needs refreshing.
-     * 
-     * @param {string} tokenAddress - The token address to check
-     * @returns {boolean} True if price is stale or doesn't exist
-     */
     isPriceStale(tokenAddress) {
-        const lastFetch = this.lastPriceFetch.get(tokenAddress.toLowerCase());
+        const lastFetch = this.lastPriceFetch.get(String(tokenAddress || '').toLowerCase());
         return !lastFetch || (Date.now() - lastFetch) > this.priceCacheExpiry;
     }
 
-    /**
-     * Deduplicates price fetching requests to prevent duplicate API calls.
-     * Skips tokens with fresh prices, pending requests, or already cached prices.
-     * 
-     * @param {string[]} tokenAddresses - Array of token addresses to fetch prices for
-     * @returns {Promise<Map<string, {price: number, liquidity: number}>>} Map of token addresses to price data
-     */
     async deduplicatedPriceFetch(tokenAddresses) {
-        const uniqueAddresses = [...new Set(tokenAddresses.map(addr => addr.toLowerCase()))];
-        const addressesToFetch = uniqueAddresses.filter(addr => 
-            !this.prices.has(addr) || this.isPriceStale(addr)
-        ).filter(addr => !this.pendingRequests.has(addr));
+        const uniqueAddresses = [...new Set(tokenAddresses.map((addr) => addr.toLowerCase()))];
+        const addressesToFetch = uniqueAddresses
+            .filter((addr) => !this.prices.has(addr) || this.isPriceStale(addr))
+            .filter((addr) => !this.pendingRequests.has(addr));
 
         if (addressesToFetch.length === 0) {
             this.debug('No new addresses to fetch, using cached prices');
             return new Map();
         }
 
-        // Mark addresses as pending and fetch prices
-        addressesToFetch.forEach(addr => this.pendingRequests.set(addr, Date.now()));
-        
+        addressesToFetch.forEach((addr) => this.pendingRequests.set(addr, Date.now()));
+
         try {
             const newPrices = await this.fetchTokenPrices(addressesToFetch);
-            addressesToFetch.forEach(addr => this.lastPriceFetch.set(addr, Date.now()));
+            const now = Date.now();
+            addressesToFetch.forEach((addr) => this.lastPriceFetch.set(addr, now));
             return newPrices;
         } finally {
-            addressesToFetch.forEach(addr => this.pendingRequests.delete(addr));
+            addressesToFetch.forEach((addr) => this.pendingRequests.delete(addr));
         }
     }
 
-    /**
-     * Notifies subscribers of price updates with optional specific addresses.
-     * 
-     * @param {string[]} [updatedAddresses=[]] - Array of updated token addresses
-     */
     notifyPriceUpdates(updatedAddresses = []) {
         this.notifySubscribers(
             updatedAddresses.length === 0 ? 'refreshComplete' : 'priceUpdates',
@@ -522,15 +632,10 @@ export class PricingService {
         );
     }
 
-    /**
-     * Removes stale cache entries to free memory and maintain fresh data.
-     * 
-     * @returns {number} Number of cache entries cleared
-     */
     clearStaleCache() {
         const now = Date.now();
         let clearedCount = 0;
-        
+
         for (const [address, lastFetch] of this.lastPriceFetch.entries()) {
             if ((now - lastFetch) > this.priceCacheExpiry) {
                 this.prices.delete(address);
@@ -538,61 +643,47 @@ export class PricingService {
                 clearedCount++;
             }
         }
-        
+
         if (clearedCount > 0) {
             this.debug(`Cleared ${clearedCount} stale cache entries`);
         }
-        
+
         return clearedCount;
     }
 
-    /**
-     * Handles and formats price fetching errors with detailed context.
-     * 
-     * @param {Error} error - The error that occurred
-     * @param {string} context - Context where the error occurred
-     * @returns {Object} Formatted error response with details
-     */
     handleFetchError(error, context) {
         const errorInfo = {
-            message: error.message,
+            message: error?.message || String(error),
             context,
             timestamp: new Date().toISOString(),
-            stack: error.stack
+            stack: error?.stack
         };
-        
+
         this.error('Price fetching error:', errorInfo);
-        if (this.debug.enabled) {
-            console.error('PricingService Error:', errorInfo);
-        }
-        
+
         return {
             success: false,
             error: errorInfo,
-            message: `Failed to fetch prices: ${error.message}`
+            message: `Failed to fetch prices: ${errorInfo.message}`
         };
     }
 
-    /**
-     * Validates the service state and identifies potential issues.
-     * 
-     * @returns {Object} Validation result with issues list
-     */
     validateServiceState() {
         const issues = [];
-        
+
         if (!this.networkConfig) issues.push('Network configuration not available');
-        if (this.updating && Date.now() - this.lastUpdate > 30000) issues.push('Service stuck in updating state');
+        if (
+            this.updating &&
+            Number.isFinite(this.lastUpdate) &&
+            (Date.now() - this.lastUpdate) > 30000
+        ) {
+            issues.push('Service stuck in updating state');
+        }
         if (this.pendingRequests.size > 50) issues.push('Too many pending requests');
-        
+
         return { isValid: issues.length === 0, issues };
     }
 
-    /**
-     * Returns comprehensive health status and metrics for the pricing service.
-     * 
-     * @returns {Object} Health status with metrics and issues
-     */
     getHealthStatus() {
         const state = this.validateServiceState();
         return {
@@ -602,94 +693,439 @@ export class PricingService {
                 cacheSize: this.prices.size,
                 pendingRequests: this.pendingRequests.size,
                 lastUpdate: this.getLastUpdateTime(),
-                allowedTokensCount: this.allowedTokens.size
+                allowedTokensCount: this.allowedTokens.size,
+                ordersCount: this.orderCache.size,
+                tokenMetadataCount: this.tokenCache.size
             }
         };
     }
 
-    /**
-     * Fetches allowed tokens from the contract and updates internal tracking.
-     * 
-     * @returns {Promise<string[]>} Array of allowed token addresses
-     * @throws {Error} If contract service fails to fetch tokens
-     */
-    async getAllowedTokens() {
-        try {
-            this.debug('Fetching allowed tokens from contract...');
-            // If WebSocket/contract not ready yet, return empty list gracefully
-            const ws = this.webSocket;
-            if (!ws?.contract) {
-                this.warn('Contract not available yet; skipping allowed tokens fetch');
-                this.allowedTokens.clear();
-                this.allowedTokensLastFetched = Date.now();
-                return [];
-            }
-            const allowedTokenAddresses = await contractService.getAllowedTokens();
-            
-            // Update allowed tokens set
-            this.allowedTokens.clear();
-            allowedTokenAddresses.forEach(addr => this.allowedTokens.add(addr.toLowerCase()));
-            
-            this.allowedTokensLastFetched = Date.now();
-            this.debug(`Fetched ${allowedTokenAddresses.length} allowed tokens:`, allowedTokenAddresses);
-            
-            return allowedTokenAddresses;
-        } catch (error) {
-            this.error('Failed to get allowed tokens:', error);
-            throw error;
-        }
+    async getAllowedTokensPricesUsingHttp() {
+        await this.getAllowedTokens();
+        return this.fetchAllowedTokensPrices();
     }
 
-    /**
-     * Pre-fetches prices for all allowed tokens from the contract.
-     * 
-     * @returns {Promise<Object>} Result object with success status and message
-     */
     async fetchAllowedTokensPrices() {
-        try {
-            this.debug('Fetching prices for allowed tokens...');
-            
-            // Get allowed tokens if we haven't fetched them yet
-            if (this.allowedTokens.size === 0) {
-                await this.getAllowedTokens();
-            }
-            
-            if (this.allowedTokens.size === 0) {
-                this.warn('No allowed tokens found to fetch prices for');
-                // Phase 3: Set lastUpdate even when no allowed tokens
-                this.lastUpdate = Date.now();
-                return { success: true, message: 'No allowed tokens to update' };
-            }
-            
-            const allowedTokenAddresses = Array.from(this.allowedTokens);
-            const newPrices = await this.fetchPricesForTokens(allowedTokenAddresses);
-            
-            this.debug(`Fetched prices for ${newPrices.size} allowed tokens`);
-            return { 
-                success: true, 
-                message: `Updated prices for ${newPrices.size} allowed tokens`,
-                updatedCount: newPrices.size
-            };
-        } catch (error) {
-            return this.handleFetchError(error, 'fetchAllowedTokensPrices');
+        if (this.allowedTokens.size === 0) {
+            await this.getAllowedTokens();
         }
+        const result = await this.refreshPrices();
+        return {
+            ...result,
+            updatedCount: this.prices.size
+        };
     }
 
-    // Enhanced error handling for mixed token lists
-    /**
-     * Validates and normalizes token addresses, filtering out invalid ones.
-     * 
-     * @param {string[]} tokenAddresses - Array of token addresses to validate
-     * @returns {string[]} Array of valid, normalized token addresses
-     */
+    async waitForOrderSync({ triggerIfNeeded = true } = {}) {
+        if (this.orderSyncPromise) {
+            return this.orderSyncPromise;
+        }
+        if (this.hasCompletedOrderSync) {
+            return true;
+        }
+        if (!triggerIfNeeded) {
+            return false;
+        }
+        return this.syncAllOrders();
+    }
+
+    normalizeOrderData(orderId, order) {
+        return {
+            id: Number(orderId),
+            maker: order.maker,
+            taker: order.taker,
+            sellToken: order.sellToken,
+            sellAmount: order.sellAmount,
+            buyToken: order.buyToken,
+            buyAmount: order.buyAmount,
+            timestamp: Number(order.timestamp?.toString?.() ?? order.timestamp ?? 0),
+            status: ORDER_CONSTANTS.STATUS_MAP[Number(order.status)] || 'Unknown',
+            feeToken: order.feeToken,
+            orderCreationFee: order.orderCreationFee
+        };
+    }
+
+    async fetchOrdersBatch(startIndex, endIndex, concurrency = this.httpOrderReadConcurrency) {
+        const indices = [];
+        for (let i = startIndex; i < endIndex; i++) {
+            indices.push(i);
+        }
+
+        const results = [];
+        let cursor = 0;
+
+        const worker = async () => {
+            while (true) {
+                const current = cursor++;
+                if (current >= indices.length) {
+                    break;
+                }
+
+                const orderId = indices[current];
+                try {
+                    const order = await this.readViaHttp((contract) => contract.orders(orderId));
+                    if (order?.maker === ethers.constants.AddressZero) {
+                        continue;
+                    }
+                    results.push(this.normalizeOrderData(orderId, order));
+                } catch (error) {
+                    this.debug(`Failed to read order ${orderId} via HTTP`, error);
+                }
+            }
+        };
+
+        const workers = Array.from(
+            { length: Math.min(concurrency, Math.max(indices.length, 1)) },
+            () => worker()
+        );
+        await Promise.all(workers);
+        results.sort((a, b) => a.id - b.id);
+        return results;
+    }
+
+    async syncAllOrders() {
+        if (this.orderSyncPromise) {
+            this.debug('Order sync already in progress; waiting for existing sync');
+            return this.orderSyncPromise;
+        }
+
+        this.orderSyncPromise = (async () => {
+            try {
+                await this.ensureContractConstants();
+
+                const nextOrderId = await this.readViaHttp((contract) => contract.nextOrderId());
+                const totalOrders = Number(nextOrderId?.toString?.() ?? nextOrderId ?? 0);
+                const batchSize = 50;
+                const totalBatches = totalOrders === 0 ? 1 : Math.ceil(totalOrders / batchSize);
+                let processedOrders = 0;
+
+                this.orderCache.clear();
+
+                for (let batch = 0; batch < totalBatches; batch++) {
+                    const startIndex = batch * batchSize;
+                    const endIndex = Math.min(startIndex + batchSize, totalOrders);
+                    const batchOrders = totalOrders === 0
+                        ? []
+                        : await this.fetchOrdersBatch(startIndex, endIndex, this.httpOrderReadConcurrency);
+
+                    for (const order of batchOrders) {
+                        this.orderCache.set(order.id, {
+                            ...order,
+                            timings: this.buildOrderTimings(order.timestamp)
+                        });
+                    }
+
+                    processedOrders = endIndex;
+                    this.notifySubscribers('orderSyncProgress', {
+                        fetched: processedOrders,
+                        total: totalOrders,
+                        batch: batch + 1,
+                        totalBatches
+                    });
+                }
+
+                this.validateOrderCache();
+                this.hasCompletedOrderSync = true;
+                this.notifySubscribers('orderSyncComplete', Object.fromEntries(this.orderCache));
+                this.notifySubscribers('ordersUpdated', this.getOrders());
+                return true;
+            } catch (error) {
+                this.debug('Order sync failed:', error);
+                this.orderCache.clear();
+                this.hasCompletedOrderSync = false;
+                this.notifySubscribers('orderSyncComplete', {});
+                this.notifySubscribers('ordersUpdated', []);
+                return false;
+            } finally {
+                this.orderSyncPromise = null;
+            }
+        })();
+
+        return this.orderSyncPromise;
+    }
+
+    validateOrderCache() {
+        const orders = Array.from(this.orderCache.values());
+        const summary = orders.reduce((acc, order) => {
+            const status = order.status || 'Unknown';
+            acc[status] = (acc[status] || 0) + 1;
+            return acc;
+        }, {});
+
+        this.debug('Order cache validation:', {
+            total: orders.length,
+            byStatus: summary
+        });
+    }
+
+    getOrders(filterStatus = null) {
+        const orders = Array.from(this.orderCache.values());
+        if (!filterStatus) {
+            return orders;
+        }
+        return orders.filter((order) => order.status === filterStatus);
+    }
+
+    async upsertOrder(orderData, { computeDeal = true } = {}) {
+        const normalizedOrder = {
+            ...orderData,
+            id: Number(orderData.id),
+            timestamp: Number(orderData.timestamp),
+            timings: orderData.timings || this.buildOrderTimings(orderData.timestamp)
+        };
+
+        let finalOrder = normalizedOrder;
+        if (computeDeal) {
+            try {
+                finalOrder = await this.calculateDealMetrics(normalizedOrder);
+            } catch (error) {
+                this.debug('Failed to calculate deal metrics during upsert:', error);
+            }
+        }
+
+        this.orderCache.set(finalOrder.id, finalOrder);
+        this.notifySubscribers('ordersUpdated', this.getOrders());
+        return finalOrder;
+    }
+
+    updateOrderStatus(orderId, status) {
+        const normalizedOrderId = Number(orderId);
+        const order = this.orderCache.get(normalizedOrderId);
+        if (!order) {
+            return null;
+        }
+
+        const updatedOrder = {
+            ...order,
+            status
+        };
+
+        this.orderCache.set(normalizedOrderId, updatedOrder);
+        this.notifySubscribers('ordersUpdated', this.getOrders());
+        return updatedOrder;
+    }
+
+    removeOrder(orderId) {
+        const normalizedOrderId = Number(orderId);
+        const didDelete = this.orderCache.delete(normalizedOrderId);
+        if (didDelete) {
+            this.notifySubscribers('ordersUpdated', this.getOrders());
+        }
+        return didDelete;
+    }
+
+    removeOrders(orderIds) {
+        if (!Array.isArray(orderIds)) {
+            this.warn('removeOrders called with non-array:', orderIds);
+            return false;
+        }
+
+        let removedAny = false;
+        for (const orderId of orderIds) {
+            removedAny = this.orderCache.delete(Number(orderId)) || removedAny;
+        }
+
+        if (removedAny) {
+            this.notifySubscribers('ordersUpdated', this.getOrders());
+        }
+
+        return removedAny;
+    }
+
+    async getTokenInfo(tokenAddress) {
+        const normalizedAddress = String(tokenAddress || '').toLowerCase();
+        if (!normalizedAddress) {
+            return null;
+        }
+
+        if (this.tokenCache.has(normalizedAddress)) {
+            return this.tokenCache.get(normalizedAddress);
+        }
+
+        if (this.tokenInfoRequests.has(normalizedAddress)) {
+            return this.tokenInfoRequests.get(normalizedAddress);
+        }
+
+        const request = (async () => {
+            try {
+                const tokenInfo = await this.readViaHttp(async (_, provider) => {
+                    const contract = new ethers.Contract(tokenAddress, erc20Abi, provider);
+                    const [symbolResult, decimalsResult, nameResult] = await Promise.allSettled([
+                        contract.symbol(),
+                        contract.decimals(),
+                        contract.name()
+                    ]);
+
+                    const fallbackSymbol = `${normalizedAddress.slice(0, 4)}...${normalizedAddress.slice(-4)}`;
+                    const decimalsValue = decimalsResult.status === 'fulfilled'
+                        ? Number(decimalsResult.value?.toString?.() ?? decimalsResult.value)
+                        : 18;
+
+                    let iconUrl = null;
+                    try {
+                        const chainId = Number.parseInt(getNetworkConfig().chainId, 16) || 137;
+                        iconUrl = await tokenIconService.getIconUrl(tokenAddress, chainId);
+                    } catch (error) {
+                        this.debug(`Failed to get icon for token ${tokenAddress}:`, error);
+                    }
+
+                    return {
+                        address: normalizedAddress,
+                        symbol: symbolResult.status === 'fulfilled' ? symbolResult.value : fallbackSymbol,
+                        decimals: Number.isFinite(decimalsValue) ? decimalsValue : 18,
+                        name: nameResult.status === 'fulfilled' ? nameResult.value : 'Unknown Token',
+                        iconUrl
+                    };
+                });
+
+                this.tokenCache.set(normalizedAddress, tokenInfo);
+                return tokenInfo;
+            } catch (error) {
+                this.debug('Error getting token info:', error);
+                const fallback = {
+                    address: normalizedAddress,
+                    symbol: `${normalizedAddress.slice(0, 4)}...${normalizedAddress.slice(-4)}`,
+                    decimals: 18,
+                    name: 'Unknown Token'
+                };
+                this.tokenCache.set(normalizedAddress, fallback);
+                return fallback;
+            } finally {
+                this.tokenInfoRequests.delete(normalizedAddress);
+            }
+        })();
+
+        this.tokenInfoRequests.set(normalizedAddress, request);
+        return request;
+    }
+
+    async calculateDealMetrics(orderData) {
+        const buyTokenInfo = await this.getTokenInfo(orderData.buyToken);
+        const sellTokenInfo = await this.getTokenInfo(orderData.sellToken);
+
+        const buyTokenDecimals = Number.isInteger(buyTokenInfo?.decimals) ? buyTokenInfo.decimals : 18;
+        const sellTokenDecimals = Number.isInteger(sellTokenInfo?.decimals) ? sellTokenInfo.decimals : 18;
+
+        const formattedBuyAmount = ethers.utils.formatUnits(orderData.buyAmount || 0, buyTokenDecimals);
+        const formattedSellAmount = ethers.utils.formatUnits(orderData.sellAmount || 0, sellTokenDecimals);
+
+        const buyAmount = Number(formattedBuyAmount);
+        const sellAmount = Number(formattedSellAmount);
+
+        if (!Number.isFinite(buyAmount) || !Number.isFinite(sellAmount) || sellAmount <= 0) {
+            return {
+                ...orderData,
+                dealMetrics: {
+                    ...orderData.dealMetrics,
+                    formattedBuyAmount,
+                    formattedSellAmount
+                }
+            };
+        }
+
+        const buyTokenUsdPrice = this.getPrice(orderData.buyToken);
+        const sellTokenUsdPrice = this.getPrice(orderData.sellToken);
+        if (
+            buyTokenUsdPrice === undefined ||
+            sellTokenUsdPrice === undefined ||
+            buyTokenUsdPrice <= 0 ||
+            sellTokenUsdPrice <= 0
+        ) {
+            return {
+                ...orderData,
+                dealMetrics: {
+                    ...orderData.dealMetrics,
+                    formattedBuyAmount,
+                    formattedSellAmount,
+                    buyTokenUsdPrice,
+                    sellTokenUsdPrice
+                }
+            };
+        }
+
+        const buyValue = buyAmount * buyTokenUsdPrice;
+        const sellValue = sellAmount * sellTokenUsdPrice;
+
+        if (!Number.isFinite(buyValue) || !Number.isFinite(sellValue) || sellValue <= 0) {
+            return {
+                ...orderData,
+                dealMetrics: {
+                    ...orderData.dealMetrics,
+                    formattedBuyAmount,
+                    formattedSellAmount,
+                    buyTokenUsdPrice,
+                    sellTokenUsdPrice
+                }
+            };
+        }
+
+        const deal = buyValue / sellValue;
+
+        return {
+            ...orderData,
+            dealMetrics: {
+                ...orderData.dealMetrics,
+                formattedBuyAmount,
+                formattedSellAmount,
+                buyTokenUsdPrice,
+                sellTokenUsdPrice,
+                buyValue,
+                sellValue,
+                deal
+            }
+        };
+    }
+
+    async updateAllDeals() {
+        if (this.orderCache.size === 0) {
+            return;
+        }
+
+        this.debug('Updating deal metrics for all orders...');
+        for (const [orderId, order] of this.orderCache.entries()) {
+            try {
+                const updatedOrder = await this.calculateDealMetrics(order);
+                this.orderCache.set(orderId, updatedOrder);
+            } catch (error) {
+                this.debug('Error updating deal metrics for order:', orderId, error);
+            }
+        }
+
+        this.notifySubscribers('ordersUpdated', this.getOrders());
+    }
+
+    buildOrderTimings(createdAtInput) {
+        const createdAt = Number(createdAtInput);
+        if (!Number.isFinite(createdAt)) {
+            return {
+                createdAt: null,
+                expiresAt: null,
+                graceEndsAt: null
+            };
+        }
+
+        const orderExpirySecs = this.orderExpiry
+            ? Number(this.orderExpiry.toString())
+            : ORDER_CONSTANTS.DEFAULT_ORDER_EXPIRY_SECS;
+        const gracePeriodSecs = this.gracePeriod
+            ? Number(this.gracePeriod.toString())
+            : ORDER_CONSTANTS.DEFAULT_GRACE_PERIOD_SECS;
+
+        return {
+            createdAt,
+            expiresAt: createdAt + orderExpirySecs,
+            graceEndsAt: createdAt + orderExpirySecs + gracePeriodSecs
+        };
+    }
+
     validateTokenAddresses(tokenAddresses) {
         if (!Array.isArray(tokenAddresses)) {
             throw new Error('Token addresses must be an array');
         }
-        
+
         const validAddresses = [];
         const invalidAddresses = [];
-        
+
         for (const addr of tokenAddresses) {
             if (typeof addr === 'string' && addr.length === 42 && addr.startsWith('0x')) {
                 validAddresses.push(addr.toLowerCase());
@@ -697,67 +1133,50 @@ export class PricingService {
                 invalidAddresses.push(addr);
             }
         }
-        
+
         if (invalidAddresses.length > 0) {
             this.warn('Invalid token addresses found:', invalidAddresses);
         }
-        
+
         return validAddresses;
     }
 
-    // Enhanced price validation and fallback mechanisms
-    /**
-     * Validates price data for sanity and reasonable bounds.
-     * 
-     * @param {number} price - The price to validate
-     * @param {string} tokenAddress - Token address for error context
-     * @returns {boolean} True if price is valid
-     */
     validatePrice(price, tokenAddress) {
-        if (typeof price !== 'number' || isNaN(price)) {
+        if (typeof price !== 'number' || Number.isNaN(price)) {
             this.warn(`Invalid price for token ${tokenAddress}: ${price}`);
             return false;
         }
-        
+
         if (price <= 0) {
             this.warn(`Non-positive price for token ${tokenAddress}: ${price}`);
             return false;
         }
-        
+
         if (price > 1000000) {
             this.warn(`Suspiciously high price for token ${tokenAddress}: ${price}`);
             return false;
         }
-        
+
         return true;
     }
 
-    // Smart batching for mixed token lists
-    /**
-     * Creates optimized batches for API requests to improve performance.
-     * 
-     * @param {string[]} tokenAddresses - Array of token addresses to batch
-     * @param {number} [maxBatchSize=30] - Maximum size of each batch
-     * @returns {string[][]} Array of token address batches
-     */
     createSmartBatches(tokenAddresses, maxBatchSize = 30) {
         const batches = [];
         const currentBatch = [];
-        
+
         for (const addr of tokenAddresses) {
             currentBatch.push(addr);
-            
+
             if (currentBatch.length >= maxBatchSize) {
                 batches.push([...currentBatch]);
                 currentBatch.length = 0;
             }
         }
-        
-        // Add remaining tokens
+
         if (currentBatch.length > 0) {
             batches.push(currentBatch);
         }
-        
+
         this.debug(`Created ${batches.length} batches for ${tokenAddresses.length} tokens`);
         return batches;
     }

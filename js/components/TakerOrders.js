@@ -1,7 +1,6 @@
 import { BaseComponent } from './BaseComponent.js';
 import { createLogger } from '../services/LogService.js';
 import { createDealCellHTML, processOrderAddress, generateStatusCellHTML, setupClickToCopy } from '../utils/ui.js';
-import { calculateTotalValue, formatDealValue } from '../utils/orderUtils.js';
 import { OrdersComponentHelper } from '../services/OrdersComponentHelper.js';
 import { OrdersTableRenderer } from '../services/OrdersTableRenderer.js';
 import { buildTokenDisplaySymbolMap } from '../utils/tokenDisplay.js';
@@ -281,13 +280,13 @@ export class TakerOrders extends BaseComponent {
                 buyDisplaySymbol,
                 formattedSellAmount,
                 formattedBuyAmount,
-                resolvedSellPrice,
-                resolvedBuyPrice,
+                sellValueText,
+                buyValueText,
                 sellPriceClass,
                 buyPriceClass,
                 orderStatus,
                 expiryText,
-                buyerDealRatio
+                dealText
             } = await buildOrderRowContext({
                 order,
                 ws,
@@ -310,7 +309,7 @@ export class TakerOrders extends BaseComponent {
                         <div class="token-details">
                             <div class="token-symbol-row">
                                 <span class="token-symbol">${sellDisplaySymbol}</span>
-                                <span class="token-price ${sellPriceClass}">${calculateTotalValue(resolvedSellPrice, formattedSellAmount)}</span>
+                                <span class="token-price ${sellPriceClass}">${sellValueText}</span>
                             </div>
                             <span class="token-amount">${formattedSellAmount}</span>
                         </div>
@@ -324,13 +323,13 @@ export class TakerOrders extends BaseComponent {
                         <div class="token-details">
                             <div class="token-symbol-row">
                                 <span class="token-symbol">${buyDisplaySymbol}</span>
-                                <span class="token-price ${buyPriceClass}">${calculateTotalValue(resolvedBuyPrice, formattedBuyAmount)}</span>
+                                <span class="token-price ${buyPriceClass}">${buyValueText}</span>
                             </div>
                             <span class="token-amount">${formattedBuyAmount}</span>
                         </div>
                     </div>
                 </td>
-                <td class="deal-cell">${createDealCellHTML(formatDealValue(buyerDealRatio))}</td>
+                <td class="deal-cell">${createDealCellHTML(dealText)}</td>
                 <td>${expiryText}</td>
                 <td class="order-status">
                     ${generateStatusCellHTML(orderStatus, counterpartyAddress, isZeroAddr, formattedAddress)}
