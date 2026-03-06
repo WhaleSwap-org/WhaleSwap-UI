@@ -401,7 +401,7 @@ class App {
 	}
 
 	startInitialOrderSync(ws = this.ctx?.getWebSocket?.()) {
-		if (!ws || this.initialOrderSyncPromise || ws?.pricingService?.hasCompletedOrderSync) return;
+		if (!ws || this.initialOrderSyncPromise) return;
 
 		this.initialOrderSyncPromise = (async () => {
 			this.debug('Starting background initial order sync...');
@@ -1256,6 +1256,7 @@ class App {
 	async initializePricingService() {
 		try {
 			this.debug('Initializing pricing service...');
+			// Initialize PricingService first (before WebSocket since WS needs it)
 			const pricingService = new PricingService();
 
 			// Add to context
@@ -1307,7 +1308,7 @@ class App {
 				webSocketService.notifySubscribers('ordersUpdated', pricingService.getOrders());
 			}
 
-			// Keep a WebSocket reference on PricingService for compatibility hooks.
+			// Update PricingService with WebSocket reference for deal updates
 			if (pricingService) {
 				pricingService.webSocket = webSocketService;
 			}
