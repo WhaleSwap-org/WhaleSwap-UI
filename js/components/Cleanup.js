@@ -18,7 +18,6 @@ export class Cleanup extends BaseComponent {
         this.warn = logger.warn.bind(logger);
         this.orderSyncCompleteHandler = null;
         this.pricingOrderStateSource = null;
-        this.pricingSubscriptionRetryTimeout = null;
     }
 
     async initialize(readOnlyMode = true) {
@@ -375,12 +374,6 @@ export class Cleanup extends BaseComponent {
     ensurePricingOrderSyncSubscription() {
         const pricing = this.ctx.getPricing();
         if (!pricing) {
-            if (!this.pricingSubscriptionRetryTimeout) {
-                this.pricingSubscriptionRetryTimeout = setTimeout(() => {
-                    this.pricingSubscriptionRetryTimeout = null;
-                    this.ensurePricingOrderSyncSubscription();
-                }, 250);
-            }
             return;
         }
 
@@ -690,11 +683,6 @@ export class Cleanup extends BaseComponent {
         if (this.intervalId) {
             this.debug('Cleaning up cleanup check interval');
             clearInterval(this.intervalId);
-        }
-
-        if (this.pricingSubscriptionRetryTimeout) {
-            clearTimeout(this.pricingSubscriptionRetryTimeout);
-            this.pricingSubscriptionRetryTimeout = null;
         }
 
         if (this.orderSyncCompleteHandler) {
