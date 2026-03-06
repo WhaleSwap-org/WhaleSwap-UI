@@ -26,6 +26,8 @@ export class PricingService {
         this.pendingRequests = new Map();
         this.lastPriceFetch = new Map();
         this.priceCacheExpiry = 5 * 60 * 1000;
+        this.loadingTokens = new Set();
+        this.hasCompletedPriceFetch = false;
         this.orderSyncPromise = null;
         this.hasCompletedOrderSync = false;
         this.refreshPromise = null; // Track current refresh promise
@@ -197,6 +199,21 @@ export class PricingService {
                 callback(event, data);
             } catch (error) {
                 this.debug('Error in PricingService subscriber:', error);
+            }
+        });
+    }
+
+    setLoadingTokens(tokenAddresses, isLoading) {
+        tokenAddresses.forEach((address) => {
+            const normalizedAddress = String(address || '').toLowerCase();
+            if (!normalizedAddress) {
+                return;
+            }
+
+            if (isLoading) {
+                this.loadingTokens.add(normalizedAddress);
+            } else {
+                this.loadingTokens.delete(normalizedAddress);
             }
         });
     }
@@ -491,13 +508,47 @@ export class PricingService {
             return new Map();
         }
 
-        this.debug('Fetching prices for specific tokens:', tokenAddresses);
+        const validAddresses = this.validateTokenAddresses(tokenAddresses);
+        if (validAddresses.length === 0) {
+            this.warn('No valid token addresses provided for incremental price fetching');
+            return new Map();
+        }
 
-        const newPrices = await this.deduplicatedPriceFetch(tokenAddresses);
+        this.debug('Fetching prices for specific tokens:', validAddresses);
+        this.setLoadingTokens(validAddresses, true);
 
-        for (const [address, data] of newPrices.entries()) {
-            this.prices.set(address, data.price);
-            this.debug(`Updated price for ${address}: ${data.price}`);
+        let newPrices = new Map();
+        let fetchError = null;
+        try {
+            newPrices = await this.deduplicatedPriceFetch(validAddresses);
+
+            const now = Date.now();
+            for (const [address, data] of newPrices.entries()) {
+                this.prices.set(address, data.price);
+                this.lastPriceFetch.set(address, now);
+                this.debug(`Updated price for ${address}: ${data.price}`);
+            }
+        } catch (error) {
+            fetchError = error;
+        } finally {
+            this.setLoadingTokens(validAddresses, false);
+            this.hasCompletedPriceFetch = true;
+        }
+
+        if (newPrices.size > 0) {
+            await this.updateAllDeals();
+            this.lastUpdate = Date.now();
+            this.notifySubscribers('priceUpdates', Array.from(newPrices.keys()));
+        } else {
+            this.notifySubscribers('priceLoadStateChanged', {
+                updatedCount: 0,
+                tokenAddresses: validAddresses,
+                hadError: Boolean(fetchError)
+            });
+        }
+
+        if (fetchError) {
+            throw fetchError;
         }
 
         return newPrices;
@@ -552,8 +603,10 @@ export class PricingService {
         this.notifySubscribers('refreshStart');
 
         this.refreshPromise = (async () => {
+            let tokenAddresses = [];
             try {
-                const tokenAddresses = Array.from(this.allowedTokens);
+                tokenAddresses = Array.from(this.allowedTokens);
+                this.setLoadingTokens(tokenAddresses, true);
 
                 if (tokenAddresses.length === 0) {
                     this.warn('No allowed tokens to fetch prices for');
@@ -588,6 +641,8 @@ export class PricingService {
                 this.notifySubscribers('refreshError', errorResult);
                 return errorResult;
             } finally {
+                this.setLoadingTokens(tokenAddresses, false);
+                this.hasCompletedPriceFetch = true;
                 if (isInitialAttempt) {
                     this.initialPriceLoadPending = false;
                     this.hasAttemptedInitialPriceLoad = true;
@@ -611,6 +666,17 @@ export class PricingService {
         }
 
         return price;
+    }
+
+    shouldShowPriceLoading(tokenAddress) {
+        const normalizedAddress = String(tokenAddress || '').toLowerCase();
+        if (!normalizedAddress || this.prices.has(normalizedAddress)) {
+            return false;
+        }
+
+        return !this.hasCompletedPriceFetch
+            || this.loadingTokens.has(normalizedAddress)
+            || this.pendingRequests.has(normalizedAddress);
     }
 
     isPriceEstimated(tokenAddress) {

@@ -137,10 +137,17 @@ export async function resolveOrderDisplayValues({ order, pricing, tokenDisplaySy
     const resolvedBuyPrice = typeof order?.dealMetrics?.buyTokenUsdPrice !== 'undefined'
         ? order.dealMetrics.buyTokenUsdPrice
         : (pricing ? pricing.getPrice(order.buyToken) : undefined);
+    const hasPerTokenLoading = typeof pricing?.shouldShowPriceLoading === 'function';
+    const fallbackLoading = Boolean(pricing?.isInitialPriceLoadPending?.());
+    const sellPriceLoading = hasPerTokenLoading
+        ? Boolean(pricing.shouldShowPriceLoading(order.sellToken))
+        : fallbackLoading;
+    const buyPriceLoading = hasPerTokenLoading
+        ? Boolean(pricing.shouldShowPriceLoading(order.buyToken))
+        : fallbackLoading;
 
     const sellPriceClass = (pricing && pricing.isPriceEstimated(order.sellToken)) ? 'price-estimate' : '';
     const buyPriceClass = (pricing && pricing.isPriceEstimated(order.buyToken)) ? 'price-estimate' : '';
-    const isPriceLoading = Boolean(pricing?.isInitialPriceLoadPending?.());
     const resolvedDeal = resolveDealValue({
         formattedBuyAmount: safeFormattedBuyAmount,
         formattedSellAmount: safeFormattedSellAmount,
@@ -158,11 +165,12 @@ export async function resolveOrderDisplayValues({ order, pricing, tokenDisplaySy
         formattedBuyAmount: safeFormattedBuyAmount,
         resolvedSellPrice,
         resolvedBuyPrice,
-        sellValueText: getValueDisplayText(resolvedSellPrice, safeFormattedSellAmount, isPriceLoading),
-        buyValueText: getValueDisplayText(resolvedBuyPrice, safeFormattedBuyAmount, isPriceLoading),
+        sellValueText: getValueDisplayText(resolvedSellPrice, safeFormattedSellAmount, sellPriceLoading),
+        buyValueText: getValueDisplayText(resolvedBuyPrice, safeFormattedBuyAmount, buyPriceLoading),
         sellPriceClass,
         buyPriceClass,
-        isPriceLoading,
+        sellPriceLoading,
+        buyPriceLoading,
         resolvedDeal
     };
 }
@@ -186,10 +194,12 @@ export async function buildOrderRowContext({
         buyValueText,
         sellPriceClass,
         buyPriceClass,
-        isPriceLoading,
+        sellPriceLoading,
+        buyPriceLoading,
         resolvedDeal
     } = await resolveOrderDisplayValues({ order, pricing, tokenDisplaySymbolMap });
     const buyerDealRatio = resolvedDeal > 0 ? 1 / resolvedDeal : undefined;
+    const dealLoading = !Number.isFinite(buyerDealRatio) && (sellPriceLoading || buyPriceLoading);
 
     const orderStatus = ws.getOrderStatus(order);
     const expiryEpoch = order?.timings?.expiresAt;
@@ -212,9 +222,11 @@ export async function buildOrderRowContext({
         buyValueText,
         sellPriceClass,
         buyPriceClass,
+        sellPriceLoading,
+        buyPriceLoading,
         orderStatus,
         expiryText,
         buyerDealRatio,
-        dealText: getDealDisplayText(buyerDealRatio, isPriceLoading)
+        dealText: getDealDisplayText(buyerDealRatio, dealLoading)
     };
 }

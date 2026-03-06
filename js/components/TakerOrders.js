@@ -167,6 +167,7 @@ export class TakerOrders extends BaseComponent {
             const paginatedOrders = pageSize === -1 ? 
                 ordersToDisplay : 
                 ordersToDisplay.slice(startIndex, endIndex);
+            const hasCompletedOrderSync = Boolean(pricing?.hasCompletedOrderSync);
 
             // Render orders using renderer
             if (paginatedOrders.length === 0) {
@@ -177,9 +178,11 @@ export class TakerOrders extends BaseComponent {
                         <tr class="empty-message">
                             <td colspan="7" class="no-orders-message">
                                 <div class="placeholder-text">
-                                    ${showOnlyActive ? 
-                                        'No active orders where you are the taker' : 
-                                        'No orders found where you are the taker'}
+                                    ${hasCompletedOrderSync
+                                        ? (showOnlyActive
+                                            ? 'No active orders where you are the taker'
+                                            : 'No orders found where you are the taker')
+                                        : 'Loading orders...'}
                                 </div>
                             </td>
                         </tr>`;
