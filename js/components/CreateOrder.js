@@ -715,7 +715,7 @@ export class CreateOrder extends BaseComponent {
 
         this.pricingUpdatedHandler = (event) => {
             if (event === 'priceUpdates' || event === 'refreshComplete' || event === 'priceLoadStateChanged') {
-                this.refreshOpenTokenModals();
+                this.refreshTokenModalLists({ openOnly: true });
             }
         };
 
@@ -774,7 +774,7 @@ export class CreateOrder extends BaseComponent {
                 this.tokens = normalizedAllowed;
                 this.allowedTokens = normalizedAllowed;
                 this.syncSelectedTokensWithAllowedList();
-                this.refreshTokenModals();
+                this.refreshTokenModalLists();
                 return normalizedAllowed;
             })
             .catch((error) => {
@@ -1568,7 +1568,7 @@ export class CreateOrder extends BaseComponent {
 
                 try {
                     clearTokenCaches();
-                    this.refreshOpenTokenModals();
+                    this.refreshTokenModalLists({ openOnly: true });
                 } catch (refreshError) {
                     this.debug('Post-order cache clear/refresh failed:', refreshError);
                 }
@@ -3202,28 +3202,15 @@ export class CreateOrder extends BaseComponent {
         `;
     }
 
-    // Refresh token modal lists if open (balances/icons may have changed)
-    refreshOpenTokenModals() {
+    refreshTokenModalLists({ openOnly = false } = {}) {
         try {
             ['sell', 'buy'].forEach(type => {
                 const modal = document.getElementById(`${type}TokenModal`);
-                if (modal && modal.style.display === 'block') {
-                    const allowedTokensList = modal.querySelector(`#${type}AllowedTokenList`);
-                    if (allowedTokensList && Array.isArray(this.allowedTokens)) {
-                        this.displayTokens(this.allowedTokens, allowedTokensList, type);
-                    }
+                if (!modal || (openOnly && modal.style.display !== 'block')) {
+                    return;
                 }
-            });
-        } catch (error) {
-            this.debug('Error refreshing open token modals:', error);
-        }
-    }
 
-    refreshTokenModals() {
-        try {
-            ['sell', 'buy'].forEach(type => {
-                const modal = document.getElementById(`${type}TokenModal`);
-                const allowedTokensList = modal?.querySelector(`#${type}AllowedTokenList`);
+                const allowedTokensList = modal.querySelector(`#${type}AllowedTokenList`);
                 if (allowedTokensList && Array.isArray(this.allowedTokens)) {
                     this.displayTokens(this.allowedTokens, allowedTokensList, type);
                 }
