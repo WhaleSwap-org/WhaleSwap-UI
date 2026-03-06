@@ -195,7 +195,7 @@ export class Claim extends BaseComponent {
         try {
             const claims = await getClaimableSnapshot({
                 contract: this.contract,
-                pricing: this.ctx.getPricing(),
+                pricing: this.ctx?.getPricing?.() ?? null,
                 userAddress: account,
                 includeMetadata: true
             });
