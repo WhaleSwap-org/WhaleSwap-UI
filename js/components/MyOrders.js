@@ -193,6 +193,7 @@ export class MyOrders extends BaseComponent {
                 const endIndex = startIndex + pageSize;
                 ordersToDisplay = ordersToDisplay.slice(startIndex, endIndex);
             }
+            const hasCompletedOrderSync = Boolean(pricing?.hasCompletedOrderSync);
 
             // Render orders using renderer
             if (ordersToDisplay.length === 0) {
@@ -203,9 +204,9 @@ export class MyOrders extends BaseComponent {
                         <tr class="empty-message">
                             <td colspan="7" class="no-orders-message">
                                 <div class="placeholder-text">
-                                    ${showOnlyCancellable ? 
-                                        'No cancellable orders found' : 
-                                        'No orders found'}
+                                    ${hasCompletedOrderSync
+                                        ? (showOnlyCancellable ? 'No cancellable orders found' : 'No orders found')
+                                        : 'Loading orders...'}
                                 </div>
                             </td>
                         </tr>`;
@@ -626,7 +627,8 @@ export class MyOrders extends BaseComponent {
                 buyValueText,
                 sellPriceClass,
                 buyPriceClass,
-                isPriceLoading,
+                sellPriceLoading,
+                buyPriceLoading,
                 resolvedDeal
             } = await resolveOrderDisplayValues({
                 order,
@@ -643,15 +645,15 @@ export class MyOrders extends BaseComponent {
                 ? formatTimeDiff(timeUntilExpiry)
                 : '';
 
-            // Get order status from WebSocket cache
+            // Get status from WebSocket timing helpers using the pricing-backed order record
             const orderStatus = ws.getOrderStatus(order);
 
             // Get counterparty address for display
             const wallet = this.ctx.getWallet();
             const userAddress = wallet?.getAccount()?.toLowerCase();
             const { counterpartyAddress, isZeroAddr, formattedAddress } = processOrderAddress(order, userAddress);
-            const formattedDeal = formatDealValue(resolvedDeal);
-            const dealText = formattedDeal !== 'N/A' ? formattedDeal : (isPriceLoading ? 'Loading...' : 'N/A');
+            const dealLoading = !Number.isFinite(Number(resolvedDeal)) && (sellPriceLoading || buyPriceLoading);
+            const dealText = dealLoading ? 'loading...' : formatDealValue(resolvedDeal);
             tr.innerHTML = `
                 <td>${order.id}</td>
                 <td>

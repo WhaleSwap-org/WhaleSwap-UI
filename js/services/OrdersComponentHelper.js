@@ -99,7 +99,7 @@ export class OrdersComponentHelper {
         
         // Subscribe to pricing updates
         if (this.component.pricingService && !this.component._boundPricingHandler) {
-            this.component._boundPricingHandler = (eventName) => {
+            this.component._boundPricingHandler = (eventName, eventData) => {
                 if (eventName === 'refreshComplete' || eventName === 'ordersUpdated') {
                     this.debug('Pricing state updated, refreshing orders view');
                     if (onRefresh) {
@@ -107,10 +107,18 @@ export class OrdersComponentHelper {
                             this.component.error('Error refreshing orders after pricing update:', error);
                         });
                     }
+                } else if (eventName === 'priceLoadStateChanged' && eventData?.updatedCount === 0) {
+                    this.debug('Price load settled without updates, refreshing orders view');
+                    if (onRefresh) {
+                        onRefresh().catch(error => {
+                            this.component.error('Error refreshing orders after empty price load:', error);
+                        });
+                    }
                 }
             };
             this.component.pricingService.subscribe(this.component._boundPricingHandler);
         }
+
     }
 
     /**
