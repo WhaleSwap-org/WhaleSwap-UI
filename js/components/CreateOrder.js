@@ -30,6 +30,8 @@ export class CreateOrder extends BaseComponent {
         this.initialized = false;
         this.isRendered = false;
         this.hasLoadedData = false;
+        this.currentMode = null;
+        this.bootstrapPromise = null;
         // Token metadata is centralized in PricingService via ctx.getPricing()
         this.boundCreateOrderHandler = this.handleCreateOrder.bind(this);
         this.isSubmitting = false;
@@ -138,6 +140,8 @@ export class CreateOrder extends BaseComponent {
         this.feeToken = null;
         this.isContractDisabled = false;
         this.contractStateReadError = false;
+        this.currentMode = null;
+        this.bootstrapPromise = null;
         this.tokenDisplaySymbolMap = new Map();
         if (clearSelections) {
             this.clearSelectedTokens();
@@ -380,8 +384,13 @@ export class CreateOrder extends BaseComponent {
     }
 
     async initialize(readOnlyMode = true, options = {}) {
-        if (this.initializing || this.initialized) {
-            this.debug('Already initializing or initialized, skipping...');
+        if (this.initializing) {
+            this.debug('Already initializing, skipping...');
+            return;
+        }
+
+        if (this.initialized && this.currentMode === readOnlyMode) {
+            this.debug('Already initialized for this mode, skipping...');
             return;
         }
         this.initializing = true;
@@ -416,38 +425,11 @@ export class CreateOrder extends BaseComponent {
                 }
             }
 
-            const ws = this.ctx.getWebSocket();
-            // CreateOrder only creates orders, it doesn't need to listen to order events
-
-            // Wait for WebSocket to be fully initialized
-            if (!ws?.isInitialized) {
-                this.debug('Waiting for WebSocket initialization...');
-                await new Promise(resolve => {
-                    const checkInterval = setInterval(() => {
-                        if (ws?.isInitialized) {
-                            clearInterval(checkInterval);
-                            resolve();
-                        }
-                    }, 100);
-                });
-            }
-
             // Clear existing content before re-populating
             const sellContainer = document.getElementById('sellContainer');
             const buyContainer = document.getElementById('buyContainer');
             if (sellContainer) sellContainer.innerHTML = '';
             if (buyContainer) buyContainer.innerHTML = '';
-
-            // Use WebSocket's contract instance
-            this.contract = ws.contract;
-            this.provider = ws.provider;
-
-            if (!this.contract) {
-                throw new Error('Contract not initialized');
-            }
-            
-            // Initialize contract service
-            contractService.initialize();
             
             if (readOnlyMode) {
                 this.setReadOnlyMode();
@@ -463,28 +445,17 @@ export class CreateOrder extends BaseComponent {
                 this.setAllowedTokenListsLoadingState('Loading allowed tokens...');
             }
             this.setupCreateOrderListener();
-            
-            // Wait for contract to be ready
-            await this.waitForContract();
-            this.subscribeToContractDisabledUpdates();
-            await this.refreshContractDisabledState();
-            this.subscribeToFeeConfigUpdates();
-            this.subscribeToAllowedTokensUpdates();
-            
-            // Load fee/token data in background so initial tab render is not blocked.
-            this.startBackgroundDataLoading();
-            this.hasLoadedData = true;
-            
+
             // Initialize token selectors
             this.initializeTokenSelectors();
             
             // Initialize amount input listeners
             this.initializeAmountInputs();
-
-            await this.restorePendingReloadFormState();
             
+            this.currentMode = readOnlyMode;
             this.initialized = true;
-            this.debug('Initialization complete');
+            void this.bootstrapWebSocketData(readOnlyMode);
+            this.debug('Initialization shell ready');
 
         } catch (error) {
             this.error('Error in initialization:', error);
@@ -494,6 +465,103 @@ export class CreateOrder extends BaseComponent {
             }
         } finally {
             this.initializing = false;
+        }
+    }
+
+    async bootstrapWebSocketData(readOnlyMode) {
+        if (this.bootstrapPromise) {
+            return this.bootstrapPromise;
+        }
+
+        this.bootstrapPromise = (async () => {
+            const ws = await this.waitForWebSocketInitialization();
+            // CreateOrder only creates orders, it doesn't need to listen to order events
+            this.contract = ws.contract;
+            this.provider = ws.provider;
+
+            if (!this.contract) {
+                throw new Error('Contract not initialized');
+            }
+
+            contractService.initialize();
+
+            await this.waitForContract();
+            this.subscribeToContractDisabledUpdates();
+            await this.refreshContractDisabledState();
+            this.subscribeToFeeConfigUpdates();
+            this.subscribeToAllowedTokensUpdates();
+
+            // Load fee/token data in background so the tab stays interactive while data fills in.
+            this.startBackgroundDataLoading();
+            this.hasLoadedData = true;
+
+            await this.restorePendingReloadFormState();
+            this.debug('Background data bootstrap complete');
+        })()
+            .catch((error) => {
+                this.error('Error completing background initialization:', error);
+                this.initialized = false;
+                this.currentMode = null;
+                this.contractStateReadError = true;
+                this.updateCreateButtonState();
+                if (!readOnlyMode) {
+                    this.showError('Failed to initialize. Please try again.');
+                }
+            })
+            .finally(() => {
+                this.bootstrapPromise = null;
+            });
+
+        return this.bootstrapPromise;
+    }
+
+    async waitForWebSocketInitialization(timeout = 10000) {
+        const ws = this.ctx.getWebSocket();
+        if (!ws) {
+            throw new Error('WebSocket not available');
+        }
+
+        if (ws.isInitialized) {
+            return ws;
+        }
+
+        const bootstrapPromise = window.app?.webSocketBootstrapPromise;
+        if (bootstrapPromise) {
+            try {
+                await bootstrapPromise;
+            } catch (error) {
+                this.debug('App WebSocket bootstrap wait failed:', error);
+            }
+
+            if (ws.isInitialized) {
+                return ws;
+            }
+        }
+
+        if (typeof ws.waitForInitialization !== 'function') {
+            throw new Error('WebSocket wait helper unavailable');
+        }
+
+        let timeoutId = null;
+        try {
+            const initialized = await Promise.race([
+                Promise.resolve(ws.waitForInitialization()),
+                new Promise((_, reject) => {
+                    timeoutId = setTimeout(() => {
+                        reject(new Error('WebSocket not ready after timeout'));
+                    }, timeout);
+                })
+            ]);
+
+            if (!initialized && !ws.isInitialized) {
+                throw new Error('WebSocket initialization failed');
+            }
+
+            return ws;
+        } finally {
+            if (timeoutId !== null) {
+                clearTimeout(timeoutId);
+            }
         }
     }
 
