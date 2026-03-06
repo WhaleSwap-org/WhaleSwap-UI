@@ -184,7 +184,7 @@ export class ViewOrders extends BaseComponent {
             const paginatedOrders = pageSize === -1 ? 
                 ordersToDisplay : 
                 ordersToDisplay.slice(startIndex, endIndex);
-            const hasCompletedOrderSync = Boolean(pricing?.hasCompletedOrderSync || ws?.hasCompletedOrderSync);
+            const hasCompletedOrderSync = Boolean(pricing?.hasCompletedOrderSync);
 
             // Render orders using renderer
             if (paginatedOrders.length === 0) {
