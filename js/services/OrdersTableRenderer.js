@@ -235,9 +235,9 @@ export class OrdersTableRenderer {
                         <option value="-1">View all</option>
                     </select>
                     <div class="pagination-buttons">
-                        <button class="pagination-button prev-page" title="Previous page">&larr;</button>
+                        <button class="pagination-button prev-page" title="Previous page">←</button>
                         <span class="page-info">Page 1 of 1</span>
-                        <button class="pagination-button next-page" title="Next page">&rarr;</button>
+                        <button class="pagination-button next-page" title="Next page">→</button>
                     </div>
                 </div>
             </div>
