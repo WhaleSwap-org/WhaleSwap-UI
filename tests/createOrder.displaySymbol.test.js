@@ -117,6 +117,52 @@ describe('CreateOrder display symbol wiring', () => {
         expect(warningSpy.mock.calls[0][0]).toContain('AAA.issuer has no balance available for selling');
     });
 
+    it('waits for pending sell-token balance hydration before finalizing selection', async () => {
+        const component = createComponent();
+        vi.spyOn(walletManager, 'isWalletConnected').mockReturnValue(true);
+
+        let resolveBalanceHydration;
+        component.tokens = [{
+            address: TOKEN_A,
+            symbol: 'AAA',
+            displaySymbol: 'AAA.issuer',
+            name: 'Alpha Issuer',
+            balance: null,
+            balanceLoading: true,
+            iconUrl: 'fallback'
+        }];
+        component.allowedTokensBalanceLoadPromise = new Promise((resolve) => {
+            resolveBalanceHydration = resolve;
+        });
+
+        const handleTokenSelect = vi.spyOn(component, 'handleTokenSelect').mockResolvedValue(undefined);
+        const tokenItem = document.createElement('div');
+        tokenItem.dataset.address = TOKEN_A;
+
+        const selectionPromise = component.handleTokenItemClick('sell', tokenItem);
+        await Promise.resolve();
+        expect(handleTokenSelect).not.toHaveBeenCalled();
+
+        component.tokens = [{
+            address: TOKEN_A,
+            symbol: 'AAA',
+            displaySymbol: 'AAA.issuer',
+            name: 'Alpha Issuer',
+            balance: '5',
+            balanceLoading: false,
+            iconUrl: 'fallback'
+        }];
+        resolveBalanceHydration(component.tokens);
+
+        await selectionPromise;
+
+        expect(handleTokenSelect).toHaveBeenCalledWith('sell', expect.objectContaining({
+            address: TOKEN_A,
+            balance: '5',
+            balanceLoading: false
+        }));
+    });
+
     it('resets token selector button text to default when selected token is cleared', async () => {
         const component = createComponent();
 

@@ -872,6 +872,29 @@ export class CreateOrder extends BaseComponent {
         return token?.balance !== null && token?.balance !== undefined && token?.balance !== '';
     }
 
+    findCurrentTokenByAddress(address) {
+        const normalizedAddress = String(address || '').toLowerCase();
+        if (!normalizedAddress) {
+            return null;
+        }
+
+        const tokenLists = [this.tokens, this.allowedTokens];
+        for (const tokenList of tokenLists) {
+            if (!Array.isArray(tokenList)) {
+                continue;
+            }
+
+            const token = tokenList.find(
+                (item) => String(item?.address || '').toLowerCase() === normalizedAddress
+            );
+            if (token) {
+                return token;
+            }
+        }
+
+        return null;
+    }
+
     isTokenBalanceLoading(token) {
         return Boolean(token?.balanceLoading);
     }
@@ -957,6 +980,24 @@ export class CreateOrder extends BaseComponent {
         }
 
         return mergedToken;
+    }
+
+    async resolveSellTokenSelectionCandidate(token) {
+        if (!this.shouldShowTokenBalanceLoading(token)) {
+            return token;
+        }
+
+        if (!this.allowedTokensBalanceLoadPromise) {
+            return token;
+        }
+
+        try {
+            await this.allowedTokensBalanceLoadPromise;
+        } catch (error) {
+            this.debug('Sell-token balance hydration wait failed:', error);
+        }
+
+        return this.findCurrentTokenByAddress(token?.address) || token;
     }
 
     formatBalanceChipUsdValue(balanceUSD) {
@@ -2930,7 +2971,7 @@ export class CreateOrder extends BaseComponent {
                 return;
             }
 
-            const token = this.tokens.find(t => t.address.toLowerCase() === address.toLowerCase());
+            let token = this.findCurrentTokenByAddress(address);
             
             this.debug('Token item clicked:', {
                 type,
@@ -2945,6 +2986,8 @@ export class CreateOrder extends BaseComponent {
 
             // For sell tokens, check if balance is zero
             if (type === 'sell') {
+                token = await this.resolveSellTokenSelectionCandidate(token);
+
                 if (this.shouldShowTokenBalanceLoading(token)) {
                     this.showWarning('Balance is still loading for this token. Please try again in a moment.');
                     return;
