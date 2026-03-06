@@ -15,7 +15,7 @@ import { formatTimeDiff, formatDealValue } from '../utils/orderUtils.js';
 import { OrdersComponentHelper } from '../services/OrdersComponentHelper.js';
 import { OrdersTableRenderer } from '../services/OrdersTableRenderer.js';
 import { buildTokenDisplaySymbolMap, getDisplaySymbol } from '../utils/tokenDisplay.js';
-import { resolveOrderDisplayValues } from '../utils/ordersComponentHelpers.js';
+import { getOrdersEmptyStateMessage, resolveOrderDisplayValues } from '../utils/ordersComponentHelpers.js';
 
 export class MyOrders extends BaseComponent {
     constructor() {
@@ -193,7 +193,7 @@ export class MyOrders extends BaseComponent {
                 const endIndex = startIndex + pageSize;
                 ordersToDisplay = ordersToDisplay.slice(startIndex, endIndex);
             }
-            const hasCompletedOrderSync = Boolean(pricing?.hasCompletedOrderSync);
+            const hasCompletedOrderSync = Boolean(pricing?.hasCompletedOrderSync || ws?.hasCompletedOrderSync);
 
             // Render orders using renderer
             if (ordersToDisplay.length === 0) {
@@ -204,9 +204,10 @@ export class MyOrders extends BaseComponent {
                         <tr class="empty-message">
                             <td colspan="7" class="no-orders-message">
                                 <div class="placeholder-text">
-                                    ${hasCompletedOrderSync
-                                        ? (showOnlyCancellable ? 'No cancellable orders found' : 'No orders found')
-                                        : 'Loading orders...'}
+                                    ${getOrdersEmptyStateMessage(
+                                        hasCompletedOrderSync,
+                                        showOnlyCancellable ? 'No cancellable orders found' : 'No orders found'
+                                    )}
                                 </div>
                             </td>
                         </tr>`;
@@ -645,7 +646,7 @@ export class MyOrders extends BaseComponent {
                 ? formatTimeDiff(timeUntilExpiry)
                 : '';
 
-            // Get status from WebSocket timing helpers using the pricing-backed order record
+            // Get order status from WebSocket cache
             const orderStatus = ws.getOrderStatus(order);
 
             // Get counterparty address for display

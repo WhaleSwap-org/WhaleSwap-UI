@@ -18,6 +18,10 @@ function getDealDisplayText(deal, isPriceLoading) {
     return isPriceLoading ? 'Loading...' : 'N/A';
 }
 
+export function getOrdersEmptyStateMessage(hasCompletedOrderSync, completedSyncMessage) {
+    return hasCompletedOrderSync ? completedSyncMessage : 'Loading orders...';
+}
+
 function formatTokenAmount(amount, decimals, fallbackValue = '0') {
     if (!amount || !Number.isInteger(decimals)) {
         return fallbackValue;

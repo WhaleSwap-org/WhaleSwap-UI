@@ -4,7 +4,7 @@ import { createDealCellHTML } from '../utils/ui.js';
 import { OrdersComponentHelper } from '../services/OrdersComponentHelper.js';
 import { OrdersTableRenderer } from '../services/OrdersTableRenderer.js';
 import { buildTokenDisplaySymbolMap } from '../utils/tokenDisplay.js';
-import { buildOrderRowContext } from '../utils/ordersComponentHelpers.js';
+import { buildOrderRowContext, getOrdersEmptyStateMessage } from '../utils/ordersComponentHelpers.js';
 
 export class ViewOrders extends BaseComponent {
     constructor(containerId = 'view-orders') {
@@ -184,7 +184,7 @@ export class ViewOrders extends BaseComponent {
             const paginatedOrders = pageSize === -1 ? 
                 ordersToDisplay : 
                 ordersToDisplay.slice(startIndex, endIndex);
-            const hasCompletedOrderSync = Boolean(pricing?.hasCompletedOrderSync);
+            const hasCompletedOrderSync = Boolean(pricing?.hasCompletedOrderSync || ws?.hasCompletedOrderSync);
 
             // Render orders using renderer
             if (paginatedOrders.length === 0) {
@@ -195,9 +195,10 @@ export class ViewOrders extends BaseComponent {
                         <tr class="empty-message">
                             <td colspan="7" class="no-orders-message">
                                 <div class="placeholder-text">
-                                    ${hasCompletedOrderSync
-                                        ? (showOnlyActive ? 'No fillable orders found' : 'No orders found')
-                                        : 'Loading orders...'}
+                                    ${getOrdersEmptyStateMessage(
+                                        hasCompletedOrderSync,
+                                        showOnlyActive ? 'No fillable orders found' : 'No orders found'
+                                    )}
                                 </div>
                             </td>
                         </tr>`;

@@ -4,7 +4,7 @@ import { createDealCellHTML, processOrderAddress, generateStatusCellHTML, setupC
 import { OrdersComponentHelper } from '../services/OrdersComponentHelper.js';
 import { OrdersTableRenderer } from '../services/OrdersTableRenderer.js';
 import { buildTokenDisplaySymbolMap } from '../utils/tokenDisplay.js';
-import { buildOrderRowContext } from '../utils/ordersComponentHelpers.js';
+import { buildOrderRowContext, getOrdersEmptyStateMessage } from '../utils/ordersComponentHelpers.js';
 
 export class TakerOrders extends BaseComponent {
     constructor() {
@@ -167,7 +167,7 @@ export class TakerOrders extends BaseComponent {
             const paginatedOrders = pageSize === -1 ? 
                 ordersToDisplay : 
                 ordersToDisplay.slice(startIndex, endIndex);
-            const hasCompletedOrderSync = Boolean(pricing?.hasCompletedOrderSync);
+            const hasCompletedOrderSync = Boolean(pricing?.hasCompletedOrderSync || ws?.hasCompletedOrderSync);
 
             // Render orders using renderer
             if (paginatedOrders.length === 0) {
@@ -178,11 +178,12 @@ export class TakerOrders extends BaseComponent {
                         <tr class="empty-message">
                             <td colspan="7" class="no-orders-message">
                                 <div class="placeholder-text">
-                                    ${hasCompletedOrderSync
-                                        ? (showOnlyActive
+                                    ${getOrdersEmptyStateMessage(
+                                        hasCompletedOrderSync,
+                                        showOnlyActive
                                             ? 'No active orders where you are the taker'
-                                            : 'No orders found where you are the taker')
-                                        : 'Loading orders...'}
+                                            : 'No orders found where you are the taker'
+                                    )}
                                 </div>
                             </td>
                         </tr>`;
