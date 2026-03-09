@@ -199,7 +199,7 @@ export class MyOrders extends BaseComponent {
             }
 
             // Apply pagination
-            const pageSize = parseInt(this.container.querySelector('#page-size-select')?.value || '50');
+            const pageSize = parseInt(this.container.querySelector('#page-size-select')?.value || '10');
             if (pageSize !== -1) {  // -1 means show all
                 const startIndex = (this.currentPage - 1) * pageSize;
                 const endIndex = startIndex + pageSize;
@@ -241,7 +241,7 @@ export class MyOrders extends BaseComponent {
     }
 
     getTotalPages() {
-        const pageSize = parseInt(this.container.querySelector('#page-size-select')?.value || '50');
+        const pageSize = parseInt(this.container.querySelector('#page-size-select')?.value || '10');
         if (pageSize === -1) return 1; // View all
         return Math.ceil(this.totalOrders / pageSize);
     }
@@ -272,9 +272,9 @@ export class MyOrders extends BaseComponent {
         const paginationControls = `
             <div class="pagination-controls">
                 <select id="page-size-select" class="page-size-select">
-                    <option value="10">10 per page</option>
+                    <option value="10" selected>10 per page</option>
                     <option value="25">25 per page</option>
-                    <option value="50" selected>50 per page</option>
+                    <option value="50">50 per page</option>
                     <option value="100">100 per page</option>
                     <option value="-1">View all</option>
                 </select>
@@ -403,7 +403,7 @@ export class MyOrders extends BaseComponent {
         this.currentPage = 1;
         const pageSize = this.container.querySelector('#page-size-select');
         if (pageSize) {
-            pageSize.value = '50'; // Set default page size
+            pageSize.value = '10'; // Set default page size
         }
 
         // Setup pagination for both top and bottom controls

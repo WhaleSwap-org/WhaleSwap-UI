@@ -228,8 +228,8 @@ export class OrdersTableRenderer {
             <div class="filter-row">
                 <div class="pagination-controls">
                     <select id="page-size-select" class="page-size-select">
-                        <option value="10">10 per page</option>
-                        <option value="25" selected>25 per page</option>
+                        <option value="10" selected>10 per page</option>
+                        <option value="25">25 per page</option>
                         <option value="50">50 per page</option>
                         <option value="100">100 per page</option>
                         <option value="-1">View all</option>
@@ -334,7 +334,7 @@ export class OrdersTableRenderer {
             });
             
             nextButton.addEventListener('click', () => {
-                const pageSize = parseInt(this.component.container.querySelector('#page-size-select')?.value || '25');
+                const pageSize = parseInt(this.component.container.querySelector('#page-size-select')?.value || '10');
                 const totalPages = Math.ceil(this.component.totalOrders / pageSize);
                 this.debug('Next clicked, current page:', this.component.currentPage, 'total orders:', this.component.totalOrders, 'page size:', pageSize);
                 if (this.component.currentPage < totalPages) {
@@ -441,7 +441,7 @@ export class OrdersTableRenderer {
      * Update page info display
      */
     updatePageInfo(pageInfoElement) {
-        const pageSize = parseInt(this.component.container.querySelector('#page-size-select')?.value || '25');
+        const pageSize = parseInt(this.component.container.querySelector('#page-size-select')?.value || '10');
         const totalPages = Math.ceil(this.component.totalOrders / pageSize);
         pageInfoElement.textContent = `Page ${this.component.currentPage} of ${totalPages}`;
     }
@@ -451,7 +451,7 @@ export class OrdersTableRenderer {
      */
     updatePaginationControls(totalOrders) {
         this.component.totalOrders = totalOrders;
-        const pageSize = parseInt(this.component.container.querySelector('#page-size-select')?.value || '25');
+        const pageSize = parseInt(this.component.container.querySelector('#page-size-select')?.value || '10');
         
         const updateControls = (container) => {
             const prevButton = container.querySelector('.prev-page');
@@ -646,4 +646,3 @@ export class OrdersTableRenderer {
         }
     }
 }
-
