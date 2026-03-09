@@ -179,7 +179,7 @@ export class ViewOrders extends BaseComponent {
 
             // Apply pagination
             const pageSizeSelect = this.container.querySelector('#page-size-select');
-            const pageSize = pageSizeSelect ? parseInt(pageSizeSelect.value) : 25; // Default to 25 if element doesn't exist
+            const pageSize = pageSizeSelect ? parseInt(pageSizeSelect.value) : 10; // Default to 10 if element doesn't exist
             const startIndex = (this.currentPage - 1) * pageSize;
             const endIndex = pageSize === -1 ? ordersToDisplay.length : startIndex + pageSize;
             const paginatedOrders = pageSize === -1 ? 

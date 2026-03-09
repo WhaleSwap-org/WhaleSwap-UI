@@ -116,7 +116,7 @@ export class TakerOrders extends BaseComponent {
                 this.container.querySelector('#order-sort')?.value || DEFAULT_ORDER_SORT
             );
             const showOnlyActive = this.container.querySelector('#fillable-orders-toggle')?.checked ?? true;
-            const pageSize = parseInt(this.container.querySelector('#page-size-select')?.value || '25');
+            const pageSize = parseInt(this.container.querySelector('#page-size-select')?.value || '10');
 
             // Reset to page 1 when filters change
             if (this._lastFilters?.sellToken !== sellTokenFilter ||

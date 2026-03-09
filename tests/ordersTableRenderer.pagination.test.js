@@ -43,6 +43,7 @@ describe('OrdersTableRenderer pagination controls', () => {
         expect(component.container.querySelectorAll('.page-size-select')).toHaveLength(1);
         expect(component.container.querySelector('.filter-controls .refresh-prices-button')).not.toBeNull();
         expect(component.container.querySelector('.bottom-controls .page-size-select')).not.toBeNull();
+        expect(component.container.querySelector('.bottom-controls .page-size-select')?.value).toBe('10');
     });
 
     it('refreshes and updates the single bottom pagination control when page size changes', async () => {

@@ -56,8 +56,7 @@ export class MyOrders extends BaseComponent {
         this.renderer = new OrdersTableRenderer(this, {
             rowRenderer: (order) => this.createOrderRow(order),
             filterToggleLabel: 'Show only cancellable',
-            showRefreshButton: true,
-            defaultPageSize: 50
+            showRefreshButton: true
         });
     }
 
@@ -195,7 +194,7 @@ export class MyOrders extends BaseComponent {
             });
 
             // Apply pagination
-            const pageSize = parseInt(this.container.querySelector('#page-size-select')?.value || '50');
+            const pageSize = parseInt(this.container.querySelector('#page-size-select')?.value || '10');
             if (pageSize !== -1) {  // -1 means show all
                 const startIndex = (this.currentPage - 1) * pageSize;
                 const endIndex = startIndex + pageSize;

@@ -84,7 +84,7 @@ export class OrdersTableRenderer {
             // Show refresh button
             showRefreshButton: options.showRefreshButton !== false,
             // Default page size option
-            defaultPageSize: String(options.defaultPageSize || '25'),
+            defaultPageSize: String(options.defaultPageSize || '10'),
             tokenFilterLabels: {
                 first: options.tokenFilterLabels?.first || tokenLabels.firstFilter,
                 second: options.tokenFilterLabels?.second || tokenLabels.secondFilter
@@ -115,8 +115,8 @@ export class OrdersTableRenderer {
     }
 
     _getDefaultPageSizeValue() {
-        const pageSize = String(this.options.defaultPageSize || '25');
-        return ['10', '25', '50', '100', '-1'].includes(pageSize) ? pageSize : '25';
+        const pageSize = String(this.options.defaultPageSize || '10');
+        return ['10', '25', '50', '100', '-1'].includes(pageSize) ? pageSize : '10';
     }
 
     _getDefaultPageSizeNumber() {
