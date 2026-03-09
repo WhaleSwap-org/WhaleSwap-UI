@@ -54,7 +54,7 @@ describe('OrdersTableRenderer display symbols', () => {
             filterControls.querySelectorAll('#sell-token-filter option')
         ).map((option) => option.textContent.trim());
 
-        expect(sellOptions).toEqual(['All Sell Tokens', 'AAA', 'AAA.issuer', 'USDC']);
+        expect(sellOptions).toEqual(['All You Sell Tokens', 'AAA', 'AAA.issuer', 'USDC']);
         expect(renderer.component.tokenDisplaySymbolMap.get(TOKEN_A)).toBe('AAA.issuer');
     });
 

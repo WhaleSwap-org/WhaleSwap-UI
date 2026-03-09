@@ -24,8 +24,8 @@ function createContextStub() {
 function setupModalDom() {
     document.body.innerHTML = `
         <div id="create-order"></div>
-        <button id="sellTokenSelector" type="button">Sell</button>
-        <button id="buyTokenSelector" type="button">Buy</button>
+        <button id="sellTokenSelector" type="button">You Sell</button>
+        <button id="buyTokenSelector" type="button">You Buy</button>
         <div id="sellTokenModal" class="token-modal">
             <button class="token-modal-close" type="button">x</button>
         </div>

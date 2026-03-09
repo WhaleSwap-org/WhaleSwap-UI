@@ -19,18 +19,18 @@ export const ORDER_TABLE_PERSPECTIVES = Object.freeze({
 function getOrderTableTokenLabels(perspective = ORDER_TABLE_PERSPECTIVES.MAKER) {
     if (perspective === ORDER_TABLE_PERSPECTIVES.BUYER) {
         return {
-            firstColumn: 'Buy',
-            secondColumn: 'Sell',
-            firstFilter: 'All Buy Tokens',
-            secondFilter: 'All Sell Tokens'
+            firstColumn: 'You Buy',
+            secondColumn: 'You Sell',
+            firstFilter: 'All You Buy Tokens',
+            secondFilter: 'All You Sell Tokens'
         };
     }
 
     return {
-        firstColumn: 'Sell',
-        secondColumn: 'Buy',
-        firstFilter: 'All Sell Tokens',
-        secondFilter: 'All Buy Tokens'
+        firstColumn: 'You Sell',
+        secondColumn: 'You Buy',
+        firstFilter: 'All You Sell Tokens',
+        secondFilter: 'All You Buy Tokens'
     };
 }
 
