@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MyOrders } from '../js/components/MyOrders.js';
 import { ViewOrders } from '../js/components/ViewOrders.js';
 import { TakerOrders } from '../js/components/TakerOrders.js';
+import { DEAL_TOOLTIP_TEXT } from '../js/utils/ui.js';
 
 const TOKEN_A = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const TOKEN_B = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
@@ -10,7 +11,6 @@ const POLYGON_LINK_POS = '0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39';
 const OTHER_LINK = '0xb0897686c545045afc77cf20ec7a532e3120e0f1';
 const MAKER = '0x1111111111111111111111111111111111111111';
 const TAKER = '0x2222222222222222222222222222222222222222';
-
 const TOKEN_INFO = {
     [TOKEN_A]: { address: TOKEN_A, symbol: 'AAA', name: 'Alpha Issuer', decimals: 18 },
     [TOKEN_B]: { address: TOKEN_B, symbol: 'AAA', name: 'Alpha Default', decimals: 18 },
@@ -104,6 +104,39 @@ function createFallbackOrder() {
     };
 }
 
+function createDisplaySymbolWs() {
+    return {
+        tokenCache: new Map([
+            [POLYGON_LINK_POS, { address: POLYGON_LINK_POS, symbol: 'LINK', name: 'ChainLink Token' }],
+            [OTHER_LINK, { address: OTHER_LINK, symbol: 'LINK', name: 'ChainLink Token' }],
+            [TOKEN_C, TOKEN_INFO[TOKEN_C]]
+        ])
+    };
+}
+
+function getTableHeaderDetails(component) {
+    return {
+        headerLabels: [
+            component.container.querySelector('thead th:nth-child(2)')?.textContent?.trim(),
+            component.container.querySelector('thead th:nth-child(3)')?.textContent?.trim()
+        ],
+        filterLabels: [
+            component.container.querySelector('#sell-token-filter option')?.textContent?.trim(),
+            component.container.querySelector('#buy-token-filter option')?.textContent?.trim()
+        ],
+        dealTooltip: component.container.querySelector('th[data-sort="deal"] .order-tooltip-icon')
+            ?.getAttribute('data-order-tooltip')
+    };
+}
+
+function getRowDisplayDetails(row) {
+    return {
+        symbols: Array.from(row.querySelectorAll('.token-symbol'))
+            .map((element) => element.textContent.trim()),
+        dealTooltip: row.querySelector('.deal-tooltip-icon')?.getAttribute('data-order-tooltip')
+    };
+}
+
 afterEach(() => {
     document.body.innerHTML = '';
     vi.restoreAllMocks();
@@ -113,13 +146,7 @@ describe('orders tabs display symbol rendering', () => {
     it('renders MyOrders filter dropdown with display symbols', async () => {
         document.body.innerHTML = '<div id="my-orders"></div>';
 
-        const ws = {
-            tokenCache: new Map([
-                [POLYGON_LINK_POS, { address: POLYGON_LINK_POS, symbol: 'LINK', name: 'ChainLink Token' }],
-                [OTHER_LINK, { address: OTHER_LINK, symbol: 'LINK', name: 'ChainLink Token' }],
-                [TOKEN_C, TOKEN_INFO[TOKEN_C]]
-            ])
-        };
+        const ws = createDisplaySymbolWs();
         const component = new MyOrders();
         component.setContext(createContext(ws));
         component.setupEventListeners = vi.fn();
@@ -129,9 +156,45 @@ describe('orders tabs display symbol rendering', () => {
         const sellOptions = Array.from(
             component.container.querySelectorAll('#sell-token-filter option')
         ).map((option) => option.textContent.trim());
+        const { headerLabels, filterLabels, dealTooltip } = getTableHeaderDetails(component);
 
         expect(sellOptions).toEqual(['All Sell Tokens', 'LINK', 'LINK.pol', 'USDC']);
+        expect(headerLabels).toEqual(['Sell', 'Buy']);
+        expect(filterLabels).toEqual(['All Sell Tokens', 'All Buy Tokens']);
+        expect(dealTooltip).toBe(DEAL_TOOLTIP_TEXT);
         expect(sellOptions.some((label) => /^LINK\.[a-f0-9]{4}$/i.test(label))).toBe(false);
+    });
+
+    it('renders ViewOrders with buyer-perspective headers and filters', async () => {
+        document.body.innerHTML = '<div id="view-orders"></div>';
+
+        const ws = createDisplaySymbolWs();
+        const component = new ViewOrders();
+        component.setContext(createContext(ws));
+
+        await component.setupTable();
+
+        const { headerLabels, filterLabels, dealTooltip } = getTableHeaderDetails(component);
+
+        expect(headerLabels).toEqual(['Buy', 'Sell']);
+        expect(filterLabels).toEqual(['All Buy Tokens', 'All Sell Tokens']);
+        expect(dealTooltip).toBe(DEAL_TOOLTIP_TEXT);
+    });
+
+    it('renders TakerOrders with buyer-perspective headers and filters', async () => {
+        document.body.innerHTML = '<div id="taker-orders"></div>';
+
+        const ws = createDisplaySymbolWs();
+        const component = new TakerOrders();
+        component.setContext(createContext(ws, TAKER));
+
+        await component.setupTable();
+
+        const { headerLabels, filterLabels, dealTooltip } = getTableHeaderDetails(component);
+
+        expect(headerLabels).toEqual(['Buy', 'Sell']);
+        expect(filterLabels).toEqual(['All Buy Tokens', 'All Sell Tokens']);
+        expect(dealTooltip).toBe(DEAL_TOOLTIP_TEXT);
     });
 
     it('renders ViewOrders row using display symbols for sell/buy tokens', async () => {
@@ -148,10 +211,10 @@ describe('orders tabs display symbol rendering', () => {
         component.renderer.startExpiryTimer = vi.fn();
 
         const row = await component.createOrderRow(createOrder());
-        const symbols = Array.from(row.querySelectorAll('.token-symbol'))
-            .map((element) => element.textContent.trim());
+        const { symbols, dealTooltip } = getRowDisplayDetails(row);
 
         expect(symbols).toEqual(['AAA.issuer', 'AAA']);
+        expect(dealTooltip).toBe(DEAL_TOOLTIP_TEXT);
     });
 
     it('renders MyOrders row using display symbols for sell/buy tokens', async () => {
@@ -168,10 +231,10 @@ describe('orders tabs display symbol rendering', () => {
         component.renderer.startExpiryTimer = vi.fn();
 
         const row = await component.createOrderRow(createOrder());
-        const symbols = Array.from(row.querySelectorAll('.token-symbol'))
-            .map((element) => element.textContent.trim());
+        const { symbols, dealTooltip } = getRowDisplayDetails(row);
 
         expect(symbols).toEqual(['AAA.issuer', 'AAA']);
+        expect(dealTooltip).toBe(DEAL_TOOLTIP_TEXT);
     });
 
     it('renders TakerOrders row using display symbols for sell/buy tokens', async () => {
@@ -188,10 +251,10 @@ describe('orders tabs display symbol rendering', () => {
         component.renderer.startExpiryTimer = vi.fn();
 
         const row = await component.createOrderRow(createOrder());
-        const symbols = Array.from(row.querySelectorAll('.token-symbol'))
-            .map((element) => element.textContent.trim());
+        const { symbols, dealTooltip } = getRowDisplayDetails(row);
 
         expect(symbols).toEqual(['AAA.issuer', 'AAA']);
+        expect(dealTooltip).toBe(DEAL_TOOLTIP_TEXT);
     });
 
     it('uses fallback formatting, price classes, and expiry text in ViewOrders rows', async () => {

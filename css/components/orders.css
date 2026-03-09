@@ -1240,28 +1240,59 @@ button.info-icon.order-tooltip-icon {
   opacity: 1;
 }
 
-/* Remove sorting styles */
+/* Sortable order-table headers */
 th[data-sort] {
-  cursor: default;
+  cursor: pointer;
   user-select: none;
   position: relative;
 }
 
 th[data-sort]:hover {
-  background-color: transparent;
+  background-color: var(--bg-secondary);
+}
+
+th[data-sort]:focus-visible {
+  outline: 2px solid var(--accent-color, #3b82f6);
+  outline-offset: -2px;
 }
 
 .sort-icon {
-  display: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  opacity: 0.55;
+  transition: transform 0.18s ease, opacity 0.18s ease, color 0.18s ease;
 }
 
-/* Remove active sort state */
 th[data-sort].active-sort {
-  background-color: transparent;
+  background-color: var(--bg-secondary);
 }
 
 th[data-sort].active-sort .sort-icon {
-  display: none;
+  color: var(--text-primary);
+  opacity: 1;
+}
+
+th[data-sort][data-sort-direction="asc"] .sort-icon {
+  transform: rotate(180deg);
+}
+
+.sort-header-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+}
+
+.sort-header-label {
+  min-width: 0;
+}
+
+.sort-header-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 .filters-group {
