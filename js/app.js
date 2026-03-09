@@ -1999,7 +1999,7 @@ document.addEventListener('DOMContentLoaded', () => {
 			const selectedNetwork = getNetworkBySlug(selectedSlug) || getDefaultNetwork();
 
 			if (!walletManager.hasInjectedProvider()) {
-				window.app?.showWarning?.('MetaMask is required. Phantom is not supported.');
+				window.app?.showWarning?.('No injected wallet detected.');
 				return;
 			}
 

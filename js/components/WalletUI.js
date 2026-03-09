@@ -262,7 +262,7 @@ export class WalletUI extends BaseComponent {
             this.debug('Checking initial connection state...');
             
             if (!walletManager.hasInjectedProvider()) {
-                this.debug('No supported MetaMask provider found, initializing in read-only mode');
+                this.debug('No injected wallet provider found, initializing in read-only mode');
                 return;
             }
             
