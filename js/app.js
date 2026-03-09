@@ -956,11 +956,6 @@ class App {
 				this.warn('Footer failed to initialize', e);
 			}
 
-			this.handleConnectWallet = async (e) => {
-				e && e.preventDefault();
-				await this.connectWallet();
-			};
-
 			// Fallback for rendering components that are not CreateOrder, ViewOrders, TakerOrders, WalletUI, or Cleanup
 			Object.entries(this.components).forEach(([id, component]) => {
 				if (component instanceof BaseComponent &&
@@ -997,12 +992,6 @@ class App {
 			);
 			const hasInitialConnectedContext = isInitiallyConnected && isInitialNetworkMatch;
 			this.currentTab = hasInitialConnectedContext ? 'create-order' : 'view-orders';
-
-			// Add wallet connect button handler
-			const walletConnectBtn = document.getElementById('walletConnect');
-			if (walletConnectBtn) {
-				walletConnectBtn.addEventListener('click', this.handleConnectWallet);
-			}
 
 				// Add wallet connection state handler
 				walletManager.addListener(async (event, data) => {
@@ -1399,20 +1388,6 @@ class App {
 		} catch (error) {
 			console.error('[App] Error initializing components:', error);
 			this.showError("Component failed to initialize. Limited functionality available.");
-		}
-	}
-
-	async connectWallet() {
-		const loader = this.showLoader();
-		try {
-			await walletManager.connect({ userInitiated: true });
-		} catch (error) {
-			// Don't show toast here - WalletUI component handles the error display
-			this.error('Wallet connection failed:', error);
-		} finally {
-			if (loader && loader.parentElement) {
-				loader.parentElement.removeChild(loader);
-			}
 		}
 	}
 
