@@ -447,10 +447,7 @@ class App {
 		}
 
 		if (!this.tabRailResizeHandler) {
-			this.tabRailResizeHandler = () => {
-				this.scrollActiveTabIntoView({ behavior: 'auto' });
-				this.updateTabRailOverflowState();
-			};
+			this.tabRailResizeHandler = () => this.updateTabRailOverflowState();
 			window.addEventListener('resize', this.tabRailResizeHandler);
 		}
 
@@ -489,42 +486,6 @@ class App {
 		if (this.tabRailRightArrow) {
 			this.tabRailRightArrow.disabled = !(shouldShowArrows && canScrollRight);
 		}
-	}
-
-	getVisibleActiveTabButton() {
-		if (!this.tabRail) return null;
-		const candidates = Array.from(this.tabRail.querySelectorAll('.tab-button.active'));
-		for (const button of candidates) {
-			const style = window.getComputedStyle(button);
-			if (style.display !== 'none' && style.visibility !== 'hidden') {
-				return button;
-			}
-		}
-		return null;
-	}
-
-	scrollActiveTabIntoView({ behavior = 'smooth' } = {}) {
-		if (!this.tabRail) {
-			this.initializeTabRail();
-		}
-		if (!window.matchMedia('(max-width: 768px)').matches) {
-			this.updateTabRailOverflowState();
-			return;
-		}
-
-		const activeButton = this.getVisibleActiveTabButton();
-		if (!activeButton) {
-			this.updateTabRailOverflowState();
-			return;
-		}
-
-		activeButton.scrollIntoView({
-			block: 'nearest',
-			inline: 'center',
-			behavior
-		});
-
-		window.setTimeout(() => this.updateTabRailOverflowState(), 140);
 	}
 
 	getTabSkeletonVariant(tabId) {
@@ -1173,8 +1134,6 @@ class App {
 					}
 				}
 
-				this.scrollActiveTabIntoView({ behavior: 'auto' });
-
 				this.scheduleOrderTabVisibilityRefresh();
 				this.scheduleClaimTabVisibilityRefresh();
 			};
@@ -1542,7 +1501,6 @@ class App {
 				}
 			});
 			this.currentTab = tabId;
-			this.scrollActiveTabIntoView();
 
 			// Show and initialize selected tab
 			if (tabContent) {
