@@ -110,13 +110,13 @@ export class OrdersTableRenderer {
             }))
             .sort((a, b) => a.displaySymbol.localeCompare(b.displaySymbol));
         
-        let mobileRefreshSection = '';
+        let refreshSection = '';
         if (this.options.showRefreshButton) {
-            mobileRefreshSection = `
-                <div class="refresh-container refresh-container--mobile">
-                    <button class="refresh-prices-button js-refresh-prices" type="button">↻ Refresh Prices</button>
+            refreshSection = `
+                <div class="refresh-container refresh-container--top">
                     <span class="refresh-status"></span>
                     <span class="last-updated js-last-updated"></span>
+                    <button class="refresh-prices-button js-refresh-prices" type="button">Refresh Prices</button>
                 </div>
             `;
         }
@@ -139,23 +139,8 @@ export class OrdersTableRenderer {
                     </label>
                 </div>
 
-                <div class="pagination-controls">
-                    <select id="page-size-select" class="page-size-select">
-                        <option value="10">10 per page</option>
-                        <option value="25" selected>25 per page</option>
-                        <option value="50">50 per page</option>
-                        <option value="100">100 per page</option>
-                        <option value="-1">View all</option>
-                    </select>
-                    
-                    <div class="pagination-buttons">
-                        <button class="pagination-button prev-page" title="Previous page">←</button>
-                        <span class="page-info">Page 1 of 1</span>
-                        <button class="pagination-button next-page" title="Next page">→</button>
-                    </div>
-                </div>
+                ${refreshSection}
             </div>
-            ${mobileRefreshSection}
         `;
 
         // Advanced filters
@@ -239,24 +224,12 @@ export class OrdersTableRenderer {
     _createBottomControls(onRefresh) {
         const bottomControls = this.component.createElement('div', 'filter-controls bottom-controls');
         
-        let refreshSection = '';
-        if (this.options.showRefreshButton) {
-            refreshSection = `
-                <div class="refresh-container">
-                    <button class="refresh-prices-button js-refresh-prices" type="button">↻ Refresh Prices</button>
-                    <span class="refresh-status"></span>
-                    <span class="last-updated js-last-updated"></span>
-                </div>
-            `;
-        }
-        
         bottomControls.innerHTML = `
             <div class="filter-row">
-                ${refreshSection}
                 <div class="pagination-controls">
-                    <select class="page-size-select">
-                        <option value="10">10 per page</option>
-                        <option value="25" selected>25 per page</option>
+                    <select id="page-size-select" class="page-size-select">
+                        <option value="10" selected>10 per page</option>
+                        <option value="25">25 per page</option>
                         <option value="50">50 per page</option>
                         <option value="100">100 per page</option>
                         <option value="-1">View all</option>
@@ -347,6 +320,10 @@ export class OrdersTableRenderer {
             const nextButton = controls.querySelector('.next-page');
             const pageInfo = controls.querySelector('.page-info');
             
+            if (!prevButton || !nextButton || !pageInfo) {
+                return;
+            }
+            
             prevButton.addEventListener('click', () => {
                 this.debug('Previous clicked, current page:', this.component.currentPage);
                 if (this.component.currentPage > 1) {
@@ -357,7 +334,7 @@ export class OrdersTableRenderer {
             });
             
             nextButton.addEventListener('click', () => {
-                const pageSize = parseInt(this.component.container.querySelector('#page-size-select')?.value || '25');
+                const pageSize = parseInt(this.component.container.querySelector('#page-size-select')?.value || '10');
                 const totalPages = Math.ceil(this.component.totalOrders / pageSize);
                 this.debug('Next clicked, current page:', this.component.currentPage, 'total orders:', this.component.totalOrders, 'page size:', pageSize);
                 if (this.component.currentPage < totalPages) {
@@ -368,7 +345,7 @@ export class OrdersTableRenderer {
             });
         };
 
-        const controls = this.component.container.querySelectorAll('.filter-controls');
+        const controls = this.component.container.querySelectorAll('.pagination-controls');
         controls.forEach(setupPaginationListeners);
     }
 
@@ -412,8 +389,8 @@ export class OrdersTableRenderer {
                     if (result.success) {
                         this._setRefreshControlsState(controls, {
                             isLoading: false,
-                            text: `Updated ${new Date().toLocaleTimeString()}`,
-                            statusClass: 'success'
+                            text: '',
+                            statusClass: ''
                         });
                         controls.forEach((entry) => {
                             if (entry.timestamp) {
@@ -453,7 +430,7 @@ export class OrdersTableRenderer {
     _setRefreshControlsState(controls, { isLoading = false, text = '', statusClass = '' }) {
         controls.forEach((control) => {
             control.button.disabled = isLoading;
-            control.button.textContent = isLoading ? '↻ Refreshing...' : '↻ Refresh Prices';
+            control.button.textContent = isLoading ? 'Refreshing...' : 'Refresh Prices';
             control.status.className = `refresh-status${statusClass ? ` ${statusClass}` : ''}`;
             control.status.textContent = text;
             control.status.style.opacity = text || isLoading ? 1 : 0;
@@ -464,7 +441,7 @@ export class OrdersTableRenderer {
      * Update page info display
      */
     updatePageInfo(pageInfoElement) {
-        const pageSize = parseInt(this.component.container.querySelector('#page-size-select')?.value || '25');
+        const pageSize = parseInt(this.component.container.querySelector('#page-size-select')?.value || '10');
         const totalPages = Math.ceil(this.component.totalOrders / pageSize);
         pageInfoElement.textContent = `Page ${this.component.currentPage} of ${totalPages}`;
     }
@@ -474,12 +451,16 @@ export class OrdersTableRenderer {
      */
     updatePaginationControls(totalOrders) {
         this.component.totalOrders = totalOrders;
-        const pageSize = parseInt(this.component.container.querySelector('#page-size-select')?.value || '25');
+        const pageSize = parseInt(this.component.container.querySelector('#page-size-select')?.value || '10');
         
         const updateControls = (container) => {
             const prevButton = container.querySelector('.prev-page');
             const nextButton = container.querySelector('.next-page');
             const pageInfo = container.querySelector('.page-info');
+            
+            if (!prevButton || !nextButton || !pageInfo) {
+                return;
+            }
             
             if (pageSize === -1) {
                 // Show all orders
@@ -504,7 +485,7 @@ export class OrdersTableRenderer {
         };
         
         // Update both top and bottom controls
-        const controls = this.component.container.querySelectorAll('.filter-controls');
+        const controls = this.component.container.querySelectorAll('.pagination-controls');
         controls.forEach(updateControls);
     }
 
