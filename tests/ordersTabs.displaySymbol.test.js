@@ -129,9 +129,84 @@ describe('orders tabs display symbol rendering', () => {
         const sellOptions = Array.from(
             component.container.querySelectorAll('#sell-token-filter option')
         ).map((option) => option.textContent.trim());
+        const headerLabels = [
+            component.container.querySelector('thead th:nth-child(2)')?.textContent?.trim(),
+            component.container.querySelector('thead th:nth-child(3)')?.textContent?.trim()
+        ];
+        const filterLabels = [
+            component.container.querySelector('#sell-token-filter option')?.textContent?.trim(),
+            component.container.querySelector('#buy-token-filter option')?.textContent?.trim()
+        ];
+        const dealTooltip = component.container.querySelector('th[data-sort="deal"] .order-tooltip-icon')
+            ?.getAttribute('data-order-tooltip');
 
         expect(sellOptions).toEqual(['All Sell Tokens', 'LINK', 'LINK.pol', 'USDC']);
+        expect(headerLabels).toEqual(['Sell', 'Buy']);
+        expect(filterLabels).toEqual(['All Sell Tokens', 'All Buy Tokens']);
+        expect(dealTooltip).toContain('Buy is what you receive and Sell is what you offer');
         expect(sellOptions.some((label) => /^LINK\.[a-f0-9]{4}$/i.test(label))).toBe(false);
+    });
+
+    it('renders ViewOrders with buyer-perspective headers and filters', async () => {
+        document.body.innerHTML = '<div id="view-orders"></div>';
+
+        const ws = {
+            tokenCache: new Map([
+                [POLYGON_LINK_POS, { address: POLYGON_LINK_POS, symbol: 'LINK', name: 'ChainLink Token' }],
+                [OTHER_LINK, { address: OTHER_LINK, symbol: 'LINK', name: 'ChainLink Token' }],
+                [TOKEN_C, TOKEN_INFO[TOKEN_C]]
+            ])
+        };
+        const component = new ViewOrders();
+        component.setContext(createContext(ws));
+
+        await component.setupTable();
+
+        const headerLabels = [
+            component.container.querySelector('thead th:nth-child(2)')?.textContent?.trim(),
+            component.container.querySelector('thead th:nth-child(3)')?.textContent?.trim()
+        ];
+        const filterLabels = [
+            component.container.querySelector('#sell-token-filter option')?.textContent?.trim(),
+            component.container.querySelector('#buy-token-filter option')?.textContent?.trim()
+        ];
+        const dealTooltip = component.container.querySelector('th[data-sort="deal"] .order-tooltip-icon')
+            ?.getAttribute('data-order-tooltip');
+
+        expect(headerLabels).toEqual(['Buy', 'Sell']);
+        expect(filterLabels).toEqual(['All Buy Tokens', 'All Sell Tokens']);
+        expect(dealTooltip).toContain('Buy is what you receive and Sell is what you pay');
+    });
+
+    it('renders TakerOrders with buyer-perspective headers and filters', async () => {
+        document.body.innerHTML = '<div id="taker-orders"></div>';
+
+        const ws = {
+            tokenCache: new Map([
+                [POLYGON_LINK_POS, { address: POLYGON_LINK_POS, symbol: 'LINK', name: 'ChainLink Token' }],
+                [OTHER_LINK, { address: OTHER_LINK, symbol: 'LINK', name: 'ChainLink Token' }],
+                [TOKEN_C, TOKEN_INFO[TOKEN_C]]
+            ])
+        };
+        const component = new TakerOrders();
+        component.setContext(createContext(ws, TAKER));
+
+        await component.setupTable();
+
+        const headerLabels = [
+            component.container.querySelector('thead th:nth-child(2)')?.textContent?.trim(),
+            component.container.querySelector('thead th:nth-child(3)')?.textContent?.trim()
+        ];
+        const filterLabels = [
+            component.container.querySelector('#sell-token-filter option')?.textContent?.trim(),
+            component.container.querySelector('#buy-token-filter option')?.textContent?.trim()
+        ];
+        const dealTooltip = component.container.querySelector('th[data-sort="deal"] .order-tooltip-icon')
+            ?.getAttribute('data-order-tooltip');
+
+        expect(headerLabels).toEqual(['Buy', 'Sell']);
+        expect(filterLabels).toEqual(['All Buy Tokens', 'All Sell Tokens']);
+        expect(dealTooltip).toContain('Buy is what you receive and Sell is what you pay');
     });
 
     it('renders ViewOrders row using display symbols for sell/buy tokens', async () => {
@@ -150,8 +225,10 @@ describe('orders tabs display symbol rendering', () => {
         const row = await component.createOrderRow(createOrder());
         const symbols = Array.from(row.querySelectorAll('.token-symbol'))
             .map((element) => element.textContent.trim());
+        const dealTooltip = row.querySelector('.deal-tooltip-icon')?.getAttribute('data-order-tooltip');
 
         expect(symbols).toEqual(['AAA.issuer', 'AAA']);
+        expect(dealTooltip).toContain('Buy is what you receive and Sell is what you pay');
     });
 
     it('renders MyOrders row using display symbols for sell/buy tokens', async () => {
@@ -170,8 +247,10 @@ describe('orders tabs display symbol rendering', () => {
         const row = await component.createOrderRow(createOrder());
         const symbols = Array.from(row.querySelectorAll('.token-symbol'))
             .map((element) => element.textContent.trim());
+        const dealTooltip = row.querySelector('.deal-tooltip-icon')?.getAttribute('data-order-tooltip');
 
         expect(symbols).toEqual(['AAA.issuer', 'AAA']);
+        expect(dealTooltip).toContain('Buy is what you receive and Sell is what you offer');
     });
 
     it('renders TakerOrders row using display symbols for sell/buy tokens', async () => {
@@ -190,8 +269,10 @@ describe('orders tabs display symbol rendering', () => {
         const row = await component.createOrderRow(createOrder());
         const symbols = Array.from(row.querySelectorAll('.token-symbol'))
             .map((element) => element.textContent.trim());
+        const dealTooltip = row.querySelector('.deal-tooltip-icon')?.getAttribute('data-order-tooltip');
 
         expect(symbols).toEqual(['AAA.issuer', 'AAA']);
+        expect(dealTooltip).toContain('Buy is what you receive and Sell is what you pay');
     });
 
     it('uses fallback formatting, price classes, and expiry text in ViewOrders rows', async () => {

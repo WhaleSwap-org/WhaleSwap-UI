@@ -12,11 +12,20 @@ const ORDER_TOOLTIP_VIEWPORT_PADDING = 12;
 
 let activeOrderTooltipTrigger = null;
 
-export const DEAL_TOOLTIP_TEXT = `Deal = Buy Value / Sell Value
+export function getDealTooltipText(perspective = 'maker') {
+    const perspectiveLine = perspective === 'buyer'
+        ? '• On this tab, Buy is what you receive and Sell is what you pay'
+        : '• On this tab, Buy is what you receive and Sell is what you offer';
 
+    return `Deal = Buy Value / Sell Value
+
+${perspectiveLine}
 • Higher deal number is better
 • Deal > 1: better deal based on market prices
 • Deal < 1: worse deal based on market prices`;
+}
+
+export const DEAL_TOOLTIP_TEXT = getDealTooltipText();
 
 function getOrderTooltipElement() {
     let tooltip = document.getElementById(ORDER_TOOLTIP_ELEMENT_ID);
@@ -117,21 +126,32 @@ export function createInlineTooltipIcon(
     tooltipText,
     {
         className = 'info-icon order-tooltip-icon',
-        ariaLabel = 'More information'
+        ariaLabel = 'More information',
+        attributes = {}
     } = {}
 ) {
     const safeTooltip = escapeHtmlAttribute(tooltipText);
     const safeAriaLabel = escapeHtmlAttribute(ariaLabel);
-    return `<button type="button" class="${className}" data-order-tooltip="${safeTooltip}" aria-label="${safeAriaLabel}">ⓘ</button>`;
+    const additionalAttributes = Object.entries(attributes)
+        .filter(([, value]) => value !== undefined && value !== null && value !== false)
+        .map(([name, value]) => {
+            if (value === true) {
+                return ` ${name}`;
+            }
+            return ` ${name}="${escapeHtmlAttribute(value)}"`;
+        })
+        .join('');
+
+    return `<button type="button" class="${className}" data-order-tooltip="${safeTooltip}" aria-label="${safeAriaLabel}"${additionalAttributes}>ⓘ</button>`;
 }
 
-export function createDealCellHTML(dealText) {
+export function createDealCellHTML(dealText, { tooltipText = DEAL_TOOLTIP_TEXT } = {}) {
     const safeDealText = escapeHtmlText(dealText);
     return `
         <div class="deal-cell-content">
             <span class="deal-card-label">
                 Deal
-                ${createInlineTooltipIcon(DEAL_TOOLTIP_TEXT, {
+                ${createInlineTooltipIcon(tooltipText, {
                     className: 'info-icon order-tooltip-icon deal-tooltip-icon',
                     ariaLabel: 'Explain deal value'
                 })}
@@ -161,8 +181,10 @@ export function setupOrderTooltips(container = document) {
         });
         trigger.addEventListener('click', (event) => {
             event.preventDefault();
-            event.stopPropagation();
             showOrderTooltip(trigger);
+            if (trigger.dataset.sortClick !== 'true') {
+                event.stopPropagation();
+            }
         });
     });
 }

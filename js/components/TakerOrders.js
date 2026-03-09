@@ -1,11 +1,12 @@
 import { BaseComponent } from './BaseComponent.js';
 import { createLogger } from '../services/LogService.js';
-import { createDealCellHTML, processOrderAddress, generateStatusCellHTML, setupClickToCopy } from '../utils/ui.js';
+import { createDealCellHTML, getDealTooltipText, processOrderAddress, generateStatusCellHTML, setupClickToCopy } from '../utils/ui.js';
 import { calculateTotalValue, formatDealValue } from '../utils/orderUtils.js';
 import { OrdersComponentHelper } from '../services/OrdersComponentHelper.js';
-import { OrdersTableRenderer } from '../services/OrdersTableRenderer.js';
+import { OrdersTableRenderer, ORDER_TABLE_PERSPECTIVES } from '../services/OrdersTableRenderer.js';
 import { buildTokenDisplaySymbolMap } from '../utils/tokenDisplay.js';
-import { buildOrderRowContext } from '../utils/ordersComponentHelpers.js';
+import { buildOrderRowContext, getBuyerDealRatio } from '../utils/ordersComponentHelpers.js';
+import { DEFAULT_ORDER_SORT, normalizeOrderSort, sortOrdersByCurrentSort } from '../utils/orderSort.js';
 
 export class TakerOrders extends BaseComponent {
     constructor() {
@@ -32,6 +33,7 @@ export class TakerOrders extends BaseComponent {
         this.helper = new OrdersComponentHelper(this);
         this.renderer = new OrdersTableRenderer(this, {
             rowRenderer: (order) => this.createOrderRow(order),
+            perspective: ORDER_TABLE_PERSPECTIVES.BUYER,
             showRefreshButton: true
         });
     }
@@ -110,7 +112,9 @@ export class TakerOrders extends BaseComponent {
             // Get filter states
             const sellTokenFilter = this.container.querySelector('#sell-token-filter')?.value;
             const buyTokenFilter = this.container.querySelector('#buy-token-filter')?.value;
-            const orderSort = this.container.querySelector('#order-sort')?.value;
+            const orderSort = normalizeOrderSort(
+                this.container.querySelector('#order-sort')?.value || DEFAULT_ORDER_SORT
+            );
             const showOnlyActive = this.container.querySelector('#fillable-orders-toggle')?.checked ?? true;
             const pageSize = parseInt(this.container.querySelector('#page-size-select')?.value || '25');
 
@@ -151,15 +155,11 @@ export class TakerOrders extends BaseComponent {
             this.totalOrders = ordersToDisplay.length;
 
             // Apply sorting
-            if (orderSort === 'newest') {
-                ordersToDisplay.sort((a, b) => b.id - a.id);
-            } else if (orderSort === 'best-deal') {
-                ordersToDisplay.sort((a, b) => {
-                    const dealA = a.dealMetrics?.deal > 0 ? 1 / a.dealMetrics.deal : Infinity;
-                    const dealB = b.dealMetrics?.deal > 0 ? 1 / b.dealMetrics.deal : Infinity;
-                    return dealB - dealA; // Higher deal is better for buyer perspective
-                });
-            }
+            ordersToDisplay = sortOrdersByCurrentSort(ordersToDisplay, {
+                sortValue: orderSort,
+                getDealSortValue: (order) => getBuyerDealRatio(order),
+                getExpirySortValue: (order) => ws.getOrderExpiryTime(order)
+            });
 
             // Apply pagination
             const startIndex = (this.currentPage - 1) * pageSize;
@@ -314,6 +314,7 @@ export class TakerOrders extends BaseComponent {
             const dealText = dealLoading
                 ? 'loading...'
                 : formatDealValue(buyerDealRatio);
+            const dealTooltipText = getDealTooltipText(this.renderer.options.perspective);
 
             tr.innerHTML = `
                 <td>${order.id}</td>
@@ -345,7 +346,7 @@ export class TakerOrders extends BaseComponent {
                         </div>
                     </div>
                 </td>
-                <td class="deal-cell">${createDealCellHTML(dealText)}</td>
+                <td class="deal-cell">${createDealCellHTML(dealText, { tooltipText: dealTooltipText })}</td>
                 <td>${expiryText}</td>
                 <td class="order-status">
                     ${generateStatusCellHTML(orderStatus, counterpartyAddress, isZeroAddr, formattedAddress)}

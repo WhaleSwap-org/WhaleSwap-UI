@@ -1,7 +1,59 @@
 import { formatTimeDiff } from '../utils/orderUtils.js';
 import { createLogger } from './LogService.js';
-import { createInlineTooltipIcon, setupOrderTooltips } from '../utils/ui.js';
+import { createInlineTooltipIcon, getDealTooltipText, setupOrderTooltips } from '../utils/ui.js';
 import { buildTokenDisplaySymbolMap, getDisplaySymbol } from '../utils/tokenDisplay.js';
+import {
+    DEFAULT_ORDER_SORT,
+    SORTABLE_ORDER_COLUMNS,
+    getNextOrderSort,
+    getOrderSortMeta,
+    normalizeOrderSort,
+    renderOrderSortOptions
+} from '../utils/orderSort.js';
+
+export const ORDER_TABLE_PERSPECTIVES = Object.freeze({
+    MAKER: 'maker',
+    BUYER: 'buyer'
+});
+
+function getOrderTableTokenLabels(perspective = ORDER_TABLE_PERSPECTIVES.MAKER) {
+    if (perspective === ORDER_TABLE_PERSPECTIVES.BUYER) {
+        return {
+            firstColumn: 'Buy',
+            secondColumn: 'Sell',
+            firstFilter: 'All Buy Tokens',
+            secondFilter: 'All Sell Tokens'
+        };
+    }
+
+    return {
+        firstColumn: 'Sell',
+        secondColumn: 'Buy',
+        firstFilter: 'All Sell Tokens',
+        secondFilter: 'All Buy Tokens'
+    };
+}
+
+function getDefaultOrderTableHeaders(perspective = ORDER_TABLE_PERSPECTIVES.MAKER) {
+    const tokenLabels = getOrderTableTokenLabels(perspective);
+
+    return [
+        { text: 'ID' },
+        { text: tokenLabels.firstColumn },
+        { text: tokenLabels.secondColumn },
+        {
+            text: 'Deal',
+            title: getDealTooltipText(perspective),
+            sortColumn: SORTABLE_ORDER_COLUMNS.DEAL
+        },
+        {
+            text: 'Expires',
+            sortColumn: SORTABLE_ORDER_COLUMNS.EXPIRES
+        },
+        { text: 'Status' },
+        { text: 'Action' }
+    ];
+}
 
 /**
  * OrdersTableRenderer - Handles table structure, pagination, and expiry timers
@@ -16,23 +68,27 @@ import { buildTokenDisplaySymbolMap, getDisplaySymbol } from '../utils/tokenDisp
 export class OrdersTableRenderer {
     constructor(component, options = {}) {
         this.component = component; // Reference to the component using this renderer
+        const perspective = options.perspective === ORDER_TABLE_PERSPECTIVES.BUYER
+            ? ORDER_TABLE_PERSPECTIVES.BUYER
+            : ORDER_TABLE_PERSPECTIVES.MAKER;
+        const tokenLabels = getOrderTableTokenLabels(perspective);
+
         this.options = {
             // Custom row renderer function: (order) => HTMLElement
             rowRenderer: options.rowRenderer || null,
+            perspective,
             // Table headers (array of header objects: { text, title? })
-            headers: options.headers || [
-                { text: 'ID' },
-                { text: 'Buy' },
-                { text: 'Sell' },
-                { text: 'Deal', title: 'Deal = Buy Value / Sell Value\n\n• Higher deal number is better\n• Deal > 1: better deal based on market prices\n• Deal < 1: worse deal based on market prices' },
-                { text: 'Expires' },
-                { text: 'Status' },
-                { text: 'Action' }
-            ],
+            headers: options.headers || getDefaultOrderTableHeaders(perspective),
             // Filter toggle label
             filterToggleLabel: options.filterToggleLabel || 'Show only fillable orders',
             // Show refresh button
             showRefreshButton: options.showRefreshButton !== false,
+            // Default page size option
+            defaultPageSize: String(options.defaultPageSize || '25'),
+            tokenFilterLabels: {
+                first: options.tokenFilterLabels?.first || tokenLabels.firstFilter,
+                second: options.tokenFilterLabels?.second || tokenLabels.secondFilter
+            },
             // Custom filter controls HTML (optional)
             customFilterControls: options.customFilterControls || null
         };
@@ -44,6 +100,141 @@ export class OrdersTableRenderer {
 
         this._refreshInFlight = false;
         this._refreshStatusTimeout = null;
+        this._boundViewportAccessibilityHandler = null;
+    }
+
+    _isMobileCardMode() {
+        return typeof window !== 'undefined'
+            && typeof window.matchMedia === 'function'
+            && window.matchMedia('(max-width: 768px)').matches;
+    }
+
+    _getCurrentSortValue() {
+        const sortSelect = this.component.container?.querySelector('#order-sort');
+        return normalizeOrderSort(sortSelect?.value || DEFAULT_ORDER_SORT);
+    }
+
+    _getDefaultPageSizeValue() {
+        const pageSize = String(this.options.defaultPageSize || '25');
+        return ['10', '25', '50', '100', '-1'].includes(pageSize) ? pageSize : '25';
+    }
+
+    _getDefaultPageSizeNumber() {
+        return parseInt(this._getDefaultPageSizeValue(), 10);
+    }
+
+    _renderPageSizeOptions() {
+        const defaultPageSize = this._getDefaultPageSizeValue();
+        return ['10', '25', '50', '100', '-1'].map((value) => `
+            <option value="${value}"${value === defaultPageSize ? ' selected' : ''}>
+                ${value === '-1' ? 'View all' : `${value} per page`}
+            </option>
+        `).join('');
+    }
+
+    setCurrentSortValue(sortValue) {
+        const normalizedSort = normalizeOrderSort(sortValue);
+        const sortSelect = this.component.container?.querySelector('#order-sort');
+        if (sortSelect) {
+            sortSelect.value = normalizedSort;
+        }
+        this._updateSortableHeaderState(normalizedSort);
+        return normalizedSort;
+    }
+
+    setupSortControls(onRefresh) {
+        this.setCurrentSortValue(this._getCurrentSortValue());
+        this._setupSortableHeaderListeners(onRefresh);
+        this._setupDesktopOnlyHeaderAccessibility();
+    }
+
+    _setupDesktopOnlyHeaderAccessibility() {
+        this._updateDesktopOnlyHeaderAccessibility();
+
+        if (this._boundViewportAccessibilityHandler || typeof window === 'undefined') {
+            return;
+        }
+
+        this._boundViewportAccessibilityHandler = () => {
+            this._updateDesktopOnlyHeaderAccessibility();
+        };
+        window.addEventListener('resize', this._boundViewportAccessibilityHandler);
+    }
+
+    _updateDesktopOnlyHeaderAccessibility() {
+        const isMobileCardMode = this._isMobileCardMode();
+        const sortableHeaders = Array.from(this.component.container?.querySelectorAll('thead th[data-sort]') || []);
+        sortableHeaders.forEach((headerCell) => {
+            headerCell.tabIndex = isMobileCardMode ? -1 : 0;
+        });
+
+        const headerTooltipButtons = Array.from(
+            this.component.container?.querySelectorAll('thead .order-tooltip-icon') || []
+        );
+        headerTooltipButtons.forEach((button) => {
+            button.tabIndex = isMobileCardMode ? -1 : 0;
+        });
+
+        if (!isMobileCardMode || typeof document === 'undefined') {
+            return;
+        }
+
+        const thead = this.component.container?.querySelector('thead');
+        if (thead?.contains(document.activeElement)) {
+            document.activeElement.blur?.();
+        }
+    }
+
+    _setupSortableHeaderListeners(onRefresh) {
+        const sortableHeaders = Array.from(this.component.container?.querySelectorAll('th[data-sort]') || []);
+        sortableHeaders.forEach((headerCell) => {
+            if (headerCell.dataset.sortBound === 'true') return;
+            headerCell.dataset.sortBound = 'true';
+
+            const activateSort = () => {
+                if (this._isMobileCardMode()) return;
+
+                const nextSort = getNextOrderSort(this._getCurrentSortValue(), headerCell.dataset.sort);
+                this.component.currentPage = 1;
+                this.setCurrentSortValue(nextSort);
+                if (onRefresh) onRefresh();
+            };
+
+            headerCell.addEventListener('click', activateSort);
+            headerCell.addEventListener('keydown', (event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                activateSort();
+            });
+        });
+    }
+
+    _updateSortableHeaderState(sortValue = DEFAULT_ORDER_SORT) {
+        const normalizedSort = normalizeOrderSort(sortValue);
+        const activeSort = getOrderSortMeta(normalizedSort);
+        const sortableHeaders = Array.from(this.component.container?.querySelectorAll('th[data-sort]') || []);
+
+        sortableHeaders.forEach((headerCell) => {
+            const isActive = headerCell.dataset.sort === activeSort.column;
+            headerCell.classList.toggle('active-sort', isActive);
+            headerCell.dataset.sortDirection = isActive ? activeSort.direction : '';
+            headerCell.setAttribute(
+                'aria-sort',
+                isActive
+                    ? (activeSort.direction === 'asc' ? 'ascending' : 'descending')
+                    : 'none'
+            );
+        });
+    }
+
+    _getSortIconMarkup() {
+        return `
+            <span class="sort-icon" aria-hidden="true">
+                <svg viewBox="0 0 16 16" width="12" height="12">
+                    <path fill="currentColor" d="M4.47 6.97a.75.75 0 0 1 1.06 0L8 9.44l2.47-2.47a.75.75 0 1 1 1.06 1.06l-3 3a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 0 1 0-1.06Z"/>
+                </svg>
+            </span>
+        `;
     }
 
     /**
@@ -86,6 +277,7 @@ export class OrdersTableRenderer {
         
         // Setup event listeners AFTER appending (so elements exist in DOM)
         this._setupTableEventListeners(onRefresh);
+        this.setupSortControls(onRefresh);
         setupOrderTooltips(this.component.container);
     }
 
@@ -168,20 +360,19 @@ export class OrdersTableRenderer {
             <div class="filter-row">
                 <div class="token-filters">
                     <select id="sell-token-filter" class="token-filter">
-                        <option value="">All Buy Tokens</option>
+                        <option value="">${this.options.tokenFilterLabels.first}</option>
                         ${tokens.map(token => 
                             `<option value="${token.address}">${token.displaySymbol || token.symbol}</option>`
                         ).join('')}
                     </select>
                     <select id="buy-token-filter" class="token-filter">
-                        <option value="">All Sell Tokens</option>
+                        <option value="">${this.options.tokenFilterLabels.second}</option>
                         ${tokens.map(token => 
                             `<option value="${token.address}">${token.displaySymbol || token.symbol}</option>`
                         ).join('')}
                     </select>
                     <select id="order-sort" class="order-sort">
-                        <option value="newest">Newest First</option>
-                        <option value="best-deal">Best Deal First</option>
+                        ${renderOrderSortOptions(DEFAULT_ORDER_SORT)}
                     </select>
                 </div>
             </div>
@@ -200,14 +391,37 @@ export class OrdersTableRenderer {
         
         this.options.headers.forEach(header => {
             const th = this.component.createElement('th');
-            th.textContent = header.text;
-            if (header.title) {
-                const tooltipIcon = createInlineTooltipIcon(header.title, {
-                    className: 'info-icon order-tooltip-icon',
-                    ariaLabel: `${header.text} information`
-                });
-                th.innerHTML = `${header.text} ${tooltipIcon}`;
+
+            if (header.sortColumn) {
+                th.dataset.sort = header.sortColumn;
+                th.setAttribute('aria-sort', 'none');
             }
+
+            const headerParts = [`<span class="sort-header-label">${header.text}</span>`];
+            const controls = [];
+
+            if (header.title) {
+                controls.push(createInlineTooltipIcon(header.title, {
+                    className: 'info-icon order-tooltip-icon',
+                    ariaLabel: `${header.text} information`,
+                    attributes: header.sortColumn ? { 'data-sort-click': 'true' } : {}
+                }));
+            }
+
+            if (header.sortColumn) {
+                controls.push(this._getSortIconMarkup());
+            }
+
+            if (controls.length > 0) {
+                headerParts.push(`<span class="sort-header-controls">${controls.join('')}</span>`);
+            }
+
+            if (header.sortColumn) {
+                th.innerHTML = `<span class="sort-header-content">${headerParts.join('')}</span>`;
+            } else {
+                th.innerHTML = headerParts.join('');
+            }
+
             headerRow.appendChild(th);
         });
         
@@ -228,11 +442,7 @@ export class OrdersTableRenderer {
             <div class="filter-row">
                 <div class="pagination-controls">
                     <select id="page-size-select" class="page-size-select">
-                        <option value="10" selected>10 per page</option>
-                        <option value="25">25 per page</option>
-                        <option value="50">50 per page</option>
-                        <option value="100">100 per page</option>
-                        <option value="-1">View all</option>
+                        ${this._renderPageSizeOptions()}
                     </select>
                     <div class="pagination-buttons">
                         <button class="pagination-button prev-page" title="Previous page">←</button>
@@ -282,6 +492,8 @@ export class OrdersTableRenderer {
         }
         if (orderSort) {
             orderSort.addEventListener('change', () => {
+                this.component.currentPage = 1;
+                this.setCurrentSortValue(orderSort.value);
                 if (onRefresh) onRefresh();
             });
         }
@@ -334,7 +546,10 @@ export class OrdersTableRenderer {
             });
             
             nextButton.addEventListener('click', () => {
-                const pageSize = parseInt(this.component.container.querySelector('#page-size-select')?.value || '10');
+                const pageSize = parseInt(
+                    this.component.container.querySelector('#page-size-select')?.value || String(this._getDefaultPageSizeNumber()),
+                    10
+                );
                 const totalPages = Math.ceil(this.component.totalOrders / pageSize);
                 this.debug('Next clicked, current page:', this.component.currentPage, 'total orders:', this.component.totalOrders, 'page size:', pageSize);
                 if (this.component.currentPage < totalPages) {
@@ -441,7 +656,10 @@ export class OrdersTableRenderer {
      * Update page info display
      */
     updatePageInfo(pageInfoElement) {
-        const pageSize = parseInt(this.component.container.querySelector('#page-size-select')?.value || '10');
+        const pageSize = parseInt(
+            this.component.container.querySelector('#page-size-select')?.value || String(this._getDefaultPageSizeNumber()),
+            10
+        );
         const totalPages = Math.ceil(this.component.totalOrders / pageSize);
         pageInfoElement.textContent = `Page ${this.component.currentPage} of ${totalPages}`;
     }
@@ -451,7 +669,10 @@ export class OrdersTableRenderer {
      */
     updatePaginationControls(totalOrders) {
         this.component.totalOrders = totalOrders;
-        const pageSize = parseInt(this.component.container.querySelector('#page-size-select')?.value || '10');
+        const pageSize = parseInt(
+            this.component.container.querySelector('#page-size-select')?.value || String(this._getDefaultPageSizeNumber()),
+            10
+        );
         
         const updateControls = (container) => {
             const prevButton = container.querySelector('.prev-page');
@@ -608,7 +829,7 @@ export class OrdersTableRenderer {
     }
 
     _getTableColumnDescriptors() {
-        const defaultKeys = ['id', 'buy', 'sell', 'deal', 'expires', 'status', 'action'];
+        const defaultKeys = ['id', 'sell', 'buy', 'deal', 'expires', 'status', 'action'];
         const headerCells = Array.from(this.component.container.querySelectorAll('thead th'));
         return headerCells.map((headerCell, index) => {
             const label = this._extractHeaderLabel(headerCell);
@@ -628,7 +849,7 @@ export class OrdersTableRenderer {
     _extractHeaderLabel(headerCell) {
         if (!headerCell) return '';
         const clone = headerCell.cloneNode(true);
-        clone.querySelectorAll('.info-icon').forEach((icon) => icon.remove());
+        clone.querySelectorAll('.info-icon, .sort-icon').forEach((icon) => icon.remove());
         return clone.textContent.replace(/\s+/g, ' ').trim();
     }
 
@@ -639,6 +860,10 @@ export class OrdersTableRenderer {
         if (this._refreshStatusTimeout) {
             clearTimeout(this._refreshStatusTimeout);
             this._refreshStatusTimeout = null;
+        }
+        if (this._boundViewportAccessibilityHandler && typeof window !== 'undefined') {
+            window.removeEventListener('resize', this._boundViewportAccessibilityHandler);
+            this._boundViewportAccessibilityHandler = null;
         }
         if (this.component.expiryTimers) {
             this.component.expiryTimers.forEach(timerId => clearInterval(timerId));
