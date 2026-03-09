@@ -14,8 +14,8 @@ let activeOrderTooltipTrigger = null;
 
 export function getDealTooltipText(perspective = 'maker') {
     const perspectiveLine = perspective === 'buyer'
-        ? '• On this tab, Buy is what you receive and Sell is what you pay'
-        : '• On this tab, Buy is what you receive and Sell is what you offer';
+        ? '• Buy is what you, as buyer, receive when filling the order and Sell is what leaves your wallet to fill the order'
+        : '• Sell is what you, as seller, puts up to sell and Buy is what buyer pays to fill the order';
 
     return `Deal = Buy Value / Sell Value
 
