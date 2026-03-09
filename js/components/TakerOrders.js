@@ -157,8 +157,7 @@ export class TakerOrders extends BaseComponent {
             // Apply sorting
             ordersToDisplay = sortOrdersByCurrentSort(ordersToDisplay, {
                 sortValue: orderSort,
-                getDealSortValue: (order) => getBuyerDealRatio(order),
-                getExpirySortValue: (order) => ws.getOrderExpiryTime(order)
+                getDealSortValue: (order) => getBuyerDealRatio(order)
             });
 
             // Apply pagination

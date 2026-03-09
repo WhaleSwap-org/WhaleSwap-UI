@@ -88,14 +88,12 @@ export function sortOrdersByCurrentSort(
     orders,
     {
         sortValue,
-        getDealSortValue,
-        getExpirySortValue
+        getDealSortValue
     }
 ) {
     const normalizedSort = normalizeOrderSort(sortValue);
     const { column, direction } = getOrderSortMeta(normalizedSort);
     const dealSortAccessor = typeof getDealSortValue === 'function' ? getDealSortValue : () => undefined;
-    const expirySortAccessor = typeof getExpirySortValue === 'function' ? getExpirySortValue : () => undefined;
 
     return [...orders].sort((a, b) => {
         if (column === SORTABLE_ORDER_COLUMNS.DEAL) {
@@ -110,8 +108,8 @@ export function sortOrdersByCurrentSort(
 
         if (column === SORTABLE_ORDER_COLUMNS.EXPIRES) {
             return compareSortableNumbers(
-                expirySortAccessor(a),
-                expirySortAccessor(b),
+                a?.id,
+                b?.id,
                 direction,
                 a,
                 b

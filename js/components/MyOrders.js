@@ -189,8 +189,7 @@ export class MyOrders extends BaseComponent {
             // Apply sorting
             ordersToDisplay = sortOrdersByCurrentSort(ordersToDisplay, {
                 sortValue: orderSort,
-                getDealSortValue: (order) => getMakerDealRatio(order),
-                getExpirySortValue: (order) => ws.getOrderExpiryTime(order)
+                getDealSortValue: (order) => getMakerDealRatio(order)
             });
 
             // Apply pagination

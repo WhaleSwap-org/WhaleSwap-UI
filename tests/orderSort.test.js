@@ -5,33 +5,31 @@ import {
     sortOrdersByCurrentSort
 } from '../js/utils/orderSort.js';
 
-function createOrder(id, { dealValue, expiresAt }) {
+function createOrder(id, { dealValue }) {
     return {
         id,
-        dealValue,
-        expiresAt
+        dealValue
     };
 }
 
 describe('orderSort helpers', () => {
     const orders = [
-        createOrder(1, { dealValue: 4, expiresAt: 300 }),
-        createOrder(2, { dealValue: 2, expiresAt: 100 }),
-        createOrder(3, { dealValue: undefined, expiresAt: undefined }),
-        createOrder(4, { dealValue: 2, expiresAt: 100 })
+        createOrder(1, { dealValue: 4 }),
+        createOrder(2, { dealValue: 2 }),
+        createOrder(3, { dealValue: undefined }),
+        createOrder(4, { dealValue: 2 })
     ];
 
     const sort = (sortValue) => sortOrdersByCurrentSort(orders, {
         sortValue,
-        getDealSortValue: (order) => order.dealValue,
-        getExpirySortValue: (order) => order.expiresAt
+        getDealSortValue: (order) => order.dealValue
     }).map((order) => order.id);
 
-    it('sorts each supported direction and keeps missing values last', () => {
+    it('sorts deal by deal value and newest or oldest by order id', () => {
         expect(sort(ORDER_SORTS.BEST_DEAL)).toEqual([1, 4, 2, 3]);
         expect(sort(ORDER_SORTS.WORST_DEAL)).toEqual([4, 2, 1, 3]);
-        expect(sort(ORDER_SORTS.EXPIRES_NEWEST)).toEqual([1, 4, 2, 3]);
-        expect(sort(ORDER_SORTS.EXPIRES_OLDEST)).toEqual([4, 2, 1, 3]);
+        expect(sort(ORDER_SORTS.EXPIRES_NEWEST)).toEqual([4, 3, 2, 1]);
+        expect(sort(ORDER_SORTS.EXPIRES_OLDEST)).toEqual([1, 2, 3, 4]);
     });
 
     it('toggles sort direction by column using the shared state machine', () => {
