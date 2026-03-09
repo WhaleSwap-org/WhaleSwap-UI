@@ -3,6 +3,7 @@ import { ethers } from 'ethers';
 import { erc20Abi } from '../abi/erc20.js';
 import { createLogger } from '../services/LogService.js';
 import { getAppContext } from '../services/AppContext.js';
+import { WALLET_COMPATIBILITY_NOTICE } from '../config/index.js';
 import { getNetworkConfig, getNetworkById } from '../config/networks.js';
 
 /**
@@ -175,6 +176,10 @@ export class BaseComponent {
     showInfo(message, duration = 5000) {
         this.debug('Showing info toast:', message);
         this.ctx.showInfo(message, duration);
+    }
+
+    showWalletCompatibilityNotice(duration = 5000) {
+        this.showWarning(WALLET_COMPATIBILITY_NOTICE, duration);
     }
 
     isWalletOnSelectedNetwork() {

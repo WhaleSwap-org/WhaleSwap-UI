@@ -323,6 +323,7 @@ export class WalletUI extends BaseComponent {
             this.debug('Connect result:', result);
             if (result && result.account) {
                 this.updateUI(result.account);
+                this.showWalletCompatibilityNotice();
             }
         } catch (error) {
             this.error('Error in handleConnectClick:', error);
