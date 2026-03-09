@@ -1,6 +1,6 @@
 import { BaseComponent } from './BaseComponent.js';
 import { createLogger } from '../services/LogService.js';
-import { createDealCellHTML, getDealTooltipText, processOrderAddress, generateStatusCellHTML, setupClickToCopy } from '../utils/ui.js';
+import { createDealCellHTML, processOrderAddress, generateStatusCellHTML, setupClickToCopy } from '../utils/ui.js';
 import { calculateTotalValue, formatDealValue } from '../utils/orderUtils.js';
 import { OrdersComponentHelper } from '../services/OrdersComponentHelper.js';
 import { OrdersTableRenderer, ORDER_TABLE_PERSPECTIVES } from '../services/OrdersTableRenderer.js';
@@ -313,8 +313,6 @@ export class TakerOrders extends BaseComponent {
             const dealText = dealLoading
                 ? 'loading...'
                 : formatDealValue(buyerDealRatio);
-            const dealTooltipText = getDealTooltipText(this.renderer.options.perspective);
-
             tr.innerHTML = `
                 <td>${order.id}</td>
                 <td>
@@ -345,7 +343,7 @@ export class TakerOrders extends BaseComponent {
                         </div>
                     </div>
                 </td>
-                <td class="deal-cell">${createDealCellHTML(dealText, { tooltipText: dealTooltipText })}</td>
+                <td class="deal-cell">${createDealCellHTML(dealText)}</td>
                 <td>${expiryText}</td>
                 <td class="order-status">
                     ${generateStatusCellHTML(orderStatus, counterpartyAddress, isZeroAddr, formattedAddress)}

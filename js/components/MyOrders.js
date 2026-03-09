@@ -3,7 +3,6 @@ import { createLogger } from '../services/LogService.js';
 import { ethers } from 'ethers';
 import {
     createDealCellHTML,
-    getDealTooltipText,
     handleTransactionError,
     processOrderAddress,
     generateStatusCellHTML,
@@ -306,7 +305,6 @@ export class MyOrders extends BaseComponent {
             const userAddress = wallet?.getAccount()?.toLowerCase();
             const { counterpartyAddress, isZeroAddr, formattedAddress } = processOrderAddress(order, userAddress);
             const dealText = dealLoading ? 'loading...' : formatDealValue(deal);
-            const dealTooltipText = getDealTooltipText(this.renderer.options.perspective);
             const sellPriceText = sellPriceLoading
                 ? 'loading...'
                 : calculateTotalValue(resolvedSellPrice, safeFormattedSellAmount);
@@ -339,7 +337,7 @@ export class MyOrders extends BaseComponent {
                         </div>
                     </div>
                 </td>
-                <td class="deal-cell">${createDealCellHTML(dealText, { tooltipText: dealTooltipText })}</td>
+                <td class="deal-cell">${createDealCellHTML(dealText)}</td>
                 <td>${expiryText}</td>
                 <td class="order-status">
                     ${generateStatusCellHTML(orderStatus, counterpartyAddress, isZeroAddr, formattedAddress)}

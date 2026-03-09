@@ -1,6 +1,6 @@
 import { formatTimeDiff } from '../utils/orderUtils.js';
 import { createLogger } from './LogService.js';
-import { createInlineTooltipIcon, getDealTooltipText, setupOrderTooltips } from '../utils/ui.js';
+import { createInlineTooltipIcon, DEAL_TOOLTIP_TEXT, setupOrderTooltips } from '../utils/ui.js';
 import { buildTokenDisplaySymbolMap, getDisplaySymbol } from '../utils/tokenDisplay.js';
 import {
     DEFAULT_ORDER_SORT,
@@ -43,7 +43,7 @@ function getDefaultOrderTableHeaders(perspective = ORDER_TABLE_PERSPECTIVES.MAKE
         { text: tokenLabels.secondColumn },
         {
             text: 'Deal',
-            title: getDealTooltipText(perspective),
+            title: DEAL_TOOLTIP_TEXT,
             sortColumn: SORTABLE_ORDER_COLUMNS.DEAL
         },
         {

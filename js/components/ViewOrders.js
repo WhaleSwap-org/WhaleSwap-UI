@@ -1,6 +1,6 @@
 import { BaseComponent } from './BaseComponent.js';
 import { createLogger } from '../services/LogService.js';
-import { createDealCellHTML, getDealTooltipText } from '../utils/ui.js';
+import { createDealCellHTML } from '../utils/ui.js';
 import { calculateTotalValue, formatDealValue } from '../utils/orderUtils.js';
 import { OrdersComponentHelper } from '../services/OrdersComponentHelper.js';
 import { OrdersTableRenderer, ORDER_TABLE_PERSPECTIVES } from '../services/OrdersTableRenderer.js';
@@ -331,8 +331,6 @@ export class ViewOrders extends BaseComponent {
             const dealText = dealLoading
                 ? 'loading...'
                 : formatDealValue(buyerDealRatio);
-            const dealTooltipText = getDealTooltipText(this.renderer.options.perspective);
-
             tr.innerHTML = `
                 <td>${order.id}</td>
                 <td>
@@ -363,7 +361,7 @@ export class ViewOrders extends BaseComponent {
                         </div>
                     </div>
                 </td>
-                <td class="deal-cell">${createDealCellHTML(dealText, { tooltipText: dealTooltipText })}</td>
+                <td class="deal-cell">${createDealCellHTML(dealText)}</td>
                 <td>${expiryText}</td>
                 <td class="order-status">${orderStatus}</td>
                 <td class="action-column"></td>`;

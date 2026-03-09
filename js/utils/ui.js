@@ -12,20 +12,11 @@ const ORDER_TOOLTIP_VIEWPORT_PADDING = 12;
 
 let activeOrderTooltipTrigger = null;
 
-export function getDealTooltipText(perspective = 'maker') {
-    const perspectiveLine = perspective === 'buyer'
-        ? '• Buy is what you, as buyer, receive when filling the order and Sell is what leaves your wallet to fill the order'
-        : '• Sell is what you, as seller, puts up to sell and Buy is what buyer pays to fill the order';
+export const DEAL_TOOLTIP_TEXT = `Deal = Buy Value / Sell Value
 
-    return `Deal = Buy Value / Sell Value
-
-${perspectiveLine}
 • Higher deal number is better
 • Deal > 1: better deal based on market prices
 • Deal < 1: worse deal based on market prices`;
-}
-
-export const DEAL_TOOLTIP_TEXT = getDealTooltipText();
 
 function getOrderTooltipElement() {
     let tooltip = document.getElementById(ORDER_TOOLTIP_ELEMENT_ID);
@@ -145,13 +136,13 @@ export function createInlineTooltipIcon(
     return `<button type="button" class="${className}" data-order-tooltip="${safeTooltip}" aria-label="${safeAriaLabel}"${additionalAttributes}>ⓘ</button>`;
 }
 
-export function createDealCellHTML(dealText, { tooltipText = DEAL_TOOLTIP_TEXT } = {}) {
+export function createDealCellHTML(dealText) {
     const safeDealText = escapeHtmlText(dealText);
     return `
         <div class="deal-cell-content">
             <span class="deal-card-label">
                 Deal
-                ${createInlineTooltipIcon(tooltipText, {
+                ${createInlineTooltipIcon(DEAL_TOOLTIP_TEXT, {
                     className: 'info-icon order-tooltip-icon deal-tooltip-icon',
                     ariaLabel: 'Explain deal value'
                 })}

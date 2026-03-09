@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MyOrders } from '../js/components/MyOrders.js';
 import { ViewOrders } from '../js/components/ViewOrders.js';
 import { TakerOrders } from '../js/components/TakerOrders.js';
-import { getDealTooltipText } from '../js/utils/ui.js';
+import { DEAL_TOOLTIP_TEXT } from '../js/utils/ui.js';
 
 const TOKEN_A = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const TOKEN_B = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
@@ -11,9 +11,6 @@ const POLYGON_LINK_POS = '0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39';
 const OTHER_LINK = '0xb0897686c545045afc77cf20ec7a532e3120e0f1';
 const MAKER = '0x1111111111111111111111111111111111111111';
 const TAKER = '0x2222222222222222222222222222222222222222';
-const BUYER_DEAL_TOOLTIP = getDealTooltipText('buyer');
-const MAKER_DEAL_TOOLTIP = getDealTooltipText('maker');
-
 const TOKEN_INFO = {
     [TOKEN_A]: { address: TOKEN_A, symbol: 'AAA', name: 'Alpha Issuer', decimals: 18 },
     [TOKEN_B]: { address: TOKEN_B, symbol: 'AAA', name: 'Alpha Default', decimals: 18 },
@@ -164,7 +161,7 @@ describe('orders tabs display symbol rendering', () => {
         expect(sellOptions).toEqual(['All Sell Tokens', 'LINK', 'LINK.pol', 'USDC']);
         expect(headerLabels).toEqual(['Sell', 'Buy']);
         expect(filterLabels).toEqual(['All Sell Tokens', 'All Buy Tokens']);
-        expect(dealTooltip).toBe(MAKER_DEAL_TOOLTIP);
+        expect(dealTooltip).toBe(DEAL_TOOLTIP_TEXT);
         expect(sellOptions.some((label) => /^LINK\.[a-f0-9]{4}$/i.test(label))).toBe(false);
     });
 
@@ -181,7 +178,7 @@ describe('orders tabs display symbol rendering', () => {
 
         expect(headerLabels).toEqual(['Buy', 'Sell']);
         expect(filterLabels).toEqual(['All Buy Tokens', 'All Sell Tokens']);
-        expect(dealTooltip).toBe(BUYER_DEAL_TOOLTIP);
+        expect(dealTooltip).toBe(DEAL_TOOLTIP_TEXT);
     });
 
     it('renders TakerOrders with buyer-perspective headers and filters', async () => {
@@ -197,7 +194,7 @@ describe('orders tabs display symbol rendering', () => {
 
         expect(headerLabels).toEqual(['Buy', 'Sell']);
         expect(filterLabels).toEqual(['All Buy Tokens', 'All Sell Tokens']);
-        expect(dealTooltip).toBe(BUYER_DEAL_TOOLTIP);
+        expect(dealTooltip).toBe(DEAL_TOOLTIP_TEXT);
     });
 
     it('renders ViewOrders row using display symbols for sell/buy tokens', async () => {
@@ -217,7 +214,7 @@ describe('orders tabs display symbol rendering', () => {
         const { symbols, dealTooltip } = getRowDisplayDetails(row);
 
         expect(symbols).toEqual(['AAA.issuer', 'AAA']);
-        expect(dealTooltip).toBe(BUYER_DEAL_TOOLTIP);
+        expect(dealTooltip).toBe(DEAL_TOOLTIP_TEXT);
     });
 
     it('renders MyOrders row using display symbols for sell/buy tokens', async () => {
@@ -237,7 +234,7 @@ describe('orders tabs display symbol rendering', () => {
         const { symbols, dealTooltip } = getRowDisplayDetails(row);
 
         expect(symbols).toEqual(['AAA.issuer', 'AAA']);
-        expect(dealTooltip).toBe(MAKER_DEAL_TOOLTIP);
+        expect(dealTooltip).toBe(DEAL_TOOLTIP_TEXT);
     });
 
     it('renders TakerOrders row using display symbols for sell/buy tokens', async () => {
@@ -257,7 +254,7 @@ describe('orders tabs display symbol rendering', () => {
         const { symbols, dealTooltip } = getRowDisplayDetails(row);
 
         expect(symbols).toEqual(['AAA.issuer', 'AAA']);
-        expect(dealTooltip).toBe(BUYER_DEAL_TOOLTIP);
+        expect(dealTooltip).toBe(DEAL_TOOLTIP_TEXT);
     });
 
     it('uses fallback formatting, price classes, and expiry text in ViewOrders rows', async () => {
