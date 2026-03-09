@@ -15,8 +15,8 @@ export const SORTABLE_ORDER_COLUMNS = Object.freeze({
 export const ORDER_SORT_OPTIONS = Object.freeze([
     { value: ORDER_SORTS.BEST_DEAL, label: 'Best Deal First', column: SORTABLE_ORDER_COLUMNS.DEAL, direction: 'desc' },
     { value: ORDER_SORTS.WORST_DEAL, label: 'Worst Deal First', column: SORTABLE_ORDER_COLUMNS.DEAL, direction: 'asc' },
-    { value: ORDER_SORTS.EXPIRES_NEWEST, label: 'Expires: Newest First', column: SORTABLE_ORDER_COLUMNS.EXPIRES, direction: 'desc' },
-    { value: ORDER_SORTS.EXPIRES_OLDEST, label: 'Expires: Oldest First', column: SORTABLE_ORDER_COLUMNS.EXPIRES, direction: 'asc' }
+    { value: ORDER_SORTS.EXPIRES_NEWEST, label: 'Newest First', column: SORTABLE_ORDER_COLUMNS.EXPIRES, direction: 'desc' },
+    { value: ORDER_SORTS.EXPIRES_OLDEST, label: 'Oldest First', column: SORTABLE_ORDER_COLUMNS.EXPIRES, direction: 'asc' }
 ]);
 
 const ORDER_SORT_META = Object.freeze(
