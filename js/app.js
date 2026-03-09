@@ -1,6 +1,6 @@
 import { BaseComponent } from './components/BaseComponent.js';
 import { CreateOrder } from './components/CreateOrder.js';
-import { APP_BRAND, APP_LOGO } from './config/index.js';
+import { APP_BRAND, APP_LOGO, WALLET_COMPATIBILITY_NOTICE } from './config/index.js';
 import { DEBUG_CONFIG } from './config/debug.js';
 import { getNetworkConfig, getAllNetworks, getNetworkById, getNetworkBySlug, getDefaultNetwork, setActiveNetwork } from './config/networks.js';
 import { walletManager } from './services/WalletManager.js';
@@ -25,6 +25,8 @@ import { createAppContext, setGlobalContext } from './services/AppContext.js';
 import { hasAnyClaimables } from './utils/claims.js';
 import { isUserRejection } from './utils/ui.js';
 import { escapeHtml } from './utils/html.js';
+
+const WALLET_COMPATIBILITY_NOTICE_STORAGE_KEY = 'wallet_compatibility_notice_pending';
 
 class App {
 	constructor() {
@@ -62,6 +64,66 @@ class App {
 		this.warn = logger.warn.bind(logger);
 
 		this.debug('App constructor called');
+	}
+
+	queueWalletCompatibilityNotice() {
+		try {
+			sessionStorage.setItem(WALLET_COMPATIBILITY_NOTICE_STORAGE_KEY, '1');
+		} catch (error) {
+			this.debug('Failed to persist wallet compatibility notice flag:', error);
+		}
+	}
+
+	flushPendingWalletCompatibilityNotice() {
+		try {
+			if (sessionStorage.getItem(WALLET_COMPATIBILITY_NOTICE_STORAGE_KEY) !== '1') {
+				return false;
+			}
+
+			sessionStorage.removeItem(WALLET_COMPATIBILITY_NOTICE_STORAGE_KEY);
+			this.showWarning(WALLET_COMPATIBILITY_NOTICE);
+			return true;
+		} catch (error) {
+			this.debug('Failed to flush pending wallet compatibility notice:', error);
+			return false;
+		}
+	}
+
+	async handleWalletConnectEvent(data = {}) {
+		const walletChainId = data?.chainId || walletManager.chainId || null;
+		const selectedNetwork = this.getSelectedNetwork();
+		const walletNetwork = getNetworkById(walletChainId);
+		const shouldAttemptSwitch = !walletNetwork || walletNetwork.slug !== selectedNetwork.slug;
+		const shouldShowCompatibilityNotice = data?.userInitiated === true;
+
+		clearNetworkSetupRequired();
+		this.ctx.setWalletChainId(walletChainId);
+		syncNetworkBadgeFromState();
+
+		if (shouldAttemptSwitch) {
+			if (shouldShowCompatibilityNotice) {
+				this.queueWalletCompatibilityNotice();
+			}
+
+			this.updateTabVisibility(false);
+			await this.refreshAdminTabVisibility();
+			await this.refreshClaimTabVisibility();
+			await this.refreshOrderTabVisibility();
+			await this.switchWalletToNetworkWithReload(selectedNetwork);
+			return;
+		}
+
+		if (shouldShowCompatibilityNotice) {
+			this.showWarning(WALLET_COMPATIBILITY_NOTICE);
+		}
+
+		this.debug('Wallet connected on selected chain, reinitializing components...');
+		this.updateTabVisibility(true);
+		await this.refreshAdminTabVisibility();
+		await this.refreshClaimTabVisibility();
+		await this.refreshOrderTabVisibility();
+		// Preserve WebSocket order cache to avoid clearing orders on connect
+		await this.reinitializeComponents(true);
 	}
 
 	isOrdersTab(tabId = this.currentTab) {
@@ -946,29 +1008,7 @@ class App {
 				walletManager.addListener(async (event, data) => {
 					switch (event) {
 						case 'connect': {
-							const walletChainId = data?.chainId || walletManager.chainId || null;
-							const selectedNetwork = this.getSelectedNetwork();
-							const walletNetwork = getNetworkById(walletChainId);
-							const shouldAttemptSwitch = !walletNetwork || walletNetwork.slug !== selectedNetwork.slug;
-							clearNetworkSetupRequired();
-							this.ctx.setWalletChainId(walletChainId);
-							syncNetworkBadgeFromState();
-								if (shouldAttemptSwitch) {
-									this.updateTabVisibility(false);
-									await this.refreshAdminTabVisibility();
-									await this.refreshClaimTabVisibility();
-									await this.refreshOrderTabVisibility();
-									await this.switchWalletToNetworkWithReload(selectedNetwork);
-									break;
-								}
-
-							this.debug('Wallet connected on selected chain, reinitializing components...');
-							this.updateTabVisibility(true);
-							await this.refreshAdminTabVisibility();
-							await this.refreshClaimTabVisibility();
-							await this.refreshOrderTabVisibility();
-							// Preserve WebSocket order cache to avoid clearing orders on connect
-							await this.reinitializeComponents(true);
+							await this.handleWalletConnectEvent(data);
 							break;
 						}
 					case 'disconnect': {
@@ -1365,7 +1405,7 @@ class App {
 	async connectWallet() {
 		const loader = this.showLoader();
 		try {
-			await walletManager.connect();
+			await walletManager.connect({ userInitiated: true });
 		} catch (error) {
 			// Don't show toast here - WalletUI component handles the error display
 			this.error('Wallet connection failed:', error);
@@ -1706,6 +1746,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 		console.error('[App] App initialization error:', error);
 	} finally {
 		window.app.hideGlobalLoader();
+		window.app.flushPendingWalletCompatibilityNotice();
 	}
 });
 

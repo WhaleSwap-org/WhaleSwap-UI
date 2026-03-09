@@ -299,7 +299,9 @@ export class WalletManager {
         }
     }
 
-    async connect() {
+    async connect(options = {}) {
+        const { userInitiated = false } = options;
+
         if (this.isConnecting) {
             console.log('[WalletManager] Connection already in progress');
             return null;
@@ -335,12 +337,14 @@ export class WalletManager {
             this.debug('Notifying listeners of connection');
             this.notifyListeners('connect', {
                 account: this.account,
-                chainId: this.chainId
+                chainId: this.chainId,
+                userInitiated
             });
 
             return {
                 account: this.account,
-                chainId: this.chainId
+                chainId: this.chainId,
+                userInitiated
             };
         } catch (error) {
             this.debug('Connection error:', error);

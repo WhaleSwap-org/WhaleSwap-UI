@@ -323,7 +323,6 @@ export class WalletUI extends BaseComponent {
             this.debug('Connect result:', result);
             if (result && result.account) {
                 this.updateUI(result.account);
-                this.showWalletCompatibilityNotice();
             }
         } catch (error) {
             this.error('Error in handleConnectClick:', error);
@@ -348,7 +347,7 @@ export class WalletUI extends BaseComponent {
             // Add a small delay to ensure any previous pending requests are cleared
             await new Promise(resolve => setTimeout(resolve, 500));
 
-            const result = await walletManager.connect();
+            const result = await walletManager.connect({ userInitiated: true });
             return result;
         } catch (error) {
             this.error('Failed to connect wallet:', error);

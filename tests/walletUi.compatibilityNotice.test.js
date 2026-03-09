@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WalletUI } from '../js/components/WalletUI.js';
-import { WALLET_COMPATIBILITY_NOTICE } from '../js/config/index.js';
+import { walletManager } from '../js/services/WalletManager.js';
 
 const ACCOUNT = '0x1111111111111111111111111111111111111111';
 
@@ -32,25 +32,17 @@ afterEach(() => {
 });
 
 describe('WalletUI compatibility notice', () => {
-    it('shows the wallet compatibility warning after a successful manual connect', async () => {
+    it('marks wallet-button connects as user-initiated', async () => {
         setupDom();
 
         const component = new WalletUI();
         const ctx = createContextStub();
         component.setContext(ctx);
 
-        vi.spyOn(component, 'connectWallet').mockResolvedValue({ account: ACCOUNT });
-        vi.spyOn(component, 'checkInitialConnectionState').mockResolvedValue();
+        vi.spyOn(walletManager, 'connect').mockResolvedValue({ account: ACCOUNT, userInitiated: true });
 
-        await component.initialize();
-        await component.handleConnectClick({
-            preventDefault() {},
-            stopPropagation() {}
-        });
+        await component.connectWallet();
 
-        expect(ctx.showWarning).toHaveBeenCalledWith(WALLET_COMPATIBILITY_NOTICE, 5000);
-        expect(document.getElementById('accountAddress')?.textContent).toBe('0x1111...1111');
-
-        component.cleanup();
+        expect(walletManager.connect).toHaveBeenCalledWith({ userInitiated: true });
     });
 });

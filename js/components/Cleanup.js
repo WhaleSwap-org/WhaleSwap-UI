@@ -101,12 +101,7 @@ export class Cleanup extends BaseComponent {
                         this.debug('Cleanup button clicked (read-only): attempting wallet connect');
                         const wallet = this.ctx.getWallet();
                         if (wallet) {
-                            wallet.connect()
-                                .then((result) => {
-                                    if (result?.account) {
-                                        this.showWalletCompatibilityNotice();
-                                    }
-                                })
+                            wallet.connect({ userInitiated: true })
                                 .catch(error => {
                                     this.error('Wallet connect failed from cleanup (read-only):', error);
                                     this.showError('Failed to connect wallet: ' + error.message);
@@ -385,10 +380,7 @@ export class Cleanup extends BaseComponent {
             if (!wallet?.isWalletConnected()) {
                 this.debug('Wallet not connected, attempting to connect...');
                 try {
-                    const connectResult = await wallet.connect();
-                    if (connectResult?.account) {
-                        this.showWalletCompatibilityNotice();
-                    }
+                    await wallet.connect({ userInitiated: true });
                     // After successful connection, refresh the button state
                     await this.checkCleanupOpportunities();
                     return;
