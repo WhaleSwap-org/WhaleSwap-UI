@@ -21,16 +21,16 @@ function getOrderTableTokenLabels(perspective = ORDER_TABLE_PERSPECTIVES.MAKER) 
         return {
             firstColumn: 'You Buy',
             secondColumn: 'You Sell',
-            firstFilter: 'All You Buy Tokens',
-            secondFilter: 'All You Sell Tokens'
+            firstFilter: 'All Buy Tokens',
+            secondFilter: 'All Sell Tokens'
         };
     }
 
     return {
         firstColumn: 'You Sell',
         secondColumn: 'You Buy',
-        firstFilter: 'All You Sell Tokens',
-        secondFilter: 'All You Buy Tokens'
+        firstFilter: 'All Sell Tokens',
+        secondFilter: 'All Buy Tokens'
     };
 }
 
