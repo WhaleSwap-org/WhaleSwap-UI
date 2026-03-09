@@ -46,6 +46,7 @@ class App {
 		this.tabRailScrollHandler = null;
 		this.tabRailLeftArrowHandler = null;
 		this.tabRailRightArrowHandler = null;
+		this.tabRailViewportWidth = null;
 		this.initialOrderSyncPromise = null;
 		this.tabReady = new Set();
 		this.activeTabRequestId = 0;
@@ -424,12 +425,19 @@ class App {
 			});
 	}
 
+	getViewportWidth() {
+		const viewportWidth = Number(window.visualViewport?.width);
+		return Number.isFinite(viewportWidth) ? viewportWidth : window.innerWidth;
+	}
+
 	initializeTabRail() {
 		this.tabRail = document.querySelector('[data-mobile-tab-rail="true"]');
 		this.tabRailShell = document.querySelector('[data-tab-rail-shell]');
 		this.tabRailLeftArrow = document.querySelector('[data-tab-rail-arrow="left"]');
 		this.tabRailRightArrow = document.querySelector('[data-tab-rail-arrow="right"]');
 		if (!this.tabRail) return;
+
+		this.tabRailViewportWidth = this.getViewportWidth();
 
 		if (!this.tabRailScrollHandler) {
 			this.tabRailScrollHandler = () => this.updateTabRailOverflowState();
@@ -448,8 +456,20 @@ class App {
 
 		if (!this.tabRailResizeHandler) {
 			this.tabRailResizeHandler = () => {
+				const nextViewportWidth = this.getViewportWidth();
+				const widthChanged = this.tabRailViewportWidth === null
+					|| Math.abs(nextViewportWidth - this.tabRailViewportWidth) > 1;
+
+				this.tabRailViewportWidth = nextViewportWidth;
+
+				// iOS Safari fires resize events while browser chrome expands/collapses during scroll.
+				// Ignore height-only viewport changes so vertical scrolling cannot yank the page to the tab rail.
+				if (!widthChanged) {
+					this.updateTabRailOverflowState();
+					return;
+				}
+
 				this.scrollActiveTabIntoView({ behavior: 'auto' });
-				this.updateTabRailOverflowState();
 			};
 			window.addEventListener('resize', this.tabRailResizeHandler);
 		}
@@ -518,11 +538,34 @@ class App {
 			return;
 		}
 
-		activeButton.scrollIntoView({
-			block: 'nearest',
-			inline: 'center',
-			behavior
-		});
+		const railWidth = this.tabRail.clientWidth;
+		const maxScrollLeft = Math.max(this.tabRail.scrollWidth - railWidth, 0);
+		if (railWidth <= 0 || maxScrollLeft <= 0) {
+			this.updateTabRailOverflowState();
+			return;
+		}
+
+		const railRect = this.tabRail.getBoundingClientRect();
+		const activeButtonRect = activeButton.getBoundingClientRect();
+		const currentScrollLeft = this.tabRail.scrollLeft;
+		const buttonCenter = currentScrollLeft
+			+ (activeButtonRect.left - railRect.left)
+			+ (activeButtonRect.width / 2);
+		const targetScrollLeft = Math.min(
+			Math.max(buttonCenter - (railWidth / 2), 0),
+			maxScrollLeft
+		);
+
+		if (Math.abs(targetScrollLeft - currentScrollLeft) > 1) {
+			if (typeof this.tabRail.scrollTo === 'function') {
+				this.tabRail.scrollTo({
+					left: targetScrollLeft,
+					behavior
+				});
+			} else {
+				this.tabRail.scrollLeft = targetScrollLeft;
+			}
+		}
 
 		window.setTimeout(() => this.updateTabRailOverflowState(), 140);
 	}
