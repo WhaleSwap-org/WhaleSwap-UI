@@ -159,7 +159,7 @@ describe('orders tabs display symbol rendering', () => {
         const { headerLabels, filterLabels, dealTooltip } = getTableHeaderDetails(component);
 
         expect(sellOptions).toEqual(['All Sell Tokens', 'LINK', 'LINK.pol', 'USDC']);
-        expect(headerLabels).toEqual(['Sell', 'Buy']);
+        expect(headerLabels).toEqual(['You Sell', 'You Buy']);
         expect(filterLabels).toEqual(['All Sell Tokens', 'All Buy Tokens']);
         expect(dealTooltip).toBe(DEAL_TOOLTIP_TEXT);
         expect(sellOptions.some((label) => /^LINK\.[a-f0-9]{4}$/i.test(label))).toBe(false);
@@ -176,7 +176,7 @@ describe('orders tabs display symbol rendering', () => {
 
         const { headerLabels, filterLabels, dealTooltip } = getTableHeaderDetails(component);
 
-        expect(headerLabels).toEqual(['Buy', 'Sell']);
+        expect(headerLabels).toEqual(['You Buy', 'You Sell']);
         expect(filterLabels).toEqual(['All Buy Tokens', 'All Sell Tokens']);
         expect(dealTooltip).toBe(DEAL_TOOLTIP_TEXT);
     });
@@ -192,7 +192,7 @@ describe('orders tabs display symbol rendering', () => {
 
         const { headerLabels, filterLabels, dealTooltip } = getTableHeaderDetails(component);
 
-        expect(headerLabels).toEqual(['Buy', 'Sell']);
+        expect(headerLabels).toEqual(['You Buy', 'You Sell']);
         expect(filterLabels).toEqual(['All Buy Tokens', 'All Sell Tokens']);
         expect(dealTooltip).toBe(DEAL_TOOLTIP_TEXT);
     });

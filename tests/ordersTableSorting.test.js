@@ -260,7 +260,7 @@ describe('order tab sorting behavior', () => {
 
         expect(sortSelect.value).toBe('best-deal');
         expect(pageSizeSelect.value).toBe('10');
-        expect(headerLabels.slice(0, 3)).toEqual(['ID', 'Sell', 'Buy']);
+        expect(headerLabels.slice(0, 3)).toEqual(['ID', 'You Sell', 'You Buy']);
         expect(dealHeader.classList.contains('active-sort')).toBe(true);
         expect(dealHeader.getAttribute('aria-sort')).toBe('descending');
     });
