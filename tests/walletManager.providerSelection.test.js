@@ -14,38 +14,38 @@ afterEach(() => {
 });
 
 describe('WalletManager injected provider selection', () => {
-    it('accepts a standalone Phantom provider', () => {
-        const phantomProvider = {
-            isPhantom: true,
+    it('accepts a standalone injected provider with request support', () => {
+        const walletProvider = {
+            isCoinbaseWallet: true,
             request: async () => []
         };
 
-        setEthereum(phantomProvider);
+        setEthereum(walletProvider);
 
         const manager = new WalletManager();
 
         expect(manager.hasInjectedProvider()).toBe(true);
-        expect(manager.getInjectedProvider()).toBe(phantomProvider);
+        expect(manager.getInjectedProvider()).toBe(walletProvider);
     });
 
-    it('selects Phantom when it is the only provider in a providers array', () => {
-        const phantomProvider = {
-            isPhantom: true,
+    it('selects the first request-capable provider when MetaMask is absent', () => {
+        const walletProvider = {
+            isCoinbaseWallet: true,
             request: async () => []
         };
 
         setEthereum({
-            providers: [phantomProvider]
+            providers: [{}, walletProvider]
         });
 
         const manager = new WalletManager();
 
-        expect(manager.getInjectedProvider()).toBe(phantomProvider);
+        expect(manager.getInjectedProvider()).toBe(walletProvider);
     });
 
-    it('still prefers MetaMask when both MetaMask and Phantom are injected', () => {
-        const phantomProvider = {
-            isPhantom: true,
+    it('still prefers MetaMask when MetaMask and another EVM wallet are injected', () => {
+        const walletProvider = {
+            isCoinbaseWallet: true,
             request: async () => []
         };
         const metaMaskProvider = {
@@ -54,7 +54,7 @@ describe('WalletManager injected provider selection', () => {
         };
 
         setEthereum({
-            providers: [phantomProvider, metaMaskProvider]
+            providers: [walletProvider, metaMaskProvider]
         });
 
         const manager = new WalletManager();

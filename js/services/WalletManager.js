@@ -74,7 +74,7 @@ export class WalletManager {
         };
     }
 
-    isSupportedInjectedProvider(provider) {
+    isRequestCapableInjectedProvider(provider) {
         return typeof provider?.request === 'function';
     }
 
@@ -93,7 +93,7 @@ export class WalletManager {
             : [];
 
         if (providers.length === 0) {
-            if (this.isSupportedInjectedProvider(ethereum)) {
+            if (this.isRequestCapableInjectedProvider(ethereum)) {
                 return ethereum;
             }
 
@@ -104,8 +104,7 @@ export class WalletManager {
         }
 
         const selectedProvider = providers.find((provider) => !!provider?.isMetaMask)
-            || providers.find((provider) => !!provider?.isPhantom)
-            || providers.find((provider) => this.isSupportedInjectedProvider(provider))
+            || providers.find((provider) => this.isRequestCapableInjectedProvider(provider))
             || null;
         if (!selectedProvider) {
             this.warn('No injected wallet provider with request support was found.', {
