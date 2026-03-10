@@ -130,4 +130,27 @@ describe('CreateOrder amount input sanitizing', () => {
         expect(sellAmountUsd.getAttribute('aria-hidden')).toBe('true');
         expect(updateCreateButtonStateSpy).toHaveBeenCalled();
     });
+
+    it('shows a sub-cent USD preview without rounding down to zero', () => {
+        document.body.innerHTML = `
+            <div id="create-order"></div>
+            <input id="sellAmount" type="text" />
+            <div id="sellAmountUSD" class="amount-usd is-hidden" aria-hidden="true"></div>
+        `;
+
+        const component = new CreateOrder();
+        component.setContext(createContextStub());
+        component.sellToken = { decimals: 18, usdPrice: 0.005 };
+
+        component.initializeAmountInputs();
+
+        const sellAmountInput = document.getElementById('sellAmount');
+        const sellAmountUsd = document.getElementById('sellAmountUSD');
+        sellAmountInput.value = '1';
+        sellAmountInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+        expect(sellAmountUsd.textContent).toBe('<$0.01');
+        expect(sellAmountUsd.classList.contains('is-hidden')).toBe(false);
+        expect(sellAmountUsd.getAttribute('aria-hidden')).toBe('false');
+    });
 });

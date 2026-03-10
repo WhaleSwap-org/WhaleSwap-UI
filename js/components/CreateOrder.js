@@ -2796,7 +2796,9 @@ export class CreateOrder extends BaseComponent {
                     usdDisplay = document.getElementById(`${type}AmountUSD`);
                 }
                 if (usdDisplay) {
-                    usdDisplay.textContent = token.usdPrice !== undefined ? `$${usdValue.toFixed(2)}` : 'N/A';
+                    usdDisplay.textContent = token.usdPrice === undefined
+                        ? 'N/A'
+                        : (usdValue > 0 && usdValue < 0.01 ? '<$0.01' : `$${usdValue.toFixed(2)}`);
                     setVisibility(usdDisplay, true);
                 }
             }
