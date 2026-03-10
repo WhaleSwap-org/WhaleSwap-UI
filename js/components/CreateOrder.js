@@ -224,13 +224,24 @@ export class CreateOrder extends BaseComponent {
 
     // Method to reset component state for account switching/disconnects
     resetState(options = {}) {
-        const { clearSelections = false } = options;
+        const { clearSelections = false, preserveAllowedTokens = false } = options;
         this.debug('Resetting CreateOrder component state...');
         this.initialized = false;
         this.initializing = false;
         this.hasLoadedData = false;
-        this.tokens = [];
-        this.allowedTokens = [];
+        if (!preserveAllowedTokens) {
+            this.tokens = [];
+            this.allowedTokens = [];
+            this.tokenDisplaySymbolMap = new Map();
+        } else {
+            const clearTokenBalances = (token) => ({
+                ...token,
+                balance: null,
+                balanceLoading: true
+            });
+            this.tokens = Array.isArray(this.tokens) ? this.tokens.map(clearTokenBalances) : [];
+            this.allowedTokens = Array.isArray(this.allowedTokens) ? this.allowedTokens.map(clearTokenBalances) : [];
+        }
         this.tokensLoading = false;
         this.allowedTokensLoadPromise = null;
         this.allowedTokensBalanceLoadPromise = null;
@@ -239,9 +250,9 @@ export class CreateOrder extends BaseComponent {
         this.pendingAllowedTokensRefresh = false;
         this.feeToken = null;
         this.isReadOnlyMode = true;
+        this.isReadOnlyMode = true;
         this.isContractDisabled = false;
         this.contractStateReadError = false;
-        this.tokenDisplaySymbolMap = new Map();
         if (clearSelections) {
             this.clearSelectedTokens();
         }
@@ -475,6 +486,7 @@ export class CreateOrder extends BaseComponent {
 
     applyDisconnectedState() {
         this.isReadOnlyMode = true;
+        this.isReadOnlyMode = true;
         this.contractStateReadError = false;
         this.isContractDisabled = false;
         this.isSubmitting = false;
@@ -623,6 +635,9 @@ export class CreateOrder extends BaseComponent {
             
             // Load fee/token data in background so initial tab render is not blocked.
             this.startBackgroundDataLoading();
+            if (!readOnlyMode) {
+                void this.requestVisibleBalanceRefresh('tab-active');
+            }
             if (!readOnlyMode) {
                 void this.requestVisibleBalanceRefresh('tab-active');
             }
@@ -1056,6 +1071,7 @@ export class CreateOrder extends BaseComponent {
     setReadOnlyMode() {
         this.debug('Setting read-only mode');
         this.isReadOnlyMode = true;
+        this.isReadOnlyMode = true;
         
         // Ensure UI is hidden per styles by removing wallet-connected
         const swapSection = document.querySelector('.swap-section');
@@ -1073,6 +1089,7 @@ export class CreateOrder extends BaseComponent {
     }
 
     setConnectedMode() {
+        this.isReadOnlyMode = false;
         this.isReadOnlyMode = false;
         // Make sure the swap section is marked as wallet-connected so CSS reveals inputs
         const swapSection = document.querySelector('.swap-section');
@@ -2822,6 +2839,7 @@ export class CreateOrder extends BaseComponent {
                         this.renderAllowedTokenList(type);
                     }
                     modal.style.display = 'block';
+                    void this.requestVisibleBalanceRefresh(`${type}-selector-open`);
                     void this.requestVisibleBalanceRefresh(`${type}-selector-open`);
 
                     // Keep state fresh without blocking modal open on network issues.
