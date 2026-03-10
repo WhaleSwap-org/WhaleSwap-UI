@@ -20,6 +20,7 @@ import { buildTokenDisplaySymbolMap, getDisplaySymbol } from '../utils/tokenDisp
 
 const CREATE_ORDER_RELOAD_STATE_KEY = 'whaleswap:create-order:reload-state:v1';
 const CREATE_ORDER_RELOAD_STATE_MAX_AGE_MS = 5 * 60 * 1000;
+const TAKER_ADDRESS_MAX_LENGTH = 42;
 
 export class CreateOrder extends BaseComponent {
     constructor() {
@@ -155,7 +156,9 @@ export class CreateOrder extends BaseComponent {
     getCreateOrderFormStateForReload() {
         const sellAmount = document.getElementById('sellAmount')?.value?.trim() || '';
         const buyAmount = document.getElementById('buyAmount')?.value?.trim() || '';
-        const takerAddress = document.getElementById('takerAddress')?.value?.trim() || '';
+        const takerAddress = this.sanitizeTakerAddressInput(
+            document.getElementById('takerAddress')?.value?.trim() || ''
+        );
         const takerToggle = this.container?.querySelector('.taker-toggle');
         const isTakerExpanded = Boolean(takerToggle?.classList.contains('active'));
         const selectedChainSlug = this.ctx?.getSelectedChainSlug?.() || getNetworkConfig()?.slug || null;
@@ -260,6 +263,35 @@ export class CreateOrder extends BaseComponent {
         }
     }
 
+    sanitizeTakerAddressInput(value) {
+        const normalizedValue = String(value ?? '').trim().toLowerCase();
+        if (!normalizedValue) {
+            return '';
+        }
+
+        if (normalizedValue.startsWith('0x')) {
+            return `0x${normalizedValue.slice(2).replace(/[^0-9a-f]/g, '')}`.slice(0, TAKER_ADDRESS_MAX_LENGTH);
+        }
+
+        if (normalizedValue.startsWith('0')) {
+            return `0${normalizedValue.slice(1).replace(/[^0-9a-f]/g, '')}`.slice(0, TAKER_ADDRESS_MAX_LENGTH);
+        }
+
+        return normalizedValue.replace(/[^0-9a-f]/g, '').slice(0, TAKER_ADDRESS_MAX_LENGTH);
+    }
+
+    initializeTakerAddressInput() {
+        const takerAddressInput = document.getElementById('takerAddress');
+        if (!takerAddressInput) {
+            return;
+        }
+
+        takerAddressInput.oninput = () => {
+            takerAddressInput.value = this.sanitizeTakerAddressInput(takerAddressInput.value);
+        };
+        takerAddressInput.value = this.sanitizeTakerAddressInput(takerAddressInput.value);
+    }
+
     async applyReloadFormState(snapshot) {
         if (!snapshot) {
             return { clearSnapshot: false, restored: false };
@@ -310,7 +342,7 @@ export class CreateOrder extends BaseComponent {
         this.setTakerExpanded(Boolean(snapshot.isTakerExpanded));
         const takerAddressInput = document.getElementById('takerAddress');
         if (takerAddressInput) {
-            takerAddressInput.value = snapshot.takerAddress || '';
+            takerAddressInput.value = this.sanitizeTakerAddressInput(snapshot.takerAddress || '');
         }
 
         const restoredSellToken = !snapshot.sellTokenAddress
@@ -491,6 +523,7 @@ export class CreateOrder extends BaseComponent {
             
             // Initialize amount input listeners
             this.initializeAmountInputs();
+            this.initializeTakerAddressInput();
 
             await this.restorePendingReloadFormState();
             
@@ -1244,7 +1277,11 @@ export class CreateOrder extends BaseComponent {
             this.debug('Current buyToken:', this.buyToken);
             
             // Get form values
-            let taker = document.getElementById('takerAddress')?.value.trim() || '';
+            const takerAddressInput = document.getElementById('takerAddress');
+            let taker = this.sanitizeTakerAddressInput(takerAddressInput?.value?.trim() || '');
+            if (takerAddressInput && takerAddressInput.value !== taker) {
+                takerAddressInput.value = taker;
+            }
             
             // Validate sell token
             if (!this.sellToken || !this.sellToken.address) {
@@ -2893,7 +2930,16 @@ export class CreateOrder extends BaseComponent {
                             </span>
                         </div>
                         <div id="taker-input-content" class="taker-input-content hidden">
-                            <input type="text" id="takerAddress" class="taker-address-input" placeholder="0x..." />
+                            <input
+                                type="text"
+                                id="takerAddress"
+                                class="taker-address-input"
+                                placeholder="0x..."
+                                maxlength="${TAKER_ADDRESS_MAX_LENGTH}"
+                                autocomplete="off"
+                                autocapitalize="off"
+                                spellcheck="false"
+                            />
                         </div>
                     </div>
 
