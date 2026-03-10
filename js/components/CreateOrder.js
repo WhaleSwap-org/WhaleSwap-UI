@@ -2667,20 +2667,22 @@ export class CreateOrder extends BaseComponent {
         try {
             const amount = document.getElementById(`${type}Amount`)?.value || '0';
             const token = this[`${type}Token`];
+            const numericAmount = Number(amount);
             
             // Find USD display element
             let usdDisplay = document.getElementById(`${type}AmountUSD`);
             
             // If no token selected or amount is 0/empty, hide the USD display without removing
-            if (!token || !amount || amount === '0') {
+            if (!token || !amount || !Number.isFinite(numericAmount) || numericAmount <= 0) {
                 if (usdDisplay) {
                     setVisibility(usdDisplay, false);
                 }
+                this.updateCreateButtonState();
                 return;
             }
             
             if (token && amount) {
-                const usdValue = token.usdPrice !== undefined ? Number(amount) * token.usdPrice : 0;
+                const usdValue = token.usdPrice !== undefined ? numericAmount * token.usdPrice : 0;
                 // Ensure USD display element exists (in template) and update it
                 if (!usdDisplay) {
                     usdDisplay = document.getElementById(`${type}AmountUSD`);

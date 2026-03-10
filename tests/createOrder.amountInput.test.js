@@ -104,4 +104,30 @@ describe('CreateOrder amount input sanitizing', () => {
 
         expect(buyAmountInput.value).toBe('987');
     });
+
+    it('hides the USD preview for a lone decimal input', () => {
+        document.body.innerHTML = `
+            <div id="create-order"></div>
+            <input id="sellAmount" type="text" />
+            <div id="sellAmountUSD" class="amount-usd"></div>
+        `;
+
+        const component = new CreateOrder();
+        component.setContext(createContextStub());
+        component.sellToken = { decimals: 18, usdPrice: 2 };
+
+        const updateCreateButtonStateSpy = vi.spyOn(component, 'updateCreateButtonState').mockImplementation(() => {});
+
+        component.initializeAmountInputs();
+
+        const sellAmountInput = document.getElementById('sellAmount');
+        const sellAmountUsd = document.getElementById('sellAmountUSD');
+        sellAmountInput.value = '.';
+        sellAmountInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+        expect(sellAmountUsd.textContent).not.toContain('NaN');
+        expect(sellAmountUsd.classList.contains('is-hidden')).toBe(true);
+        expect(sellAmountUsd.getAttribute('aria-hidden')).toBe('true');
+        expect(updateCreateButtonStateSpy).toHaveBeenCalled();
+    });
 });
