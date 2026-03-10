@@ -223,13 +223,24 @@ export class CreateOrder extends BaseComponent {
 
     // Method to reset component state for account switching/disconnects
     resetState(options = {}) {
-        const { clearSelections = false } = options;
+        const { clearSelections = false, preserveAllowedTokens = false } = options;
         this.debug('Resetting CreateOrder component state...');
         this.initialized = false;
         this.initializing = false;
         this.hasLoadedData = false;
-        this.tokens = [];
-        this.allowedTokens = [];
+        if (!preserveAllowedTokens) {
+            this.tokens = [];
+            this.allowedTokens = [];
+            this.tokenDisplaySymbolMap = new Map();
+        } else {
+            const clearTokenBalances = (token) => ({
+                ...token,
+                balance: null,
+                balanceLoading: true
+            });
+            this.tokens = Array.isArray(this.tokens) ? this.tokens.map(clearTokenBalances) : [];
+            this.allowedTokens = Array.isArray(this.allowedTokens) ? this.allowedTokens.map(clearTokenBalances) : [];
+        }
         this.tokensLoading = false;
         this.allowedTokensLoadPromise = null;
         this.allowedTokensBalanceLoadPromise = null;
@@ -241,7 +252,6 @@ export class CreateOrder extends BaseComponent {
         this.isReadOnlyMode = true;
         this.isContractDisabled = false;
         this.contractStateReadError = false;
-        this.tokenDisplaySymbolMap = new Map();
         if (clearSelections) {
             this.clearSelectedTokens();
         }
