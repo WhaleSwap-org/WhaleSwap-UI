@@ -77,6 +77,100 @@ export class CreateOrder extends BaseComponent {
         };
     }
 
+    sanitizeAmountInputValue(value) {
+        if (typeof value !== 'string' || value.length === 0) {
+            return '';
+        }
+
+        const digitsAndDecimalOnly = value.replace(/[^\d.]/g, '');
+        const firstDecimalIndex = digitsAndDecimalOnly.indexOf('.');
+
+        if (firstDecimalIndex === -1) {
+            return digitsAndDecimalOnly;
+        }
+
+        return digitsAndDecimalOnly.slice(0, firstDecimalIndex + 1)
+            + digitsAndDecimalOnly.slice(firstDecimalIndex + 1).replace(/\./g, '');
+    }
+
+    getAmountInputDecimals(type) {
+        const tokenDecimals = this[`${type}Token`]?.decimals;
+        return Number.isInteger(tokenDecimals) && tokenDecimals >= 0 ? tokenDecimals : null;
+    }
+
+    normalizeAmountInputValue(type, value) {
+        const sanitizedValue = this.sanitizeAmountInputValue(value);
+        const maxDecimals = this.getAmountInputDecimals(type);
+
+        if (maxDecimals === null || !sanitizedValue.includes('.')) {
+            return sanitizedValue;
+        }
+
+        const [whole, fraction = ''] = sanitizedValue.split('.');
+
+        if (maxDecimals === 0) {
+            return whole;
+        }
+
+        return `${whole}.${fraction.slice(0, maxDecimals)}`;
+    }
+
+    isValidPositiveAmount(value) {
+        if (typeof value !== 'string') {
+            return false;
+        }
+
+        const trimmedValue = value.trim();
+        if (!trimmedValue || trimmedValue === '.') {
+            return false;
+        }
+
+        if (!/^(?:\d+\.?\d*|\.\d+)$/.test(trimmedValue)) {
+            return false;
+        }
+
+        return Number(trimmedValue) > 0;
+    }
+
+    handleAmountInput(type, event) {
+        const amountInput = event?.target || document.getElementById(`${type}Amount`);
+        if (!amountInput) {
+            return;
+        }
+
+        const rawValue = amountInput.value ?? '';
+        const selectionStart = typeof amountInput.selectionStart === 'number'
+            ? amountInput.selectionStart
+            : rawValue.length;
+        const sanitizedValue = this.normalizeAmountInputValue(type, rawValue);
+
+        if (sanitizedValue !== rawValue) {
+            const sanitizedBeforeCaret = this.normalizeAmountInputValue(type, rawValue.slice(0, selectionStart));
+            amountInput.value = sanitizedValue;
+
+            if (typeof amountInput.setSelectionRange === 'function') {
+                amountInput.setSelectionRange(sanitizedBeforeCaret.length, sanitizedBeforeCaret.length);
+            }
+        }
+
+        this.updateTokenAmounts(type);
+    }
+
+    bindAmountInput(type, amountInput) {
+        if (!amountInput) {
+            return;
+        }
+
+        amountInput.setAttribute('inputmode', 'decimal');
+
+        if (this.amountInputListeners[type]) {
+            amountInput.removeEventListener('input', this.amountInputListeners[type]);
+        }
+
+        this.amountInputListeners[type] = (event) => this.handleAmountInput(type, event);
+        amountInput.addEventListener('input', this.amountInputListeners[type]);
+    }
+
     getDefaultTokenSelectorMarkup() {
         return `
             <span class="token-selector-content">
@@ -1309,11 +1403,11 @@ export class CreateOrder extends BaseComponent {
             const buyAmount = document.getElementById('buyAmount')?.value.trim();
 
             // Validate inputs
-            if (!sellAmount || isNaN(sellAmount) || parseFloat(sellAmount) <= 0) {
+            if (!this.isValidPositiveAmount(sellAmount)) {
                 this.showError('Please enter a valid sell amount');
                 return;
             }
-            if (!buyAmount || isNaN(buyAmount) || parseFloat(buyAmount) <= 0) {
+            if (!this.isValidPositiveAmount(buyAmount)) {
                 this.showError('Please enter a valid buy amount');
                 return;
             }
@@ -2402,8 +2496,8 @@ export class CreateOrder extends BaseComponent {
                 // Remove existing listeners
                 const newInput = amountInput.cloneNode(true);
                 amountInput.parentNode.replaceChild(newInput, amountInput);
-                // Add new listener
-                newInput.addEventListener('input', () => this.updateTokenAmounts(type));
+                newInput.value = this.normalizeAmountInputValue(type, newInput.value);
+                this.bindAmountInput(type, newInput);
                 
                 // Focus on the input field after token selection
                 setTimeout(() => {
@@ -2573,20 +2667,22 @@ export class CreateOrder extends BaseComponent {
         try {
             const amount = document.getElementById(`${type}Amount`)?.value || '0';
             const token = this[`${type}Token`];
+            const numericAmount = Number(amount);
             
             // Find USD display element
             let usdDisplay = document.getElementById(`${type}AmountUSD`);
             
             // If no token selected or amount is 0/empty, hide the USD display without removing
-            if (!token || !amount || amount === '0') {
+            if (!token || !amount || !Number.isFinite(numericAmount) || numericAmount <= 0) {
                 if (usdDisplay) {
                     setVisibility(usdDisplay, false);
                 }
+                this.updateCreateButtonState();
                 return;
             }
             
             if (token && amount) {
-                const usdValue = token.usdPrice !== undefined ? Number(amount) * token.usdPrice : 0;
+                const usdValue = token.usdPrice !== undefined ? numericAmount * token.usdPrice : 0;
                 // Ensure USD display element exists (in template) and update it
                 if (!usdDisplay) {
                     usdDisplay = document.getElementById(`${type}AmountUSD`);
@@ -2710,13 +2806,7 @@ export class CreateOrder extends BaseComponent {
         ['sell', 'buy'].forEach(type => {
             const amountInput = document.getElementById(`${type}Amount`);
             if (amountInput) {
-                // Remove prior listener if present
-                if (this.amountInputListeners[type]) {
-                    amountInput.removeEventListener('input', this.amountInputListeners[type]);
-                }
-                // Create and store new listener
-                this.amountInputListeners[type] = () => this.updateTokenAmounts(type);
-                amountInput.addEventListener('input', this.amountInputListeners[type]);
+                this.bindAmountInput(type, amountInput);
             }
         });
 
@@ -2817,7 +2907,7 @@ export class CreateOrder extends BaseComponent {
                     <!-- Sell token input section -->
                     <div id="sellContainer" class="swap-input-container">
                         <div class="amount-input-wrapper">
-                            <input type="number" id="sellAmount" placeholder="0.0" />
+                            <input type="text" id="sellAmount" placeholder="0.0" inputmode="decimal" pattern="^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]*)$" autocomplete="off" spellcheck="false" />
                             <button id="sellAmountMax" class="max-button">MAX</button>
                         </div>
                         <div class="amount-usd is-hidden" id="sellAmountUSD" aria-hidden="true">≈ $0.00</div>
@@ -2844,7 +2934,7 @@ export class CreateOrder extends BaseComponent {
                     <!-- Buy token input section -->
                     <div id="buyContainer" class="swap-input-container">
                         <div class="amount-input-wrapper">
-                            <input type="number" id="buyAmount" placeholder="0.0" />
+                            <input type="text" id="buyAmount" placeholder="0.0" inputmode="decimal" pattern="^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]*)$" autocomplete="off" spellcheck="false" />
                         </div>
                         <div class="amount-usd is-hidden" id="buyAmountUSD" aria-hidden="true">≈ $0.00</div>
                         <div id="buyTokenSelector" class="token-selector">
