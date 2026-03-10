@@ -824,41 +824,6 @@ export class CreateOrder extends BaseComponent {
         return this.refreshAllowedTokenBalancesInBackground();
     }
 
-    requestVisibleBalanceRefresh(source = 'unknown') {
-        const wallet = this.ctx?.getWallet?.();
-        const isWalletConnected = Boolean(wallet?.isWalletConnected?.());
-        if (this.isReadOnlyMode || !isWalletConnected) {
-            this.debug(`Skipping visible balance refresh while disconnected/read-only (${source})`);
-            return Promise.resolve(this.allowedTokens);
-        }
-
-        const hasAllowedTokens = Array.isArray(this.allowedTokens) && this.allowedTokens.length > 0;
-        if (!hasAllowedTokens) {
-            if (this.allowedTokensLoadPromise) {
-                this.debug(`Deferring visible balance refresh until allowed tokens load (${source})`);
-                return this.allowedTokensLoadPromise
-                    .then(() => {
-                        const loadedTokensAvailable = Array.isArray(this.allowedTokens) && this.allowedTokens.length > 0;
-                        if (!loadedTokensAvailable) {
-                            this.debug(`No allowed tokens available after load; skipping balance refresh (${source})`);
-                            return this.allowedTokens;
-                        }
-                        return this.requestVisibleBalanceRefresh(`${source}:after-allowed-tokens`);
-                    })
-                    .catch((error) => {
-                        this.debug(`Allowed token load failed before balance refresh (${source}):`, error);
-                        return this.allowedTokens;
-                    });
-            }
-
-            this.debug(`Skipping visible balance refresh with no allowed tokens loaded (${source})`);
-            return Promise.resolve(this.allowedTokens);
-        }
-
-        this.debug(`Refreshing visible token balances (${source})`);
-        return this.refreshAllowedTokenBalancesInBackground();
-    }
-
     isTokenBalanceLoading(token) {
         if (this.isReadOnlyMode) {
             return false;
