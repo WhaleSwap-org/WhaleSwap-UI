@@ -765,21 +765,62 @@ class App {
 		return !!(walletNetwork && selectedNetwork && walletNetwork.slug === selectedNetwork.slug);
 	}
 
+	getWalletRuntimeNetwork() {
+		const walletChainId = this.ctx?.getWalletChainId?.() ?? walletManager.chainId ?? null;
+		return getNetworkById(walletChainId);
+	}
+
+	restoreSelectedNetworkToWalletChain() {
+		const walletNetwork = this.getWalletRuntimeNetwork();
+		if (!walletNetwork) {
+			return null;
+		}
+
+		clearNetworkSetupRequired();
+		applySelectedNetwork(walletNetwork, { updateUrl: true });
+		return walletNetwork;
+	}
+
+	getNetworkSwitchFailureWarning(error, targetNetwork, restoredNetwork = null) {
+		const targetLabel = getNetworkLabel(targetNetwork);
+		if (isNetworkAddRequiredError(error)) {
+			if (restoredNetwork) {
+				return `Could not switch wallet to ${targetLabel} because it is not added in your wallet. Restored selection to ${getNetworkLabel(restoredNetwork)}.`;
+			}
+			return `Wallet still needs ${targetLabel} added.`;
+		}
+
+		if (isWalletUserRejectedError(error)) {
+			if (restoredNetwork) {
+				return `Wallet request was cancelled. Restored selection to ${getNetworkLabel(restoredNetwork)}.`;
+			}
+			return 'Wallet request was cancelled.';
+		}
+
+		if (restoredNetwork) {
+			return `Could not switch wallet to ${targetLabel}. Restored selection to ${getNetworkLabel(restoredNetwork)}.`;
+		}
+
+		return `Could not switch wallet to ${targetLabel}.`;
+	}
+
 	handleNetworkSwitchFailure(error, targetNetwork) {
 		this.warn('Wallet network switch rejected/failed:', error);
+		const restoredNetwork = this.restoreSelectedNetworkToWalletChain();
+		if (restoredNetwork) {
+			this.showWarning(this.getNetworkSwitchFailureWarning(error, targetNetwork, restoredNetwork));
+			return;
+		}
+
 		if (isNetworkAddRequiredError(error)) {
 			setNetworkSetupRequired(targetNetwork.slug);
 			syncNetworkBadgeFromState();
-			this.showWarning(`Wallet still needs ${targetNetwork.displayName || targetNetwork.name} added. Use Add Network to retry.`);
+			this.showWarning(this.getNetworkSwitchFailureWarning(error, targetNetwork));
 			return;
 		}
 		clearNetworkSetupRequired();
 		syncNetworkBadgeFromState();
-		if (isWalletUserRejectedError(error)) {
-			this.showWarning('Wallet request was cancelled.');
-			return;
-		}
-		this.showWarning(`Could not switch wallet to ${targetNetwork.displayName || targetNetwork.name}.`);
+		this.showWarning(this.getNetworkSwitchFailureWarning(error, targetNetwork));
 	}
 
 	async switchWalletToNetworkWithReload(targetNetwork) {
@@ -1704,10 +1745,14 @@ function getNetworkLogoPath(network) {
 	return typeof network?.logo === 'string' ? network.logo : '';
 }
 
+function getNetworkLabel(network) {
+	return network?.displayName || network?.name || 'Unknown network';
+}
+
 function renderNetworkBadge(network) {
 	if (!networkBadge || !network) return;
 
-	const networkLabel = network.displayName || network.name;
+	const networkLabel = getNetworkLabel(network);
 	const logoPath = getNetworkLogoPath(network);
 	networkBadge.replaceChildren();
 	networkBadge.classList.toggle('has-logo', Boolean(logoPath));
@@ -1729,7 +1774,7 @@ function renderNetworkBadge(network) {
 }
 
 function buildNetworkOptionMarkup(network) {
-	const networkLabel = network.displayName || network.name;
+	const networkLabel = getNetworkLabel(network);
 	const logoPath = getNetworkLogoPath(network);
 	const escapedLabel = escapeHtml(networkLabel);
 	const logoMarkup = logoPath
