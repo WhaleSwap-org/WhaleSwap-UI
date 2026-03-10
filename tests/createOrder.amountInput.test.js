@@ -72,4 +72,36 @@ describe('CreateOrder amount input sanitizing', () => {
         expect(component.isValidPositiveAmount('1..2')).toBe(false);
         expect(component.isValidPositiveAmount('1e2')).toBe(false);
     });
+
+    it('caps fractional precision to the selected token decimals', () => {
+        setupInputs();
+
+        const component = new CreateOrder();
+        component.setContext(createContextStub());
+        component.sellToken = { decimals: 2 };
+
+        component.initializeAmountInputs();
+
+        const sellAmountInput = document.getElementById('sellAmount');
+        sellAmountInput.value = '123.4567';
+        sellAmountInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+        expect(sellAmountInput.value).toBe('123.45');
+    });
+
+    it('removes the decimal portion entirely for zero-decimal tokens', () => {
+        setupInputs();
+
+        const component = new CreateOrder();
+        component.setContext(createContextStub());
+        component.buyToken = { decimals: 0 };
+
+        component.initializeAmountInputs();
+
+        const buyAmountInput = document.getElementById('buyAmount');
+        buyAmountInput.value = '987.65';
+        buyAmountInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+        expect(buyAmountInput.value).toBe('987');
+    });
 });

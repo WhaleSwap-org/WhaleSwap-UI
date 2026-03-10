@@ -93,6 +93,28 @@ export class CreateOrder extends BaseComponent {
             + digitsAndDecimalOnly.slice(firstDecimalIndex + 1).replace(/\./g, '');
     }
 
+    getAmountInputDecimals(type) {
+        const tokenDecimals = this[`${type}Token`]?.decimals;
+        return Number.isInteger(tokenDecimals) && tokenDecimals >= 0 ? tokenDecimals : null;
+    }
+
+    normalizeAmountInputValue(type, value) {
+        const sanitizedValue = this.sanitizeAmountInputValue(value);
+        const maxDecimals = this.getAmountInputDecimals(type);
+
+        if (maxDecimals === null || !sanitizedValue.includes('.')) {
+            return sanitizedValue;
+        }
+
+        const [whole, fraction = ''] = sanitizedValue.split('.');
+
+        if (maxDecimals === 0) {
+            return whole;
+        }
+
+        return `${whole}.${fraction.slice(0, maxDecimals)}`;
+    }
+
     isValidPositiveAmount(value) {
         if (typeof value !== 'string') {
             return false;
@@ -120,10 +142,10 @@ export class CreateOrder extends BaseComponent {
         const selectionStart = typeof amountInput.selectionStart === 'number'
             ? amountInput.selectionStart
             : rawValue.length;
-        const sanitizedValue = this.sanitizeAmountInputValue(rawValue);
+        const sanitizedValue = this.normalizeAmountInputValue(type, rawValue);
 
         if (sanitizedValue !== rawValue) {
-            const sanitizedBeforeCaret = this.sanitizeAmountInputValue(rawValue.slice(0, selectionStart));
+            const sanitizedBeforeCaret = this.normalizeAmountInputValue(type, rawValue.slice(0, selectionStart));
             amountInput.value = sanitizedValue;
 
             if (typeof amountInput.setSelectionRange === 'function') {
@@ -132,6 +154,21 @@ export class CreateOrder extends BaseComponent {
         }
 
         this.updateTokenAmounts(type);
+    }
+
+    bindAmountInput(type, amountInput) {
+        if (!amountInput) {
+            return;
+        }
+
+        amountInput.setAttribute('inputmode', 'decimal');
+
+        if (this.amountInputListeners[type]) {
+            amountInput.removeEventListener('input', this.amountInputListeners[type]);
+        }
+
+        this.amountInputListeners[type] = (event) => this.handleAmountInput(type, event);
+        amountInput.addEventListener('input', this.amountInputListeners[type]);
     }
 
     getDefaultTokenSelectorMarkup() {
@@ -2459,8 +2496,8 @@ export class CreateOrder extends BaseComponent {
                 // Remove existing listeners
                 const newInput = amountInput.cloneNode(true);
                 amountInput.parentNode.replaceChild(newInput, amountInput);
-                // Add new listener
-                newInput.addEventListener('input', () => this.updateTokenAmounts(type));
+                newInput.value = this.normalizeAmountInputValue(type, newInput.value);
+                this.bindAmountInput(type, newInput);
                 
                 // Focus on the input field after token selection
                 setTimeout(() => {
@@ -2767,14 +2804,7 @@ export class CreateOrder extends BaseComponent {
         ['sell', 'buy'].forEach(type => {
             const amountInput = document.getElementById(`${type}Amount`);
             if (amountInput) {
-                amountInput.setAttribute('inputmode', 'decimal');
-                // Remove prior listener if present
-                if (this.amountInputListeners[type]) {
-                    amountInput.removeEventListener('input', this.amountInputListeners[type]);
-                }
-                // Create and store new listener
-                this.amountInputListeners[type] = (event) => this.handleAmountInput(type, event);
-                amountInput.addEventListener('input', this.amountInputListeners[type]);
+                this.bindAmountInput(type, amountInput);
             }
         });
 
