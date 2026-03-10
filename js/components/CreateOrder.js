@@ -77,6 +77,63 @@ export class CreateOrder extends BaseComponent {
         };
     }
 
+    sanitizeAmountInputValue(value) {
+        if (typeof value !== 'string' || value.length === 0) {
+            return '';
+        }
+
+        const digitsAndDecimalOnly = value.replace(/[^\d.]/g, '');
+        const firstDecimalIndex = digitsAndDecimalOnly.indexOf('.');
+
+        if (firstDecimalIndex === -1) {
+            return digitsAndDecimalOnly;
+        }
+
+        return digitsAndDecimalOnly.slice(0, firstDecimalIndex + 1)
+            + digitsAndDecimalOnly.slice(firstDecimalIndex + 1).replace(/\./g, '');
+    }
+
+    isValidPositiveAmount(value) {
+        if (typeof value !== 'string') {
+            return false;
+        }
+
+        const trimmedValue = value.trim();
+        if (!trimmedValue || trimmedValue === '.') {
+            return false;
+        }
+
+        if (!/^(?:\d+\.?\d*|\.\d+)$/.test(trimmedValue)) {
+            return false;
+        }
+
+        return Number(trimmedValue) > 0;
+    }
+
+    handleAmountInput(type, event) {
+        const amountInput = event?.target || document.getElementById(`${type}Amount`);
+        if (!amountInput) {
+            return;
+        }
+
+        const rawValue = amountInput.value ?? '';
+        const selectionStart = typeof amountInput.selectionStart === 'number'
+            ? amountInput.selectionStart
+            : rawValue.length;
+        const sanitizedValue = this.sanitizeAmountInputValue(rawValue);
+
+        if (sanitizedValue !== rawValue) {
+            const sanitizedBeforeCaret = this.sanitizeAmountInputValue(rawValue.slice(0, selectionStart));
+            amountInput.value = sanitizedValue;
+
+            if (typeof amountInput.setSelectionRange === 'function') {
+                amountInput.setSelectionRange(sanitizedBeforeCaret.length, sanitizedBeforeCaret.length);
+            }
+        }
+
+        this.updateTokenAmounts(type);
+    }
+
     getDefaultTokenSelectorMarkup() {
         return `
             <span class="token-selector-content">
@@ -1309,11 +1366,11 @@ export class CreateOrder extends BaseComponent {
             const buyAmount = document.getElementById('buyAmount')?.value.trim();
 
             // Validate inputs
-            if (!sellAmount || isNaN(sellAmount) || parseFloat(sellAmount) <= 0) {
+            if (!this.isValidPositiveAmount(sellAmount)) {
                 this.showError('Please enter a valid sell amount');
                 return;
             }
-            if (!buyAmount || isNaN(buyAmount) || parseFloat(buyAmount) <= 0) {
+            if (!this.isValidPositiveAmount(buyAmount)) {
                 this.showError('Please enter a valid buy amount');
                 return;
             }
@@ -2710,12 +2767,13 @@ export class CreateOrder extends BaseComponent {
         ['sell', 'buy'].forEach(type => {
             const amountInput = document.getElementById(`${type}Amount`);
             if (amountInput) {
+                amountInput.setAttribute('inputmode', 'decimal');
                 // Remove prior listener if present
                 if (this.amountInputListeners[type]) {
                     amountInput.removeEventListener('input', this.amountInputListeners[type]);
                 }
                 // Create and store new listener
-                this.amountInputListeners[type] = () => this.updateTokenAmounts(type);
+                this.amountInputListeners[type] = (event) => this.handleAmountInput(type, event);
                 amountInput.addEventListener('input', this.amountInputListeners[type]);
             }
         });
@@ -2817,7 +2875,7 @@ export class CreateOrder extends BaseComponent {
                     <!-- Sell token input section -->
                     <div id="sellContainer" class="swap-input-container">
                         <div class="amount-input-wrapper">
-                            <input type="number" id="sellAmount" placeholder="0.0" />
+                            <input type="text" id="sellAmount" placeholder="0.0" inputmode="decimal" pattern="^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]*)$" autocomplete="off" spellcheck="false" />
                             <button id="sellAmountMax" class="max-button">MAX</button>
                         </div>
                         <div class="amount-usd is-hidden" id="sellAmountUSD" aria-hidden="true">≈ $0.00</div>
@@ -2844,7 +2902,7 @@ export class CreateOrder extends BaseComponent {
                     <!-- Buy token input section -->
                     <div id="buyContainer" class="swap-input-container">
                         <div class="amount-input-wrapper">
-                            <input type="number" id="buyAmount" placeholder="0.0" />
+                            <input type="text" id="buyAmount" placeholder="0.0" inputmode="decimal" pattern="^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]*)$" autocomplete="off" spellcheck="false" />
                         </div>
                         <div class="amount-usd is-hidden" id="buyAmountUSD" aria-hidden="true">≈ $0.00</div>
                         <div id="buyTokenSelector" class="token-selector">
