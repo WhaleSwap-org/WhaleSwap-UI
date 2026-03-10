@@ -805,6 +805,9 @@ export class CreateOrder extends BaseComponent {
     }
 
     isTokenBalanceLoading(token) {
+        if (this.isReadOnlyMode) {
+            return false;
+        }
         return Boolean(token?.balanceLoading);
     }
 

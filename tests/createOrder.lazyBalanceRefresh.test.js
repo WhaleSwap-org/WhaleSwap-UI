@@ -153,4 +153,29 @@ describe('CreateOrder lazy balance refresh', () => {
         expect(document.getElementById('sellTokenModal')?.style.display).toBe('block');
         expect(refreshSpy).toHaveBeenCalledWith('sell-selector-open');
     });
+
+    it('renders disconnected token rows without loading placeholders', () => {
+        setupTokenModalDom();
+
+        const component = new CreateOrder();
+        component.setContext(createContextStub());
+        component.isReadOnlyMode = true;
+
+        const listContainer = document.createElement('div');
+        component.displayTokens([
+            {
+                address: TOKEN_A,
+                symbol: 'AAA',
+                name: 'Alpha',
+                decimals: 18,
+                balance: null,
+                balanceLoading: true,
+                iconUrl: 'fallback',
+            },
+        ], listContainer, 'sell');
+
+        expect(listContainer.textContent).toContain('0.00');
+        expect(listContainer.textContent).not.toContain('loading...');
+        expect(listContainer.textContent).not.toContain('balances loading...');
+    });
 });
