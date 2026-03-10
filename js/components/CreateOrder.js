@@ -493,7 +493,6 @@ export class CreateOrder extends BaseComponent {
         }
         if (this.initialized) {
             this.debug('Already initialized, refreshing active state only');
-            this.isReadOnlyMode = Boolean(readOnlyMode);
             if (readOnlyMode) {
                 this.setReadOnlyMode();
             } else {
@@ -648,6 +647,12 @@ export class CreateOrder extends BaseComponent {
         this.tokensLoading = true;
         this.setAllowedTokenListsLoadingState('Loading allowed tokens...');
         this.allowedTokensLoadPromise = this.loadContractTokens()
+            .then((tokens) => {
+                if (forceFresh && !this.isReadOnlyMode) {
+                    void this.requestVisibleBalanceRefresh(`${source}:post-force-refresh`);
+                }
+                return tokens;
+            })
             .catch((error) => {
                 this.debug(`Allowed token refresh failed (${source}):`, error);
             })
@@ -1897,13 +1902,6 @@ export class CreateOrder extends BaseComponent {
             // Clear the container and add the new structure
             currentContainer.innerHTML = '';
             currentContainer.appendChild(container);
-            
-            // Add event listeners
-            tokenSelector.addEventListener('click', () => {
-                const modal = document.getElementById(`${type}TokenModal`);
-                if (modal) modal.classList.add('show');
-            });
-            
             // Create modal if it doesn't exist
             if (!document.getElementById(`${type}TokenModal`)) {
                 const modal = this.createTokenModal(type);
