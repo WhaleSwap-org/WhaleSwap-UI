@@ -535,7 +535,6 @@ export class CreateOrder extends BaseComponent {
         }
         if (this.initialized) {
             this.debug('Already initialized, refreshing active state only');
-            this.isReadOnlyMode = Boolean(readOnlyMode);
             if (readOnlyMode) {
                 this.setReadOnlyMode();
             } else {

@@ -2,12 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockGetAllWalletTokens = vi.fn();
 const mockGetContractAllowedTokens = vi.fn();
-const mockClearTokenCaches = vi.fn();
 
 vi.mock('../js/utils/contractTokens.js', () => ({
     getAllWalletTokens: (...args) => mockGetAllWalletTokens(...args),
     getContractAllowedTokens: (...args) => mockGetContractAllowedTokens(...args),
-    clearTokenCaches: (...args) => mockClearTokenCaches(...args),
+    clearTokenCaches: vi.fn(),
 }));
 
 import { CreateOrder } from '../js/components/CreateOrder.js';
@@ -68,7 +67,6 @@ beforeEach(() => {
     vi.restoreAllMocks();
     mockGetAllWalletTokens.mockReset();
     mockGetContractAllowedTokens.mockReset();
-    mockClearTokenCaches.mockReset();
 });
 
 afterEach(() => {
@@ -152,6 +150,36 @@ describe('CreateOrder lazy balance refresh', () => {
 
         expect(document.getElementById('sellTokenModal')?.style.display).toBe('block');
         expect(refreshSpy).toHaveBeenCalledWith('sell-selector-open');
+    });
+
+    it('refreshes balances after a forced allowed-token reload in connected mode', async () => {
+        setupTokenModalDom();
+        mockGetContractAllowedTokens.mockResolvedValue([
+            {
+                address: TOKEN_A,
+                symbol: 'AAA',
+                name: 'Alpha',
+                decimals: 18,
+                balance: null,
+                balanceLoading: true,
+                iconUrl: 'fallback',
+            },
+        ]);
+
+        const component = new CreateOrder();
+        component.setContext(createContextStub());
+        component.isReadOnlyMode = false;
+
+        const refreshSpy = vi
+            .spyOn(component, 'requestVisibleBalanceRefresh')
+            .mockResolvedValue([]);
+
+        await component.requestAllowedTokensRefresh({
+            forceFresh: true,
+            source: 'AllowedTokensUpdated',
+        });
+
+        expect(refreshSpy).toHaveBeenCalledWith('AllowedTokensUpdated:post-force-refresh');
     });
 
     it('renders disconnected token rows without loading placeholders', () => {
