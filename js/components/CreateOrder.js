@@ -238,6 +238,7 @@ export class CreateOrder extends BaseComponent {
         this.pendingAllowedTokensRefresh = false;
         this.feeToken = null;
         this.isReadOnlyMode = true;
+        this.isReadOnlyMode = true;
         this.isContractDisabled = false;
         this.contractStateReadError = false;
         this.tokenDisplaySymbolMap = new Map();
@@ -443,6 +444,7 @@ export class CreateOrder extends BaseComponent {
 
     applyDisconnectedState() {
         this.isReadOnlyMode = true;
+        this.isReadOnlyMode = true;
         this.contractStateReadError = false;
         this.isContractDisabled = false;
         this.isSubmitting = false;
@@ -493,6 +495,7 @@ export class CreateOrder extends BaseComponent {
         }
         if (this.initialized) {
             this.debug('Already initialized, refreshing active state only');
+            this.isReadOnlyMode = Boolean(readOnlyMode);
             if (readOnlyMode) {
                 this.setReadOnlyMode();
             } else {
@@ -591,6 +594,9 @@ export class CreateOrder extends BaseComponent {
             
             // Load fee/token data in background so initial tab render is not blocked.
             this.startBackgroundDataLoading();
+            if (!readOnlyMode) {
+                void this.requestVisibleBalanceRefresh('tab-active');
+            }
             if (!readOnlyMode) {
                 void this.requestVisibleBalanceRefresh('tab-active');
             }
@@ -772,6 +778,41 @@ export class CreateOrder extends BaseComponent {
         };
 
         pricing.subscribe(this.pricingUpdatedHandler);
+    }
+
+    requestVisibleBalanceRefresh(source = 'unknown') {
+        const wallet = this.ctx?.getWallet?.();
+        const isWalletConnected = Boolean(wallet?.isWalletConnected?.());
+        if (this.isReadOnlyMode || !isWalletConnected) {
+            this.debug(`Skipping visible balance refresh while disconnected/read-only (${source})`);
+            return Promise.resolve(this.allowedTokens);
+        }
+
+        const hasAllowedTokens = Array.isArray(this.allowedTokens) && this.allowedTokens.length > 0;
+        if (!hasAllowedTokens) {
+            if (this.allowedTokensLoadPromise) {
+                this.debug(`Deferring visible balance refresh until allowed tokens load (${source})`);
+                return this.allowedTokensLoadPromise
+                    .then(() => {
+                        const loadedTokensAvailable = Array.isArray(this.allowedTokens) && this.allowedTokens.length > 0;
+                        if (!loadedTokensAvailable) {
+                            this.debug(`No allowed tokens available after load; skipping balance refresh (${source})`);
+                            return this.allowedTokens;
+                        }
+                        return this.requestVisibleBalanceRefresh(`${source}:after-allowed-tokens`);
+                    })
+                    .catch((error) => {
+                        this.debug(`Allowed token load failed before balance refresh (${source}):`, error);
+                        return this.allowedTokens;
+                    });
+            }
+
+            this.debug(`Skipping visible balance refresh with no allowed tokens loaded (${source})`);
+            return Promise.resolve(this.allowedTokens);
+        }
+
+        this.debug(`Refreshing visible token balances (${source})`);
+        return this.refreshAllowedTokenBalancesInBackground();
     }
 
     requestVisibleBalanceRefresh(source = 'unknown') {
@@ -1023,6 +1064,7 @@ export class CreateOrder extends BaseComponent {
     setReadOnlyMode() {
         this.debug('Setting read-only mode');
         this.isReadOnlyMode = true;
+        this.isReadOnlyMode = true;
         
         // Ensure UI is hidden per styles by removing wallet-connected
         const swapSection = document.querySelector('.swap-section');
@@ -1040,6 +1082,7 @@ export class CreateOrder extends BaseComponent {
     }
 
     setConnectedMode() {
+        this.isReadOnlyMode = false;
         this.isReadOnlyMode = false;
         // Make sure the swap section is marked as wallet-connected so CSS reveals inputs
         const swapSection = document.querySelector('.swap-section');
@@ -2785,6 +2828,7 @@ export class CreateOrder extends BaseComponent {
                         this.renderAllowedTokenList(type);
                     }
                     modal.style.display = 'block';
+                    void this.requestVisibleBalanceRefresh(`${type}-selector-open`);
                     void this.requestVisibleBalanceRefresh(`${type}-selector-open`);
 
                     // Keep state fresh without blocking modal open on network issues.
