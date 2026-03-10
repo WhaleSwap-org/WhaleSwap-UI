@@ -46,6 +46,7 @@ export class CreateOrder extends BaseComponent {
         this.pendingAllowedTokensRefresh = false;
         this.sellToken = null;
         this.buyToken = null;
+        this.isReadOnlyMode = true;
         this.isContractDisabled = false;
         this.contractStateReadError = false;
         this.transactionProgressSession = null;
@@ -236,6 +237,7 @@ export class CreateOrder extends BaseComponent {
         this.pendingFeeConfigRefresh = false;
         this.pendingAllowedTokensRefresh = false;
         this.feeToken = null;
+        this.isReadOnlyMode = true;
         this.isContractDisabled = false;
         this.contractStateReadError = false;
         this.tokenDisplaySymbolMap = new Map();
@@ -440,6 +442,7 @@ export class CreateOrder extends BaseComponent {
     }
 
     applyDisconnectedState() {
+        this.isReadOnlyMode = true;
         this.contractStateReadError = false;
         this.isContractDisabled = false;
         this.isSubmitting = false;
@@ -484,8 +487,19 @@ export class CreateOrder extends BaseComponent {
     }
 
     async initialize(readOnlyMode = true, options = {}) {
-        if (this.initializing || this.initialized) {
-            this.debug('Already initializing or initialized, skipping...');
+        if (this.initializing) {
+            this.debug('Already initializing, skipping...');
+            return;
+        }
+        if (this.initialized) {
+            this.debug('Already initialized, refreshing active state only');
+            this.isReadOnlyMode = Boolean(readOnlyMode);
+            if (readOnlyMode) {
+                this.setReadOnlyMode();
+            } else {
+                this.setConnectedMode();
+                void this.requestVisibleBalanceRefresh('tab-active');
+            }
             return;
         }
         this.initializing = true;
@@ -578,6 +592,9 @@ export class CreateOrder extends BaseComponent {
             
             // Load fee/token data in background so initial tab render is not blocked.
             this.startBackgroundDataLoading();
+            if (!readOnlyMode) {
+                void this.requestVisibleBalanceRefresh('tab-active');
+            }
             this.hasLoadedData = true;
             
             // Initialize token selectors
@@ -750,6 +767,41 @@ export class CreateOrder extends BaseComponent {
         };
 
         pricing.subscribe(this.pricingUpdatedHandler);
+    }
+
+    requestVisibleBalanceRefresh(source = 'unknown') {
+        const wallet = this.ctx?.getWallet?.();
+        const isWalletConnected = Boolean(wallet?.isWalletConnected?.());
+        if (this.isReadOnlyMode || !isWalletConnected) {
+            this.debug(`Skipping visible balance refresh while disconnected/read-only (${source})`);
+            return Promise.resolve(this.allowedTokens);
+        }
+
+        const hasAllowedTokens = Array.isArray(this.allowedTokens) && this.allowedTokens.length > 0;
+        if (!hasAllowedTokens) {
+            if (this.allowedTokensLoadPromise) {
+                this.debug(`Deferring visible balance refresh until allowed tokens load (${source})`);
+                return this.allowedTokensLoadPromise
+                    .then(() => {
+                        const loadedTokensAvailable = Array.isArray(this.allowedTokens) && this.allowedTokens.length > 0;
+                        if (!loadedTokensAvailable) {
+                            this.debug(`No allowed tokens available after load; skipping balance refresh (${source})`);
+                            return this.allowedTokens;
+                        }
+                        return this.requestVisibleBalanceRefresh(`${source}:after-allowed-tokens`);
+                    })
+                    .catch((error) => {
+                        this.debug(`Allowed token load failed before balance refresh (${source}):`, error);
+                        return this.allowedTokens;
+                    });
+            }
+
+            this.debug(`Skipping visible balance refresh with no allowed tokens loaded (${source})`);
+            return Promise.resolve(this.allowedTokens);
+        }
+
+        this.debug(`Refreshing visible token balances (${source})`);
+        return this.refreshAllowedTokenBalancesInBackground();
     }
 
     isTokenBalanceLoading(token) {
@@ -962,6 +1014,7 @@ export class CreateOrder extends BaseComponent {
 
     setReadOnlyMode() {
         this.debug('Setting read-only mode');
+        this.isReadOnlyMode = true;
         
         // Ensure UI is hidden per styles by removing wallet-connected
         const swapSection = document.querySelector('.swap-section');
@@ -979,6 +1032,7 @@ export class CreateOrder extends BaseComponent {
     }
 
     setConnectedMode() {
+        this.isReadOnlyMode = false;
         // Make sure the swap section is marked as wallet-connected so CSS reveals inputs
         const swapSection = document.querySelector('.swap-section');
         if (swapSection) {
@@ -1694,7 +1748,6 @@ export class CreateOrder extends BaseComponent {
                         this.debug('Error fetching prices for allowed tokens:', error);
                     });
             }
-            this.refreshAllowedTokenBalancesInBackground();
             
             // Debug: Check if tokens have iconUrl
             for (const token of normalizedAllowed) {
@@ -2731,6 +2784,7 @@ export class CreateOrder extends BaseComponent {
                         this.renderAllowedTokenList(type);
                     }
                     modal.style.display = 'block';
+                    void this.requestVisibleBalanceRefresh(`${type}-selector-open`);
 
                     // Keep state fresh without blocking modal open on network issues.
                     void this.refreshContractDisabledState();
