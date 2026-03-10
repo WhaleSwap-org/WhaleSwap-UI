@@ -206,4 +206,20 @@ describe('CreateOrder lazy balance refresh', () => {
         expect(listContainer.textContent).not.toContain('loading...');
         expect(listContainer.textContent).not.toContain('balances loading...');
     });
+
+    it('preserves allowed tokens during disconnect-style reset', () => {
+        document.body.innerHTML = '<div id="create-order"></div>';
+
+        const component = new CreateOrder();
+        component.setContext(createContextStub());
+        component.tokens = [{ address: TOKEN_A, symbol: 'AAA', balance: '12.5', balanceLoading: false }];
+        component.allowedTokens = [{ address: TOKEN_A, symbol: 'AAA', balance: '12.5', balanceLoading: false }];
+
+        component.resetState({ clearSelections: true, preserveAllowedTokens: true });
+
+        expect(component.tokens).toEqual([{ address: TOKEN_A, symbol: 'AAA', balance: null, balanceLoading: true }]);
+        expect(component.allowedTokens).toEqual([{ address: TOKEN_A, symbol: 'AAA', balance: null, balanceLoading: true }]);
+        expect(component.isReadOnlyMode).toBe(true);
+        expect(component.initialized).toBe(false);
+    });
 });
