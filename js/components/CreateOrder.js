@@ -50,6 +50,7 @@ export class CreateOrder extends BaseComponent {
         this.isContractDisabled = false;
         this.contractStateReadError = false;
         this.transactionProgressSession = null;
+        this.transactionProgressVisibilityCleanup = null;
         this.tokenSelectorListeners = {};  // Store listeners to prevent duplicates
         this.boundWindowClickHandler = null;
         this.boundTooltipOutsideClickHandler = null;
@@ -228,6 +229,7 @@ export class CreateOrder extends BaseComponent {
         this.initialized = false;
         this.initializing = false;
         this.hasLoadedData = false;
+        this.clearTransactionProgressSession();
         if (!preserveAllowedTokens) {
             this.tokens = [];
             this.allowedTokens = [];
@@ -321,7 +323,7 @@ export class CreateOrder extends BaseComponent {
         this.contractStateReadError = false;
         this.isContractDisabled = false;
         this.isSubmitting = false;
-        this.updateCreateButtonState();
+        this.clearTransactionProgressSession();
     }
 
     async initializeContract() {
@@ -1321,14 +1323,58 @@ export class CreateOrder extends BaseComponent {
         }
     }
 
+    clearTransactionProgressSession() {
+        if (this.transactionProgressVisibilityCleanup) {
+            this.transactionProgressVisibilityCleanup();
+            this.transactionProgressVisibilityCleanup = null;
+        }
+
+        this.transactionProgressSession = null;
+        this.updateCreateButtonState();
+    }
+
+    setTransactionProgressSession(session) {
+        if (this.transactionProgressVisibilityCleanup) {
+            this.transactionProgressVisibilityCleanup();
+            this.transactionProgressVisibilityCleanup = null;
+        }
+
+        this.transactionProgressSession = session || null;
+
+        if (!session) {
+            this.updateCreateButtonState();
+            return;
+        }
+
+        this.transactionProgressVisibilityCleanup = session.onVisibilityChange(({ hidden, active }) => {
+            if (this.transactionProgressSession !== session) {
+                return;
+            }
+
+            if (hidden && !active) {
+                this.clearTransactionProgressSession();
+                return;
+            }
+
+            this.updateCreateButtonState();
+        });
+
+        this.updateCreateButtonState();
+    }
+
     async handleCreateOrder(event) {
         event.preventDefault();
-        
-        if (this.isSubmitting) {
-            if (this.transactionProgressSession?.isHidden()) {
+
+        if (this.transactionProgressSession) {
+            if (this.transactionProgressSession.isHidden()) {
                 this.transactionProgressSession.reopen();
-                this.updateCreateButtonState();
             }
+            this.updateCreateButtonState();
+            this.debug('Create order checklist already exists');
+            return;
+        }
+
+        if (this.isSubmitting) {
             this.debug('Already processing a transaction');
             return;
         }
@@ -1516,10 +1562,7 @@ export class CreateOrder extends BaseComponent {
                     { id: 'confirm-order', label: 'Confirm order on-chain', status: 'pending' },
                 ],
             });
-            this.transactionProgressSession = progressToast;
-            progressToast.onVisibilityChange(() => {
-                this.updateCreateButtonState();
-            });
+            this.setTransactionProgressSession(progressToast);
 
             for (const requirement of approvalRequirements) {
                 if (!requirement.needsApproval) {
@@ -1675,7 +1718,6 @@ export class CreateOrder extends BaseComponent {
             handleTransactionError(error, this, 'order creation');
         } finally {
             this.isSubmitting = false;
-            this.transactionProgressSession = null;
             this.updateCreateButtonState();
         }
     }
@@ -2191,6 +2233,7 @@ export class CreateOrder extends BaseComponent {
             this.expiryTimers.forEach(timerId => clearInterval(timerId));
             this.expiryTimers.clear();
         }
+        this.clearTransactionProgressSession();
         this.clearInfoTooltipInteractions();
         // Remove global click handler for modals if present
         if (this.boundWindowClickHandler) {
@@ -2667,12 +2710,22 @@ export class CreateOrder extends BaseComponent {
                 hasTokens &&
                 hasAmounts;
 
+            const hasVisibleProgress = this.transactionProgressSession?.isVisible();
             const canViewProgress = this.isSubmitting && this.transactionProgressSession?.isHidden();
 
             if (canViewProgress) {
                 createButton.disabled = false;
                 createButton.classList.remove('disabled');
                 createButton.textContent = 'View Progress';
+                return;
+            }
+
+            if (hasVisibleProgress) {
+                createButton.disabled = true;
+                createButton.classList.add('disabled');
+                createButton.textContent = this.transactionProgressSession?.isActive()
+                    ? 'Creating Order...'
+                    : 'Checklist Open';
                 return;
             }
 
