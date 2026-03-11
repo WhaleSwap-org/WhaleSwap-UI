@@ -228,6 +228,7 @@ export class CreateOrder extends BaseComponent {
         this.initialized = false;
         this.initializing = false;
         this.hasLoadedData = false;
+        this.clearTransactionProgressSession();
         if (!preserveAllowedTokens) {
             this.tokens = [];
             this.allowedTokens = [];
@@ -320,7 +321,7 @@ export class CreateOrder extends BaseComponent {
         this.contractStateReadError = false;
         this.isContractDisabled = false;
         this.isSubmitting = false;
-        this.updateCreateButtonState();
+        this.clearTransactionProgressSession();
     }
 
     async initializeContract() {
@@ -2134,6 +2135,7 @@ export class CreateOrder extends BaseComponent {
             this.expiryTimers.forEach(timerId => clearInterval(timerId));
             this.expiryTimers.clear();
         }
+        this.clearTransactionProgressSession();
         this.clearInfoTooltipInteractions();
         // Remove global click handler for modals if present
         if (this.boundWindowClickHandler) {

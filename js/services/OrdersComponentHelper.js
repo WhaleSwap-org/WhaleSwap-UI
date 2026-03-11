@@ -723,6 +723,7 @@ export class OrdersComponentHelper {
      * Cleanup subscriptions and listeners
      */
     cleanup() {
+        this.clearFillProgressSession();
         // Unsubscribe from WebSocket events
         const ws = this.component.ctx.getWebSocket();
         if (ws && this.component.eventSubscriptions) {

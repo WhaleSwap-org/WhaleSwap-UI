@@ -44,6 +44,9 @@ function createHelperHarness() {
             getWebSocket: () => ({
                 unsubscribe: vi.fn(),
             }),
+            getWallet: () => ({
+                removeListener: vi.fn(),
+            }),
         },
         refreshOrdersView: vi.fn(async () => {}),
         ensureWalletReadyForWrite: vi.fn(async () => true),
@@ -141,5 +144,17 @@ describe('OrdersComponentHelper fill checklist lifecycle', () => {
         expect(trackedButton.textContent).toBe('Fill');
         expect(otherButton.disabled).toBe(false);
         expect(otherButton.textContent).toBe('Fill');
+    });
+
+    it('clears tracked fill progress during helper cleanup', () => {
+        const { helper } = createHelperHarness();
+        const { session } = createSessionDouble({ hidden: false, active: false });
+
+        helper.setFillProgressSession(session, 7);
+        helper.cleanup();
+
+        expect(helper.fillProgressSession).toBeNull();
+        expect(helper.fillProgressOrderId).toBeNull();
+        expect(helper.fillProgressVisibilityCleanup).toBeNull();
     });
 });

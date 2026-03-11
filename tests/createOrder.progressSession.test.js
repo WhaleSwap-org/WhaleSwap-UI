@@ -143,4 +143,26 @@ describe('CreateOrder checklist session lifecycle', () => {
         expect(button.disabled).toBe(false);
         expect(button.textContent).toBe('View Progress');
     });
+
+    it('clears tracked checklist session during resetState', () => {
+        const component = createComponent();
+        const { session } = createSessionDouble({ hidden: false, active: false });
+
+        component.setTransactionProgressSession(session);
+        component.resetState();
+
+        expect(component.transactionProgressSession).toBeNull();
+        expect(component.transactionProgressVisibilityCleanup).toBeNull();
+    });
+
+    it('clears tracked checklist session when applying disconnected state', () => {
+        const component = createComponent();
+        const { session } = createSessionDouble({ hidden: false, active: false });
+
+        component.setTransactionProgressSession(session);
+        component.applyDisconnectedState();
+
+        expect(component.transactionProgressSession).toBeNull();
+        expect(component.transactionProgressVisibilityCleanup).toBeNull();
+    });
 });
