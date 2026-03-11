@@ -801,13 +801,18 @@ class App {
 	handleNetworkSwitchFailure(error, targetNetwork, options = {}) {
 		const { restoreSelectionNetwork = null } = options;
 		this.warn('Wallet network switch rejected/failed:', error);
+		const missingNetwork = isNetworkAddRequiredError(error);
 		const restoredNetwork = this.restoreSelectedNetwork(restoreSelectionNetwork);
+		if (missingNetwork && restoredNetwork?.slug === targetNetwork?.slug) {
+			setNetworkSetupRequired(targetNetwork.slug);
+			syncNetworkBadgeFromState();
+		}
 		if (restoredNetwork) {
 			this.showWarning(this.getNetworkSwitchFailureWarning(error, targetNetwork, restoredNetwork));
 			return;
 		}
 
-		if (isNetworkAddRequiredError(error)) {
+		if (missingNetwork) {
 			setNetworkSetupRequired(targetNetwork.slug);
 			syncNetworkBadgeFromState();
 			this.showWarning(this.getNetworkSwitchFailureWarning(error, targetNetwork));

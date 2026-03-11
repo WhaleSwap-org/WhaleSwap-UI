@@ -71,6 +71,7 @@ afterEach(() => {
 	document.body.innerHTML = '';
 	window.history.replaceState({}, '', '/');
 	walletManager.chainId = null;
+	walletManager.injectedProvider = null;
 	vi.unstubAllGlobals();
 	vi.restoreAllMocks();
 });
@@ -141,5 +142,28 @@ describe('App network switch failure behavior', () => {
 		expect(app.showWarning).toHaveBeenCalledWith(
 			'Wallet request was cancelled. Kept selection on Polygon Mainnet.'
 		);
+	});
+
+	it('keeps the add-network retry affordance when a write-triggered switch fails because the selected network is missing', () => {
+		const app = initializeApp({
+			walletChainId: BNB_CHAIN_ID,
+			selectedSlug: POLYGON_SLUG,
+		});
+		const targetNetwork = getNetworkBySlug(POLYGON_SLUG);
+		const error = Object.assign(new Error('Unrecognized chain'), {
+			code: 4902,
+			requiresWalletNetworkAddition: true,
+		});
+		walletManager.injectedProvider = { request: vi.fn() };
+
+		app.handleNetworkSwitchFailure(error, targetNetwork, {
+			restoreSelectionNetwork: targetNetwork,
+		});
+
+		const addNetworkButton = document.getElementById('addNetworkButton');
+		expect(app.ctx.getSelectedChainSlug()).toBe(POLYGON_SLUG);
+		expect(getSelectedChainFromUrl()).toBe(POLYGON_SLUG);
+		expect(addNetworkButton?.classList.contains('hidden')).toBe(false);
+		expect(addNetworkButton?.textContent).toBe('Add Polygon Mainnet');
 	});
 });
