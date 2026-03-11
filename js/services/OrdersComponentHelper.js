@@ -38,42 +38,37 @@ export class OrdersComponentHelper {
         return this.fillProgressOrderId === Number(orderId) && Boolean(this.fillProgressSession);
     }
 
-    hasAnyFillProgress() {
-        return Boolean(this.fillProgressSession);
-    }
+    getFillProgressState(orderId) {
+        const normalizedOrderId = Number(orderId);
+        const hasAnyProgress = Boolean(this.fillProgressSession);
+        const hasTrackedProgress = hasAnyProgress && this.fillProgressOrderId === normalizedOrderId;
 
-    isFillProgressActive(orderId) {
-        return this.hasTrackedFillProgress(orderId) && this.fillProgressSession?.isActive();
-    }
-
-    isFillProgressHidden(orderId) {
-        return this.hasTrackedFillProgress(orderId) && this.fillProgressSession?.isHidden();
-    }
-
-    isFillProgressVisible(orderId) {
-        return this.hasTrackedFillProgress(orderId) && this.fillProgressSession?.isVisible();
+        return {
+            normalizedOrderId,
+            hasAnyProgress,
+            hasTrackedProgress,
+            isActive: hasTrackedProgress && this.fillProgressSession.isActive(),
+            isHidden: hasTrackedProgress && this.fillProgressSession.isHidden(),
+            isVisible: hasTrackedProgress && this.fillProgressSession.isVisible(),
+        };
     }
 
     configureFillButton(button, orderId) {
         if (!button) return;
 
-        const normalizedOrderId = Number(orderId);
-        const hasTrackedProgress = this.hasTrackedFillProgress(normalizedOrderId);
-        const hasAnyProgress = this.hasAnyFillProgress();
-        const isHiddenProgress = this.isFillProgressHidden(orderId);
-        const isVisibleProgress = this.isFillProgressVisible(orderId);
-        const isActiveProgress = this.isFillProgressActive(orderId);
+        const progressState = this.getFillProgressState(orderId);
 
-        button.textContent = isHiddenProgress && isActiveProgress
+        button.textContent = progressState.isHidden && progressState.isActive
             ? 'View Progress'
-            : isVisibleProgress
-                ? isActiveProgress
+            : progressState.isVisible
+                ? progressState.isActive
                     ? 'Filling...'
                     : 'Checklist Open'
                 : 'Fill';
-        button.disabled = !isHiddenProgress && (isVisibleProgress || (hasAnyProgress && !hasTrackedProgress));
+        button.disabled = !progressState.isHidden
+            && (progressState.isVisible || (progressState.hasAnyProgress && !progressState.hasTrackedProgress));
         button.classList.toggle('disabled', button.disabled);
-        button.onclick = () => this.fillOrder(normalizedOrderId);
+        button.onclick = () => this.fillOrder(progressState.normalizedOrderId);
     }
 
     syncFillProgressButtons() {

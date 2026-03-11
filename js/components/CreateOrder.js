@@ -1224,17 +1224,14 @@ export class CreateOrder extends BaseComponent {
         }
     }
 
-    clearTransactionProgressSession({ updateButtonState = true } = {}) {
+    clearTransactionProgressSession() {
         if (this.transactionProgressVisibilityCleanup) {
             this.transactionProgressVisibilityCleanup();
             this.transactionProgressVisibilityCleanup = null;
         }
 
         this.transactionProgressSession = null;
-
-        if (updateButtonState) {
-            this.updateCreateButtonState();
-        }
+        this.updateCreateButtonState();
     }
 
     setTransactionProgressSession(session) {
