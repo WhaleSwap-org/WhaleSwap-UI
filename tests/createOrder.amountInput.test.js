@@ -1,13 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CreateOrder } from '../js/components/CreateOrder.js';
 
-function createContextStub() {
+function createPricingStub(overrides = {}) {
     return {
-        getPricing: () => ({
-            getPrice: () => undefined,
-            isPriceEstimated: () => false,
-            fetchPricesForTokens: async () => {}
-        }),
+        getPrice: () => undefined,
+        isPriceEstimated: () => false,
+        fetchPricesForTokens: async () => {},
+        subscribe: () => {},
+        unsubscribe: () => {},
+        ...overrides
+    };
+}
+
+function createContextStub({ pricing } = {}) {
+    const pricingService = pricing || createPricingStub();
+
+    return {
+        getPricing: () => pricingService,
         getWebSocket: () => ({}),
         getWallet: () => ({
             isWalletConnected: () => true,
@@ -27,6 +36,30 @@ function setupInputs() {
         <input id="sellAmount" type="text" />
         <input id="buyAmount" type="text" />
     `;
+}
+
+function setupSuggestionInputs() {
+    document.body.innerHTML = `
+        <div id="create-order"></div>
+        <input id="sellAmount" type="text" />
+        <div id="sellAmountUSD" class="amount-usd is-hidden" aria-hidden="true"></div>
+        <button id="sellAmountSuggestion" type="button" class="amount-suggestion is-hidden" aria-hidden="true"></button>
+        <input id="buyAmount" type="text" />
+        <div id="buyAmountUSD" class="amount-usd is-hidden" aria-hidden="true"></div>
+        <button id="buyAmountSuggestion" type="button" class="amount-suggestion is-hidden" aria-hidden="true"></button>
+    `;
+}
+
+function createSelectedToken(address, { decimals = 18, usdPrice } = {}) {
+    return {
+        address,
+        decimals,
+        usdPrice
+    };
+}
+
+async function waitForBlurHandlers() {
+    await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 beforeEach(() => {
@@ -152,5 +185,200 @@ describe('CreateOrder amount input sanitizing', () => {
         expect(sellAmountUsd.textContent).toBe('<$0.01');
         expect(sellAmountUsd.classList.contains('is-hidden')).toBe(false);
         expect(sellAmountUsd.getAttribute('aria-hidden')).toBe('false');
+    });
+});
+
+describe('CreateOrder focused amount suggestions', () => {
+    it('shows a suggestion only for the focused field when both tokens, prices, and the opposite amount exist', () => {
+        setupSuggestionInputs();
+
+        const pricing = createPricingStub({
+            getPrice: (address) => {
+                if (address === '0xsell') return 2;
+                if (address === '0xbuy') return 4;
+                return undefined;
+            }
+        });
+
+        const component = new CreateOrder();
+        component.setContext(createContextStub({ pricing }));
+        component.sellToken = createSelectedToken('0xsell', { decimals: 18, usdPrice: 99 });
+        component.buyToken = createSelectedToken('0xbuy', { decimals: 18, usdPrice: 99 });
+
+        component.initializeAmountInputs();
+
+        const sellAmountInput = document.getElementById('sellAmount');
+        const sellSuggestion = document.getElementById('sellAmountSuggestion');
+        const buyAmountInput = document.getElementById('buyAmount');
+        const buySuggestion = document.getElementById('buyAmountSuggestion');
+
+        sellAmountInput.value = '4';
+        buyAmountInput.focus();
+
+        expect(buySuggestion.textContent).toBe('2');
+        expect(buySuggestion.classList.contains('is-hidden')).toBe(false);
+        expect(buySuggestion.getAttribute('aria-hidden')).toBe('false');
+        expect(sellSuggestion.classList.contains('is-hidden')).toBe(true);
+    });
+
+    it('moves the suggestion to the newly focused field and hides the previous one', async () => {
+        setupSuggestionInputs();
+
+        const pricing = createPricingStub({
+            getPrice: (address) => {
+                if (address === '0xsell') return 2;
+                if (address === '0xbuy') return 4;
+                return undefined;
+            }
+        });
+
+        const component = new CreateOrder();
+        component.setContext(createContextStub({ pricing }));
+        component.sellToken = createSelectedToken('0xsell', { decimals: 18, usdPrice: 2 });
+        component.buyToken = createSelectedToken('0xbuy', { decimals: 18, usdPrice: 4 });
+
+        component.initializeAmountInputs();
+
+        const sellAmountInput = document.getElementById('sellAmount');
+        const sellSuggestion = document.getElementById('sellAmountSuggestion');
+        const buyAmountInput = document.getElementById('buyAmount');
+        const buySuggestion = document.getElementById('buyAmountSuggestion');
+
+        sellAmountInput.value = '4';
+        buyAmountInput.value = '3';
+
+        buyAmountInput.focus();
+        expect(buySuggestion.textContent).toBe('2');
+
+        sellAmountInput.focus();
+        await waitForBlurHandlers();
+
+        expect(sellSuggestion.textContent).toBe('6');
+        expect(sellSuggestion.classList.contains('is-hidden')).toBe(false);
+        expect(buySuggestion.classList.contains('is-hidden')).toBe(true);
+    });
+
+    it('fills the focused input with the suggested amount when the suggestion is clicked', () => {
+        setupSuggestionInputs();
+
+        const pricing = createPricingStub({
+            getPrice: (address) => {
+                if (address === '0xsell') return 2;
+                if (address === '0xbuy') return 4;
+                return undefined;
+            }
+        });
+
+        const component = new CreateOrder();
+        component.setContext(createContextStub({ pricing }));
+        component.sellToken = createSelectedToken('0xsell', { decimals: 18, usdPrice: 2 });
+        component.buyToken = createSelectedToken('0xbuy', { decimals: 18, usdPrice: 4 });
+
+        const updateTokenAmountsSpy = vi.spyOn(component, 'updateTokenAmounts');
+
+        component.initializeAmountInputs();
+
+        const sellAmountInput = document.getElementById('sellAmount');
+        const buyAmountInput = document.getElementById('buyAmount');
+        const buySuggestion = document.getElementById('buyAmountSuggestion');
+
+        sellAmountInput.value = '4';
+        buyAmountInput.focus();
+        buySuggestion.click();
+
+        expect(buyAmountInput.value).toBe('2');
+        expect(updateTokenAmountsSpy).toHaveBeenCalledWith('buy');
+        expect(document.activeElement).toBe(buyAmountInput);
+    });
+
+    it('keeps suggestions hidden when tokens, prices, or the opposite amount are missing', () => {
+        setupSuggestionInputs();
+
+        const pricing = createPricingStub({
+            getPrice: (address) => {
+                if (address === '0xsell') return 2;
+                return undefined;
+            }
+        });
+
+        const component = new CreateOrder();
+        component.setContext(createContextStub({ pricing }));
+        component.sellToken = createSelectedToken('0xsell', { decimals: 18, usdPrice: 2 });
+        component.buyToken = createSelectedToken('0xbuy', { decimals: 18, usdPrice: undefined });
+
+        component.initializeAmountInputs();
+
+        const sellAmountInput = document.getElementById('sellAmount');
+        const buyAmountInput = document.getElementById('buyAmount');
+        const buySuggestion = document.getElementById('buyAmountSuggestion');
+
+        buyAmountInput.focus();
+        expect(buySuggestion.classList.contains('is-hidden')).toBe(true);
+
+        sellAmountInput.value = '.';
+        sellAmountInput.dispatchEvent(new Event('input', { bubbles: true }));
+        expect(buySuggestion.classList.contains('is-hidden')).toBe(true);
+
+        sellAmountInput.value = '5';
+        sellAmountInput.dispatchEvent(new Event('input', { bubbles: true }));
+        expect(buySuggestion.classList.contains('is-hidden')).toBe(true);
+
+        component.sellToken = null;
+        component.refreshActiveAmountSuggestion();
+        expect(buySuggestion.classList.contains('is-hidden')).toBe(true);
+    });
+
+    it('formats suggested amounts to the target token precision without grouping separators', () => {
+        document.body.innerHTML = '<div id="create-order"></div>';
+
+        const component = new CreateOrder();
+        component.buyToken = createSelectedToken('0xbuy', { decimals: 4 });
+
+        expect(component.formatSuggestedAmount('buy', 1.23)).toBe('1.23');
+        expect(component.formatSuggestedAmount('buy', 1.234567)).toBe('1.2346');
+    });
+
+    it('refreshes USD previews and suggestions from live pricing updates instead of stale selected-token prices', () => {
+        setupSuggestionInputs();
+
+        let pricingSubscriber = null;
+        const livePrices = new Map([
+            ['0xsell', 1],
+            ['0xbuy', 2],
+        ]);
+        const pricing = createPricingStub({
+            getPrice: (address) => livePrices.get(address),
+            subscribe: (callback) => {
+                pricingSubscriber = callback;
+            },
+            unsubscribe: () => {}
+        });
+
+        const component = new CreateOrder();
+        component.setContext(createContextStub({ pricing }));
+        component.sellToken = createSelectedToken('0xsell', { decimals: 18, usdPrice: 99 });
+        component.buyToken = createSelectedToken('0xbuy', { decimals: 18, usdPrice: 99 });
+
+        component.initializeAmountInputs();
+        component.subscribeToPricingUpdates();
+
+        const sellAmountInput = document.getElementById('sellAmount');
+        const sellAmountUsd = document.getElementById('sellAmountUSD');
+        const buyAmountInput = document.getElementById('buyAmount');
+        const buySuggestion = document.getElementById('buyAmountSuggestion');
+
+        sellAmountInput.value = '3';
+        buyAmountInput.focus();
+        component.updateTokenAmounts('sell');
+
+        expect(sellAmountUsd.textContent).toBe('$3.00');
+        expect(buySuggestion.textContent).toBe('1.5');
+
+        livePrices.set('0xsell', 6);
+        livePrices.set('0xbuy', 3);
+        pricingSubscriber?.('priceUpdates');
+
+        expect(sellAmountUsd.textContent).toBe('$18.00');
+        expect(buySuggestion.textContent).toBe('6');
     });
 });

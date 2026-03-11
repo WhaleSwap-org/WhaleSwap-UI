@@ -58,6 +58,7 @@ export class CreateOrder extends BaseComponent {
         this.boundTooltipEscapeHandler = null;
         this.tooltipCleanupCallbacks = [];
         this.tokenDisplaySymbolMap = new Map();
+        this.focusedAmountField = null;
         
         // Initialize logger
         const logger = createLogger('CREATE_ORDER');
@@ -134,6 +135,135 @@ export class CreateOrder extends BaseComponent {
         return Number(trimmedValue) > 0;
     }
 
+    getAmountSuggestionButton(type) {
+        return document.getElementById(`${type}AmountSuggestion`);
+    }
+
+    getLiveTokenUsdPrice(type) {
+        const token = this[`${type}Token`];
+        const pricing = this.ctx?.getPricing?.();
+        const livePrice = token?.address ? Number(pricing?.getPrice?.(token.address)) : Number.NaN;
+        if (Number.isFinite(livePrice)) {
+            return livePrice;
+        }
+
+        const fallbackPrice = Number(token?.usdPrice);
+        return Number.isFinite(fallbackPrice) ? fallbackPrice : undefined;
+    }
+
+    getSuggestedAmount(type) {
+        const targetToken = this[`${type}Token`];
+        const otherType = type === 'sell' ? 'buy' : 'sell';
+        const otherToken = this[`${otherType}Token`];
+        const otherAmountValue = document.getElementById(`${otherType}Amount`)?.value?.trim() || '';
+
+        if (!targetToken?.address || !otherToken?.address || !this.isValidPositiveAmount(otherAmountValue)) {
+            return null;
+        }
+
+        const targetPrice = this.getLiveTokenUsdPrice(type);
+        const otherPrice = this.getLiveTokenUsdPrice(otherType);
+        const otherAmount = Number(otherAmountValue);
+
+        if (!Number.isFinite(targetPrice) || targetPrice <= 0
+            || !Number.isFinite(otherPrice) || otherPrice <= 0
+            || !Number.isFinite(otherAmount) || otherAmount <= 0) {
+            return null;
+        }
+
+        const suggestedAmount = (otherAmount * otherPrice) / targetPrice;
+        return Number.isFinite(suggestedAmount) && suggestedAmount > 0 ? suggestedAmount : null;
+    }
+
+    formatSuggestedAmount(type, amount) {
+        const numericAmount = Number(amount);
+        if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+            return '';
+        }
+
+        const maxDecimals = this.getAmountInputDecimals(type);
+        const maximumFractionDigits = maxDecimals === null ? 8 : Math.min(maxDecimals, 18);
+        const normalizedAmount = Number(numericAmount.toPrecision(15));
+
+        if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
+            return '';
+        }
+
+        const formattedAmount = normalizedAmount.toLocaleString(undefined, {
+            minimumFractionDigits: 0,
+            maximumFractionDigits,
+            useGrouping: false
+        });
+
+        return this.isValidPositiveAmount(formattedAmount) ? formattedAmount : '';
+    }
+
+    syncAmountSuggestion(type) {
+        const suggestionButton = this.getAmountSuggestionButton(type);
+        if (!suggestionButton) {
+            return;
+        }
+
+        const formattedSuggestion = this.focusedAmountField === type
+            ? this.formatSuggestedAmount(type, this.getSuggestedAmount(type))
+            : '';
+
+        if (formattedSuggestion) {
+            suggestionButton.textContent = formattedSuggestion;
+            suggestionButton.dataset.value = formattedSuggestion;
+            suggestionButton.setAttribute('aria-label', `Fill ${type} amount with suggested amount ${formattedSuggestion}`);
+            suggestionButton.title = formattedSuggestion;
+            setVisibility(suggestionButton, true);
+            return;
+        }
+
+        suggestionButton.textContent = '';
+        delete suggestionButton.dataset.value;
+        suggestionButton.setAttribute('aria-label', `No suggested ${type} amount available`);
+        suggestionButton.removeAttribute('title');
+        setVisibility(suggestionButton, false);
+    }
+
+    refreshActiveAmountSuggestion() {
+        ['sell', 'buy'].forEach((type) => this.syncAmountSuggestion(type));
+    }
+
+    setFocusedAmountField(type) {
+        this.focusedAmountField = type;
+        this.refreshActiveAmountSuggestion();
+    }
+
+    scheduleAmountFieldBlur(type) {
+        setTimeout(() => {
+            if (this.focusedAmountField !== type) {
+                this.syncAmountSuggestion(type);
+                return;
+            }
+
+            const amountInput = document.getElementById(`${type}Amount`);
+            const suggestionButton = this.getAmountSuggestionButton(type);
+            const activeElement = document.activeElement;
+            if (activeElement !== amountInput && activeElement !== suggestionButton) {
+                this.focusedAmountField = null;
+                this.refreshActiveAmountSuggestion();
+            }
+        }, 0);
+    }
+
+    handleAmountSuggestionClick(type) {
+        const suggestionButton = this.getAmountSuggestionButton(type);
+        const amountInput = document.getElementById(`${type}Amount`);
+        const suggestedValue = suggestionButton?.dataset?.value || '';
+
+        if (!amountInput || !suggestedValue) {
+            return;
+        }
+
+        amountInput.value = suggestedValue;
+        amountInput.dispatchEvent(new Event('input', { bubbles: true }));
+        amountInput.focus();
+    }
+
     handleAmountInput(type, event) {
         const amountInput = event?.target || document.getElementById(`${type}Amount`);
         if (!amountInput) {
@@ -166,11 +296,20 @@ export class CreateOrder extends BaseComponent {
         amountInput.setAttribute('inputmode', 'decimal');
 
         if (this.amountInputListeners[type]) {
-            amountInput.removeEventListener('input', this.amountInputListeners[type]);
+            amountInput.removeEventListener('input', this.amountInputListeners[type].input);
+            amountInput.removeEventListener('focus', this.amountInputListeners[type].focus);
+            amountInput.removeEventListener('blur', this.amountInputListeners[type].blur);
         }
 
-        this.amountInputListeners[type] = (event) => this.handleAmountInput(type, event);
-        amountInput.addEventListener('input', this.amountInputListeners[type]);
+        this.amountInputListeners[type] = {
+            input: (event) => this.handleAmountInput(type, event),
+            focus: () => this.setFocusedAmountField(type),
+            blur: () => this.scheduleAmountFieldBlur(type)
+        };
+
+        amountInput.addEventListener('input', this.amountInputListeners[type].input);
+        amountInput.addEventListener('focus', this.amountInputListeners[type].focus);
+        amountInput.addEventListener('blur', this.amountInputListeners[type].blur);
     }
 
     getDefaultTokenSelectorMarkup() {
@@ -191,6 +330,7 @@ export class CreateOrder extends BaseComponent {
     clearSelectedTokens() {
         this.sellToken = null;
         this.buyToken = null;
+        this.focusedAmountField = null;
 
         ['sell', 'buy'].forEach(type => {
             this[`${type}Token`] = null;
@@ -217,6 +357,7 @@ export class CreateOrder extends BaseComponent {
             }
         });
 
+        this.refreshActiveAmountSuggestion();
         this.resetBalanceDisplays();
         this.updateCreateButtonState();
         this.debug('Cleared selected tokens from create order form');
@@ -251,6 +392,7 @@ export class CreateOrder extends BaseComponent {
         this.pendingFeeConfigRefresh = false;
         this.pendingAllowedTokensRefresh = false;
         this.feeToken = null;
+        this.focusedAmountField = null;
         this.isReadOnlyMode = true;
         this.isContractDisabled = false;
         this.contractStateReadError = false;
@@ -650,6 +792,8 @@ export class CreateOrder extends BaseComponent {
         this.pricingUpdatedHandler = (event) => {
             if (event === 'priceUpdates' || event === 'refreshComplete' || event === 'priceLoadStateChanged') {
                 this.refreshOpenTokenModals();
+                this.updateTokenAmounts('sell');
+                this.updateTokenAmounts('buy');
             }
         };
 
@@ -1826,19 +1970,31 @@ export class CreateOrder extends BaseComponent {
         ['sell', 'buy'].forEach(type => {
             const currentContainer = document.getElementById(`${type}Container`);
             if (!currentContainer) return;
-            
+
             // Create the unified input container
             const container = document.createElement('div');
             container.className = 'unified-token-input';
-            
-            // Create input wrapper with label
-            const inputWrapper = document.createElement('div');
-            inputWrapper.className = 'token-input-wrapper';
-            
-            // Add the label
+
+            const inputHeader = document.createElement('div');
+            inputHeader.className = 'amount-input-header';
+
             const label = document.createElement('span');
             label.className = 'token-input-label';
             label.textContent = this.getTokenActionLabel(type);
+
+            const suggestionButton = document.createElement('button');
+            suggestionButton.type = 'button';
+            suggestionButton.id = `${type}AmountSuggestion`;
+            suggestionButton.className = 'amount-suggestion is-hidden';
+            suggestionButton.setAttribute('aria-hidden', 'true');
+            suggestionButton.setAttribute('aria-label', `No suggested ${type} amount available`);
+
+            inputHeader.appendChild(label);
+            inputHeader.appendChild(suggestionButton);
+
+            // Create input wrapper
+            const inputWrapper = document.createElement('div');
+            inputWrapper.className = 'token-input-wrapper';
             
             // Create amount input
             const amountInput = document.createElement('input');
@@ -1848,7 +2004,6 @@ export class CreateOrder extends BaseComponent {
             amountInput.placeholder = '0.0';
             
             // Assemble input wrapper
-            inputWrapper.appendChild(label);
             inputWrapper.appendChild(amountInput);
             // Pre-create USD display to preserve layout; keep hidden until valid
             const usdDisplayStatic = document.createElement('div');
@@ -1911,6 +2066,7 @@ export class CreateOrder extends BaseComponent {
             selectorGroup.appendChild(balanceDisplay);
 
             // Assemble the components
+            container.appendChild(inputHeader);
             container.appendChild(inputWrapper);
             container.appendChild(selectorGroup);
             container.appendChild(tokenInput);
@@ -2485,6 +2641,10 @@ export class CreateOrder extends BaseComponent {
                 }
                 // Hide balance display when no token is selected
                 this.hideBalanceDisplay(type);
+                if (this.focusedAmountField === type) {
+                    this.focusedAmountField = null;
+                }
+                this.refreshActiveAmountSuggestion();
                 this.updateCreateButtonState();
                 return;
             }
@@ -2787,24 +2947,21 @@ export class CreateOrder extends BaseComponent {
                 if (usdDisplay) {
                     setVisibility(usdDisplay, false);
                 }
+                this.refreshActiveAmountSuggestion();
                 this.updateCreateButtonState();
                 return;
             }
             
-            if (token && amount) {
-                const usdValue = token.usdPrice !== undefined ? numericAmount * token.usdPrice : 0;
-                // Ensure USD display element exists (in template) and update it
-                if (!usdDisplay) {
-                    usdDisplay = document.getElementById(`${type}AmountUSD`);
-                }
-                if (usdDisplay) {
-                    usdDisplay.textContent = token.usdPrice === undefined
-                        ? 'N/A'
-                        : (usdValue > 0 && usdValue < 0.01 ? '<$0.01' : `$${usdValue.toFixed(2)}`);
-                    setVisibility(usdDisplay, true);
-                }
+            const usdPrice = this.getLiveTokenUsdPrice(type);
+            const usdValue = Number.isFinite(usdPrice) ? numericAmount * usdPrice : 0;
+            if (usdDisplay) {
+                usdDisplay.textContent = !Number.isFinite(usdPrice)
+                    ? 'N/A'
+                    : (usdValue > 0 && usdValue < 0.01 ? '<$0.01' : `$${usdValue.toFixed(2)}`);
+                setVisibility(usdDisplay, true);
             }
             
+            this.refreshActiveAmountSuggestion();
             this.updateCreateButtonState();
         } catch (error) {
             this.debug('Error updating token amounts:', error);
@@ -2923,8 +3080,44 @@ export class CreateOrder extends BaseComponent {
             }
         });
 
+        this.initializeAmountSuggestionButtons();
         // Initialize balance click handlers for auto-fill functionality
         this.initializeBalanceClickHandlers();
+    }
+
+    initializeAmountSuggestionButtons() {
+        ['sell', 'buy'].forEach(type => {
+            const suggestionButton = this.getAmountSuggestionButton(type);
+            if (!suggestionButton) {
+                return;
+            }
+
+            const newSuggestionButton = suggestionButton.cloneNode(true);
+            suggestionButton.parentNode.replaceChild(newSuggestionButton, suggestionButton);
+
+            const preventBlur = (event) => {
+                event.preventDefault();
+            };
+
+            newSuggestionButton.addEventListener('pointerdown', preventBlur);
+            newSuggestionButton.addEventListener('mousedown', preventBlur);
+            newSuggestionButton.addEventListener('focus', () => this.setFocusedAmountField(type));
+            newSuggestionButton.addEventListener('blur', () => this.scheduleAmountFieldBlur(type));
+            newSuggestionButton.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                this.handleAmountSuggestionClick(type);
+            });
+            newSuggestionButton.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    this.handleAmountSuggestionClick(type);
+                }
+            });
+        });
+
+        this.refreshActiveAmountSuggestion();
     }
 
     /**
