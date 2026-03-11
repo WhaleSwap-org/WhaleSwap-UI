@@ -135,10 +135,6 @@ export class CreateOrder extends BaseComponent {
         return Number(trimmedValue) > 0;
     }
 
-    getOtherAmountType(type) {
-        return type === 'sell' ? 'buy' : 'sell';
-    }
-
     getAmountSuggestionButton(type) {
         return document.getElementById(`${type}AmountSuggestion`);
     }
@@ -157,7 +153,7 @@ export class CreateOrder extends BaseComponent {
 
     getSuggestedAmount(type) {
         const targetToken = this[`${type}Token`];
-        const otherType = this.getOtherAmountType(type);
+        const otherType = type === 'sell' ? 'buy' : 'sell';
         const otherToken = this[`${otherType}Token`];
         const otherAmountValue = document.getElementById(`${otherType}Amount`)?.value?.trim() || '';
 
@@ -202,9 +198,22 @@ export class CreateOrder extends BaseComponent {
         return this.isValidPositiveAmount(formattedAmount) ? formattedAmount : '';
     }
 
-    hideAmountSuggestion(type) {
+    syncAmountSuggestion(type) {
         const suggestionButton = this.getAmountSuggestionButton(type);
         if (!suggestionButton) {
+            return;
+        }
+
+        const formattedSuggestion = this.focusedAmountField === type
+            ? this.formatSuggestedAmount(type, this.getSuggestedAmount(type))
+            : '';
+
+        if (formattedSuggestion) {
+            suggestionButton.textContent = formattedSuggestion;
+            suggestionButton.dataset.value = formattedSuggestion;
+            suggestionButton.setAttribute('aria-label', `Fill ${type} amount with suggested amount ${formattedSuggestion}`);
+            suggestionButton.title = formattedSuggestion;
+            setVisibility(suggestionButton, true);
             return;
         }
 
@@ -215,73 +224,19 @@ export class CreateOrder extends BaseComponent {
         setVisibility(suggestionButton, false);
     }
 
-    renderAmountSuggestion(type) {
-        const suggestionButton = this.getAmountSuggestionButton(type);
-        if (!suggestionButton) {
-            return;
-        }
-
-        if (this.focusedAmountField !== type) {
-            this.hideAmountSuggestion(type);
-            return;
-        }
-
-        const formattedSuggestion = this.formatSuggestedAmount(type, this.getSuggestedAmount(type));
-        if (!formattedSuggestion) {
-            this.hideAmountSuggestion(type);
-            return;
-        }
-
-        suggestionButton.textContent = formattedSuggestion;
-        suggestionButton.dataset.value = formattedSuggestion;
-        suggestionButton.setAttribute('aria-label', `Fill ${type} amount with suggested amount ${formattedSuggestion}`);
-        suggestionButton.title = formattedSuggestion;
-        setVisibility(suggestionButton, true);
-    }
-
     refreshActiveAmountSuggestion() {
-        ['sell', 'buy'].forEach((type) => this.renderAmountSuggestion(type));
+        ['sell', 'buy'].forEach((type) => this.syncAmountSuggestion(type));
     }
 
-    clearAmountSuggestions() {
-        ['sell', 'buy'].forEach((type) => this.hideAmountSuggestion(type));
-    }
-
-    handleAmountInputFocus(type) {
+    setFocusedAmountField(type) {
         this.focusedAmountField = type;
         this.refreshActiveAmountSuggestion();
     }
 
-    handleAmountInputBlur(type, event) {
-        const amountInput = event?.target || document.getElementById(`${type}Amount`);
-        if (!amountInput) {
-            return;
-        }
-
+    scheduleAmountFieldBlur(type) {
         setTimeout(() => {
             if (this.focusedAmountField !== type) {
-                this.renderAmountSuggestion(type);
-                return;
-            }
-
-            const suggestionButton = this.getAmountSuggestionButton(type);
-            const activeElement = document.activeElement;
-            if (activeElement !== amountInput && activeElement !== suggestionButton) {
-                this.focusedAmountField = null;
-                this.refreshActiveAmountSuggestion();
-            }
-        }, 0);
-    }
-
-    handleAmountSuggestionFocus(type) {
-        this.focusedAmountField = type;
-        this.renderAmountSuggestion(type);
-    }
-
-    handleAmountSuggestionBlur(type) {
-        setTimeout(() => {
-            if (this.focusedAmountField !== type) {
-                this.renderAmountSuggestion(type);
+                this.syncAmountSuggestion(type);
                 return;
             }
 
@@ -348,8 +303,8 @@ export class CreateOrder extends BaseComponent {
 
         this.amountInputListeners[type] = {
             input: (event) => this.handleAmountInput(type, event),
-            focus: () => this.handleAmountInputFocus(type),
-            blur: (event) => this.handleAmountInputBlur(type, event)
+            focus: () => this.setFocusedAmountField(type),
+            blur: () => this.scheduleAmountFieldBlur(type)
         };
 
         amountInput.addEventListener('input', this.amountInputListeners[type].input);
@@ -402,7 +357,7 @@ export class CreateOrder extends BaseComponent {
             }
         });
 
-        this.clearAmountSuggestions();
+        this.refreshActiveAmountSuggestion();
         this.resetBalanceDisplays();
         this.updateCreateButtonState();
         this.debug('Cleared selected tokens from create order form');
@@ -2997,19 +2952,13 @@ export class CreateOrder extends BaseComponent {
                 return;
             }
             
-            if (token && amount) {
-                const usdPrice = this.getLiveTokenUsdPrice(type);
-                const usdValue = Number.isFinite(usdPrice) ? numericAmount * usdPrice : 0;
-                // Ensure USD display element exists (in template) and update it
-                if (!usdDisplay) {
-                    usdDisplay = document.getElementById(`${type}AmountUSD`);
-                }
-                if (usdDisplay) {
-                    usdDisplay.textContent = !Number.isFinite(usdPrice)
-                        ? 'N/A'
-                        : (usdValue > 0 && usdValue < 0.01 ? '<$0.01' : `$${usdValue.toFixed(2)}`);
-                    setVisibility(usdDisplay, true);
-                }
+            const usdPrice = this.getLiveTokenUsdPrice(type);
+            const usdValue = Number.isFinite(usdPrice) ? numericAmount * usdPrice : 0;
+            if (usdDisplay) {
+                usdDisplay.textContent = !Number.isFinite(usdPrice)
+                    ? 'N/A'
+                    : (usdValue > 0 && usdValue < 0.01 ? '<$0.01' : `$${usdValue.toFixed(2)}`);
+                setVisibility(usdDisplay, true);
             }
             
             this.refreshActiveAmountSuggestion();
@@ -3152,8 +3101,8 @@ export class CreateOrder extends BaseComponent {
 
             newSuggestionButton.addEventListener('pointerdown', preventBlur);
             newSuggestionButton.addEventListener('mousedown', preventBlur);
-            newSuggestionButton.addEventListener('focus', () => this.handleAmountSuggestionFocus(type));
-            newSuggestionButton.addEventListener('blur', () => this.handleAmountSuggestionBlur(type));
+            newSuggestionButton.addEventListener('focus', () => this.setFocusedAmountField(type));
+            newSuggestionButton.addEventListener('blur', () => this.scheduleAmountFieldBlur(type));
             newSuggestionButton.addEventListener('click', (event) => {
                 event.preventDefault();
                 event.stopPropagation();
