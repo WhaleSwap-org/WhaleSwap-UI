@@ -10,13 +10,10 @@ const BNB_CHAIN_ID = '0x38';
 function createConnectedApp({
 	currentTab = 'create-order',
 	isCurrentTabVisible = true,
-	snapshot = null,
 } = {}) {
 	const AppCtor = window.app.constructor;
 	const app = new AppCtor();
 	const createOrderComponent = {
-		captureFormStateSnapshot: vi.fn(() => snapshot),
-		applyFormStateSnapshot: vi.fn(async () => ({ restored: true })),
 		resetState: vi.fn(),
 		initialize: vi.fn(async () => {}),
 	};
@@ -112,20 +109,13 @@ describe('App network transition behavior', () => {
 
 	it('preserves create-order form state on same-chain alignment without snapshotting or reinit', async () => {
 		const targetNetwork = getNetworkBySlug('polygon');
-		const snapshot = {
-			selectedChainSlug: 'polygon',
-			sellTokenAddress: '0x1111111111111111111111111111111111111111',
-			sellAmount: '12.5',
-		};
-		const { app, createOrderComponent } = createConnectedApp({ snapshot });
+		const { app } = createConnectedApp();
 
 		await app.handleSuccessfulConnectedNetworkTransition(targetNetwork, {
 			source: 'write:create the order',
 			selectedChainChanged: false,
 		});
 
-		expect(snapshot.sellAmount).toBe('12.5');
-		expect(createOrderComponent.captureFormStateSnapshot).not.toHaveBeenCalled();
 		expect(app.reinitializeComponents).not.toHaveBeenCalled();
 		expect(app.refreshActiveComponent).toHaveBeenCalledTimes(1);
 	});
@@ -146,10 +136,8 @@ describe('App network transition behavior', () => {
 			selectedChainChanged: true,
 		});
 
-		expect(createOrderComponent.captureFormStateSnapshot).not.toHaveBeenCalled();
 		expect(app.recreateNetworkServices).toHaveBeenCalledTimes(1);
 		expect(app.reinitializeComponents).toHaveBeenCalledWith(expect.objectContaining({
-			createOrderSnapshot: null,
 			createOrderResetOptions: {
 				clearSelections: true,
 			},

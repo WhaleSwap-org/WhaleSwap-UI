@@ -34,8 +34,6 @@ import { hasAnyClaimables } from './utils/claims.js';
 import { isUserRejection } from './utils/ui.js';
 import { escapeHtml } from './utils/html.js';
 
-const WALLET_COMPATIBILITY_NOTICE_STORAGE_KEY = 'wallet_compatibility_notice_pending';
-
 class App {
 	constructor() {
 		this.isInitializing = false;
@@ -76,21 +74,6 @@ class App {
 		this.warn = logger.warn.bind(logger);
 
 		this.debug('App constructor called');
-	}
-
-	flushPendingWalletCompatibilityNotice() {
-		try {
-			if (sessionStorage.getItem(WALLET_COMPATIBILITY_NOTICE_STORAGE_KEY) !== '1') {
-				return false;
-			}
-
-			sessionStorage.removeItem(WALLET_COMPATIBILITY_NOTICE_STORAGE_KEY);
-			this.showWarning(WALLET_COMPATIBILITY_NOTICE);
-			return true;
-		} catch (error) {
-			this.debug('Failed to flush pending wallet compatibility notice:', error);
-			return false;
-		}
 	}
 
 	async handleWalletConnectEvent(data = {}) {
@@ -966,19 +949,11 @@ class App {
 				|| activeNetworkBeforeTransition?.slug !== targetNetwork.slug;
 			const preferredTab = this.currentTab;
 			const wallet = this.ctx?.getWallet?.();
-			const createOrderComponent = this.components?.['create-order'];
-			const createOrderSnapshot = requiresNetworkDataRefresh
-				&& !selectedChainChanged
-				&& typeof createOrderComponent?.captureFormStateSnapshot === 'function'
-				? createOrderComponent.captureFormStateSnapshot()
-				: null;
-
 			this.debug('Handling successful connected network transition:', {
 				source,
 				targetNetwork: targetNetwork.slug,
 				selectedChainChanged,
 				requiresNetworkDataRefresh,
-				preservedCreateOrderState: Boolean(createOrderSnapshot),
 			});
 
 			if (!requiresNetworkDataRefresh) {
@@ -1004,7 +979,6 @@ class App {
 					createOrderResetOptions: {
 						clearSelections: selectedChainChanged,
 					},
-					createOrderSnapshot,
 					skipServiceCleanup: true,
 					skipShowTab: true,
 				});
@@ -1842,7 +1816,6 @@ class App {
 		const {
 			preserveOrders = false,
 			createOrderResetOptions = {},
-			createOrderSnapshot = null,
 			skipShowTab = false,
 			skipServiceCleanup = false,
 		} = normalizedOptions;
@@ -1886,9 +1859,6 @@ class App {
 				// Reset component state to force fresh token loading
 				createOrderComponent.resetState(createOrderResetOptions);
 				await createOrderComponent.initialize(false);
-				if (createOrderSnapshot && typeof createOrderComponent.applyFormStateSnapshot === 'function') {
-					await createOrderComponent.applyFormStateSnapshot(createOrderSnapshot);
-				}
 			}
 
 			// Reinitialize all components in connected mode
@@ -1970,7 +1940,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 		console.error('[App] App initialization error:', error);
 	} finally {
 		window.app.hideGlobalLoader();
-		window.app.flushPendingWalletCompatibilityNotice();
 	}
 });
 

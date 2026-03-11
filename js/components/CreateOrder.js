@@ -266,37 +266,6 @@ export class CreateOrder extends BaseComponent {
         this.setTakerExpanded(false);
     }
 
-    captureFormStateSnapshot() {
-        const sellAmount = document.getElementById('sellAmount')?.value?.trim() || '';
-        const buyAmount = document.getElementById('buyAmount')?.value?.trim() || '';
-        const takerAddress = this.sanitizeTakerAddressInput(
-            document.getElementById('takerAddress')?.value?.trim() || ''
-        );
-        const takerToggle = this.container?.querySelector('.taker-toggle');
-        const isTakerExpanded = Boolean(takerToggle?.classList.contains('active'));
-        const selectedChainSlug = this.ctx?.getSelectedChainSlug?.() || getNetworkConfig()?.slug || null;
-
-        const snapshot = {
-            selectedChainSlug,
-            sellTokenAddress: this.sellToken?.address || '',
-            buyTokenAddress: this.buyToken?.address || '',
-            sellAmount,
-            buyAmount,
-            takerAddress,
-            isTakerExpanded: isTakerExpanded || Boolean(takerAddress),
-        };
-
-        const hasFormState = Boolean(
-            snapshot.sellTokenAddress
-            || snapshot.buyTokenAddress
-            || snapshot.sellAmount
-            || snapshot.buyAmount
-            || snapshot.takerAddress
-        );
-
-        return hasFormState ? snapshot : null;
-    }
-
     setTakerExpanded(isExpanded) {
         const takerToggle = this.container?.querySelector('.taker-toggle');
         const takerInputContent = this.container?.querySelector('.taker-input-content');
@@ -343,75 +312,6 @@ export class CreateOrder extends BaseComponent {
             takerAddressInput.value = this.sanitizeTakerAddressInput(takerAddressInput.value);
         };
         takerAddressInput.value = this.sanitizeTakerAddressInput(takerAddressInput.value);
-    }
-
-    async applyFormStateSnapshot(snapshot) {
-        if (!snapshot) {
-            return { restored: false };
-        }
-
-        const currentSelectedChainSlug = this.ctx?.getSelectedChainSlug?.() || getNetworkConfig()?.slug || null;
-        if (snapshot.selectedChainSlug && currentSelectedChainSlug && snapshot.selectedChainSlug !== currentSelectedChainSlug) {
-            this.debug('Skipping create-order form restore on different selected chain');
-            return { restored: false };
-        }
-
-        if ((!Array.isArray(this.tokens) || this.tokens.length === 0) && this.allowedTokensLoadPromise) {
-            await this.allowedTokensLoadPromise;
-        } else if (!Array.isArray(this.tokens) || this.tokens.length === 0) {
-            await this.loadContractTokens();
-        }
-
-        if (snapshot.sellTokenAddress && this.allowedTokensBalanceLoadPromise) {
-            await this.allowedTokensBalanceLoadPromise;
-        }
-
-        const sellToken = snapshot.sellTokenAddress
-            ? this.tokens.find(token => token.address?.toLowerCase() === snapshot.sellTokenAddress.toLowerCase())
-            : null;
-        if (sellToken) {
-            await this.handleTokenSelect('sell', sellToken);
-        }
-
-        const buyToken = snapshot.buyTokenAddress
-            ? this.tokens.find(token => token.address?.toLowerCase() === snapshot.buyTokenAddress.toLowerCase())
-            : null;
-        if (buyToken) {
-            await this.handleTokenSelect('buy', buyToken);
-        }
-
-        const sellAmountInput = document.getElementById('sellAmount');
-        if (sellAmountInput && snapshot.sellAmount) {
-            sellAmountInput.value = snapshot.sellAmount;
-            sellAmountInput.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-
-        const buyAmountInput = document.getElementById('buyAmount');
-        if (buyAmountInput && snapshot.buyAmount) {
-            buyAmountInput.value = snapshot.buyAmount;
-            buyAmountInput.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-
-        this.setTakerExpanded(Boolean(snapshot.isTakerExpanded));
-        const takerAddressInput = document.getElementById('takerAddress');
-        if (takerAddressInput) {
-            takerAddressInput.value = this.sanitizeTakerAddressInput(snapshot.takerAddress || '');
-        }
-
-        const restoredSellToken = !snapshot.sellTokenAddress
-            || this.sellToken?.address?.toLowerCase() === snapshot.sellTokenAddress.toLowerCase();
-        const restoredBuyToken = !snapshot.buyTokenAddress
-            || this.buyToken?.address?.toLowerCase() === snapshot.buyTokenAddress.toLowerCase();
-        const restored = restoredSellToken && restoredBuyToken;
-
-        if (!restored) {
-            this.debug('Create-order form restore deferred until token data is available');
-            return { restored: false };
-        }
-
-        this.updateCreateButtonState();
-        this.debug('Restored create-order form state snapshot');
-        return { restored: true };
     }
 
     applyDisconnectedState() {

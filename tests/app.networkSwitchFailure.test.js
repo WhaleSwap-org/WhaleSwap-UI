@@ -48,7 +48,6 @@ function initializeApp({
 	app.showGlobalLoader = vi.fn();
 	app.showWarning = vi.fn();
 	app.hideGlobalLoader = vi.fn();
-	app.flushPendingWalletCompatibilityNotice = vi.fn();
 	app.warn = vi.fn();
 	window.app = app;
 	walletManager.chainId = walletChainId;
