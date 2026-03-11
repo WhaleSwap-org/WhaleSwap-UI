@@ -498,7 +498,7 @@ export class MyOrders extends BaseComponent {
                             throw new Error('Transaction reverted by contract');
                         }
 
-                        this.showSuccess(`Order ${order.id} cancelled successfully!`);
+                        this.showSuccess(`Order ${order.id} cancelled successfully! Go to the Claim tab to withdraw your tokens.`);
                         actionCell.textContent = '-';
                         if (this.debouncedRefresh) {
                             this.debouncedRefresh();
