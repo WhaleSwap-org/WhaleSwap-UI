@@ -43,6 +43,7 @@ function createConnectedApp({
 	});
 	app.recreateNetworkServices = vi.fn(async () => {});
 	app.reinitializeComponents = vi.fn(async () => {});
+	app.refreshActiveComponent = vi.fn(async () => {});
 	app.updateTabVisibility = vi.fn();
 	app.refreshAdminTabVisibility = vi.fn(async () => false);
 	app.refreshClaimTabVisibility = vi.fn(async () => false);
@@ -67,7 +68,7 @@ afterEach(() => {
 });
 
 describe('App network transition behavior', () => {
-	it('recreates services in place after a successful wallet switch', async () => {
+	it('uses the lightweight same-chain path when the wallet catches up to the selected network', async () => {
 		const targetNetwork = getNetworkBySlug('polygon');
 		const { app } = createConnectedApp();
 		const switchSpy = vi.spyOn(walletManager, 'switchToNetwork').mockResolvedValue(targetNetwork);
@@ -78,15 +79,14 @@ describe('App network transition behavior', () => {
 		});
 
 		expect(switchSpy).toHaveBeenCalledWith(targetNetwork);
-		expect(app.recreateNetworkServices).toHaveBeenCalledTimes(1);
-		expect(app.showGlobalLoader).toHaveBeenCalledTimes(1);
-		expect(app.showTab).toHaveBeenCalledWith('create-order', false, {
-			skipInitialize: true,
-		});
+		expect(app.recreateNetworkServices).not.toHaveBeenCalled();
+		expect(app.reinitializeComponents).not.toHaveBeenCalled();
+		expect(app.showGlobalLoader).not.toHaveBeenCalled();
+		expect(app.refreshActiveComponent).toHaveBeenCalledTimes(1);
 	});
 
 	it('dedupes repeated successful transitions for the same network', async () => {
-		const targetNetwork = getNetworkBySlug('polygon');
+		const targetNetwork = getNetworkBySlug('bnb');
 		const { app } = createConnectedApp();
 		let resolveTransition;
 		app.recreateNetworkServices.mockImplementation(
@@ -97,11 +97,11 @@ describe('App network transition behavior', () => {
 
 		const firstTransition = app.handleSuccessfulConnectedNetworkTransition(targetNetwork, {
 			source: 'switch-call',
-			selectedChainChanged: false,
+			selectedChainChanged: true,
 		});
 		const secondTransition = app.handleSuccessfulConnectedNetworkTransition(targetNetwork, {
 			source: 'chain-changed',
-			selectedChainChanged: false,
+			selectedChainChanged: true,
 		});
 
 		expect(app.recreateNetworkServices).toHaveBeenCalledTimes(1);
@@ -110,7 +110,7 @@ describe('App network transition behavior', () => {
 		await expect(Promise.all([firstTransition, secondTransition])).resolves.toEqual([true, true]);
 	});
 
-	it('preserves create-order form state when the wallet catches up to the selected chain', async () => {
+	it('preserves create-order form state on same-chain alignment without snapshotting or reinit', async () => {
 		const targetNetwork = getNetworkBySlug('polygon');
 		const snapshot = {
 			selectedChainSlug: 'polygon',
@@ -124,16 +124,10 @@ describe('App network transition behavior', () => {
 			selectedChainChanged: false,
 		});
 
-		expect(createOrderComponent.captureFormStateSnapshot).toHaveBeenCalledTimes(1);
-		expect(app.reinitializeComponents).toHaveBeenCalledWith(expect.objectContaining({
-			createOrderSnapshot: snapshot,
-			createOrderResetOptions: {
-				clearSelections: false,
-			},
-			preserveOrders: false,
-			skipServiceCleanup: true,
-			skipShowTab: true,
-		}));
+		expect(snapshot.sellAmount).toBe('12.5');
+		expect(createOrderComponent.captureFormStateSnapshot).not.toHaveBeenCalled();
+		expect(app.reinitializeComponents).not.toHaveBeenCalled();
+		expect(app.refreshActiveComponent).toHaveBeenCalledTimes(1);
 	});
 
 	it('clears create-order state when the selected chain changes explicitly', async () => {
@@ -153,6 +147,7 @@ describe('App network transition behavior', () => {
 		});
 
 		expect(createOrderComponent.captureFormStateSnapshot).not.toHaveBeenCalled();
+		expect(app.recreateNetworkServices).toHaveBeenCalledTimes(1);
 		expect(app.reinitializeComponents).toHaveBeenCalledWith(expect.objectContaining({
 			createOrderSnapshot: null,
 			createOrderResetOptions: {

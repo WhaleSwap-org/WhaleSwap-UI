@@ -901,6 +901,45 @@ class App {
 		this.subscribeToAppWebSocketEvents(this.ctx?.getWebSocket?.());
 	}
 
+	async handleWalletAlignedToSelectedNetwork(targetNetworkRef, options = {}) {
+		const targetNetwork = getNetworkBySlug(targetNetworkRef?.slug || targetNetworkRef)
+			|| getNetworkById(targetNetworkRef?.chainId || targetNetworkRef);
+		if (!targetNetwork) {
+			return false;
+		}
+
+		const {
+			walletChainId = null,
+		} = options;
+		const preferredTab = this.currentTab;
+		const wallet = this.ctx?.getWallet?.();
+
+		this.debug('Handling wallet alignment on already-selected network:', {
+			targetNetwork: targetNetwork.slug,
+			preferredTab,
+		});
+
+		this.ctx?.setWalletChainId?.(walletChainId ?? walletManager.chainId ?? targetNetwork.chainId);
+		clearNetworkSetupRequired();
+		setActiveNetwork(targetNetwork);
+		syncNetworkBadgeFromState();
+
+		this.updateTabVisibility(true);
+		await this.refreshAdminTabVisibility();
+		await this.refreshClaimTabVisibility({ force: true });
+		await this.refreshOrderTabVisibility({ force: true });
+
+		await this.refreshActiveComponent();
+
+		if (!this.isTabVisible(preferredTab)) {
+			await this.showTab('create-order', !wallet?.isWalletConnected?.(), {
+				skipInitialize: this.tabReady.has('create-order'),
+			});
+		}
+
+		return true;
+	}
+
 	async handleSuccessfulConnectedNetworkTransition(targetNetworkRef, options = {}) {
 		const targetNetwork = getNetworkBySlug(targetNetworkRef?.slug || targetNetworkRef)
 			|| getNetworkById(targetNetworkRef?.chainId || targetNetworkRef);
@@ -922,10 +961,14 @@ class App {
 				selectedChainChanged = false,
 				walletChainId = null,
 			} = options;
+			const activeNetworkBeforeTransition = getNetworkConfig();
+			const requiresNetworkDataRefresh = selectedChainChanged
+				|| activeNetworkBeforeTransition?.slug !== targetNetwork.slug;
 			const preferredTab = this.currentTab;
 			const wallet = this.ctx?.getWallet?.();
 			const createOrderComponent = this.components?.['create-order'];
-			const createOrderSnapshot = !selectedChainChanged
+			const createOrderSnapshot = requiresNetworkDataRefresh
+				&& !selectedChainChanged
 				&& typeof createOrderComponent?.captureFormStateSnapshot === 'function'
 				? createOrderComponent.captureFormStateSnapshot()
 				: null;
@@ -934,8 +977,16 @@ class App {
 				source,
 				targetNetwork: targetNetwork.slug,
 				selectedChainChanged,
+				requiresNetworkDataRefresh,
 				preservedCreateOrderState: Boolean(createOrderSnapshot),
 			});
+
+			if (!requiresNetworkDataRefresh) {
+				return await this.handleWalletAlignedToSelectedNetwork(targetNetwork, {
+					source,
+					walletChainId,
+				});
+			}
 
 			this.showGlobalLoader(`Switching to ${getNetworkLabel(targetNetwork)}...`);
 			this.loadingOverlay = this.globalLoader;
