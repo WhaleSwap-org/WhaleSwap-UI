@@ -15,7 +15,7 @@ import {
     isUserRejection,
 } from '../utils/ui.js';
 import { escapeHtmlText } from '../utils/html.js';
-import { getExplorerUrl, getTokenExplorerUrl } from '../utils/orderUtils.js';
+import { getTokenExplorerUrl } from '../utils/orderUtils.js';
 import { buildTokenDisplaySymbolMap, getDisplaySymbol } from '../utils/tokenDisplay.js';
 
 const TAKER_ADDRESS_MAX_LENGTH = 42;
@@ -2130,7 +2130,7 @@ export class CreateOrder extends BaseComponent {
                             <div class="token-balance-usd">${formattedUsdValue}</div>
                         </div>
                         <div class="token-item-actions">
-                            <a href="${getExplorerUrl(token.address)}" 
+                            <a href="${getTokenExplorerUrl(token.address)}" 
                                target="_blank"
                                class="token-explorer-link"
                                onclick="event.stopPropagation();"

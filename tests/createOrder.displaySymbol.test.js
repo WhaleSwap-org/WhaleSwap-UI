@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ethers } from 'ethers';
 import { CreateOrder } from '../js/components/CreateOrder.js';
 import { buildTokenDisplaySymbolMap } from '../js/utils/tokenDisplay.js';
 import { walletManager } from '../js/services/WalletManager.js';
@@ -94,6 +95,20 @@ describe('CreateOrder display symbol wiring', () => {
             .map((element) => element.textContent.trim());
 
         expect(labels).toEqual(['AAA', 'AAA.issuer', 'USDC']);
+    });
+
+    it('uses token explorer page links for modal explorer icons', () => {
+        const component = createComponent();
+        const tokens = [
+            { address: TOKEN_C, symbol: 'USDC', name: 'USD Coin', balance: '1', iconUrl: 'fallback' }
+        ];
+
+        const listContainer = document.createElement('div');
+        component.displayTokens(tokens, listContainer, 'buy');
+
+        const explorerLink = listContainer.querySelector('.token-explorer-link');
+        expect(explorerLink?.getAttribute('href'))
+            .toBe(`https://polygonscan.com/token/${ethers.utils.getAddress(TOKEN_C)}`);
     });
 
     it('allows searching by displaySymbol', async () => {
