@@ -2,6 +2,7 @@ import { createLogger } from '../services/LogService.js';
 import { getTransactionExplorerUrl } from '../utils/orderUtils.js';
 
 const TOAST_TYPES = ['error', 'success', 'warning', 'info'];
+const OUTSIDE_POINTER_LISTENER_OPTIONS = { capture: true };
 
 function shortenHash(hash) {
     if (!hash || hash.length < 12) return hash || '';
@@ -33,7 +34,7 @@ export class Toast {
 
     initialize() {
         this.createToastContainer();
-        document.addEventListener('pointerdown', this.boundDocumentPointerDownHandler);
+        document.addEventListener('pointerdown', this.boundDocumentPointerDownHandler, OUTSIDE_POINTER_LISTENER_OPTIONS);
         this.debug('Toast container ready');
     }
 
@@ -530,7 +531,7 @@ export class Toast {
     }
 
     destroy() {
-        document.removeEventListener('pointerdown', this.boundDocumentPointerDownHandler);
+        document.removeEventListener('pointerdown', this.boundDocumentPointerDownHandler, OUTSIDE_POINTER_LISTENER_OPTIONS);
 
         this.toastQueue = [];
         this.isProcessing = false;

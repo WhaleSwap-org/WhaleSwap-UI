@@ -82,6 +82,23 @@ describe('Toast outside-click dismissal', () => {
         expect(document.querySelectorAll('.toast')).toHaveLength(0);
     });
 
+    it('dismisses toasts even when the outside target stops pointerdown propagation', () => {
+        const toast = createToast();
+        toast.showToast('Saved', 'success', 0, true);
+
+        const blocker = document.createElement('button');
+        blocker.type = 'button';
+        blocker.addEventListener('pointerdown', (event) => {
+            event.stopPropagation();
+        });
+        document.body.appendChild(blocker);
+
+        blocker.dispatchEvent(createPointerDownEvent());
+        advanceToastTimers(300);
+
+        expect(document.querySelectorAll('.toast')).toHaveLength(0);
+    });
+
     it('hides an active transaction progress toast and allows reopening it', () => {
         const toast = createToast();
         const session = createTransactionProgressSession(toast, {
