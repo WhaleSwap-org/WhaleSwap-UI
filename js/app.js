@@ -1660,13 +1660,6 @@ class App {
 		);
 	}
 
-	handleAccountChange(account) {
-
-	}
-
-	handleChainChange(chainId) {
-	}
-
 	showLoader(container = document.body) {
 		const loader = document.createElement('div');
 		loader.className = 'loading-overlay';
