@@ -4,7 +4,7 @@ import { getNetworkConfig } from '../config/networks.js';
 import { walletManager } from '../services/WalletManager.js';
 import { setVisibility } from '../utils/ui.js';
 import { erc20Abi } from '../abi/erc20.js';
-import { getAllWalletTokens, getContractAllowedTokens, clearTokenCaches } from '../utils/contractTokens.js';
+import { getAllWalletTokens, getContractAllowedTokens, clearTokenCaches, getTokenBalanceInfo } from '../utils/contractTokens.js';
 import { contractService } from '../services/ContractService.js';
 import { createLogger } from '../services/LogService.js';
 import { validateSellBalance } from '../utils/balanceValidation.js';
@@ -15,7 +15,7 @@ import {
     isUserRejection,
 } from '../utils/ui.js';
 import { escapeHtmlText } from '../utils/html.js';
-import { getExplorerUrl } from '../utils/orderUtils.js';
+import { getExplorerUrl, getTokenExplorerUrl } from '../utils/orderUtils.js';
 import { buildTokenDisplaySymbolMap, getDisplaySymbol } from '../utils/tokenDisplay.js';
 
 const TAKER_ADDRESS_MAX_LENGTH = 42;
@@ -37,6 +37,7 @@ export class CreateOrder extends BaseComponent {
         this.allowedTokensLoadPromise = null;
         this.allowedTokensBalanceLoadPromise = null;
         this.feeLoadPromise = null;
+        this.feeTokenBalanceLoadPromise = null;
         this.feeConfigUpdatedHandler = null;
         this.allowedTokensUpdatedHandler = null;
         this.contractDisabledHandler = null;
@@ -244,6 +245,7 @@ export class CreateOrder extends BaseComponent {
         this.allowedTokensLoadPromise = null;
         this.allowedTokensBalanceLoadPromise = null;
         this.feeLoadPromise = null;
+        this.feeTokenBalanceLoadPromise = null;
         this.pendingFeeConfigRefresh = false;
         this.pendingAllowedTokensRefresh = false;
         this.feeToken = null;
@@ -554,7 +556,13 @@ export class CreateOrder extends BaseComponent {
         }
 
         this.feeLoadPromise = this.loadOrderCreationFee()
-            .then(() => this.updateFeeDisplay())
+            .then(() => {
+                this.updateFeeDisplay();
+                if (!this.isReadOnlyMode) {
+                    return this.refreshFeeTokenBalanceInBackground({ source: `${source}:fee-config` });
+                }
+                return null;
+            })
             .catch((error) => {
                 this.debug(`Fee refresh failed (${source}):`, error);
             })
@@ -678,7 +686,12 @@ export class CreateOrder extends BaseComponent {
         }
 
         this.debug(`Refreshing visible token balances (${source})`);
-        return this.refreshAllowedTokenBalancesInBackground();
+        const refreshTasks = [this.refreshAllowedTokenBalancesInBackground()];
+        if (this.feeToken?.address) {
+            refreshTasks.push(this.refreshFeeTokenBalanceInBackground({ source }));
+        }
+
+        return Promise.all(refreshTasks).then(([allowedTokens]) => allowedTokens);
     }
 
     isTokenBalanceLoading(token) {
@@ -736,6 +749,7 @@ export class CreateOrder extends BaseComponent {
                 this.tokens = normalizedAllowed;
                 this.allowedTokens = normalizedAllowed;
                 this.syncSelectedTokensWithAllowedList();
+                this.syncFeeTokenBalanceWithAllowedTokens(normalizedAllowed);
                 this.refreshTokenModals();
                 return normalizedAllowed;
             })
@@ -792,6 +806,99 @@ export class CreateOrder extends BaseComponent {
         });
     }
 
+    formatFeeTokenBalanceValue(balance) {
+        const numericBalance = Number(balance) || 0;
+        return numericBalance.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 4,
+            useGrouping: true
+        });
+    }
+
+    syncFeeTokenBalanceWithAllowedTokens(tokens = this.allowedTokens) {
+        if (!this.feeToken?.address || !Array.isArray(tokens)) {
+            return false;
+        }
+
+        const updatedFeeToken = tokens.find(
+            (token) => token.address?.toLowerCase() === this.feeToken.address.toLowerCase()
+        );
+
+        if (!updatedFeeToken) {
+            return false;
+        }
+
+        this.feeToken = {
+            ...this.feeToken,
+            balance: updatedFeeToken.balance,
+            balanceLoading: this.isTokenBalanceLoading(updatedFeeToken)
+        };
+        this.updateFeeDisplay();
+        return true;
+    }
+
+    refreshFeeTokenBalanceInBackground({ source = 'unknown' } = {}) {
+        const wallet = this.ctx?.getWallet?.();
+        const isWalletConnected = Boolean(wallet?.isWalletConnected?.());
+        if (this.isReadOnlyMode || !isWalletConnected || !this.feeToken?.address) {
+            if (this.feeToken?.balanceLoading) {
+                this.feeToken = {
+                    ...this.feeToken,
+                    balanceLoading: false
+                };
+                this.updateFeeDisplay();
+            }
+            return Promise.resolve(this.feeToken);
+        }
+
+        if (this.syncFeeTokenBalanceWithAllowedTokens()) {
+            return Promise.resolve(this.feeToken);
+        }
+
+        if (this.feeTokenBalanceLoadPromise) {
+            return this.feeTokenBalanceLoadPromise;
+        }
+
+        const requestedTokenAddress = this.feeToken.address.toLowerCase();
+        this.debug(`Refreshing fee token balance (${source})`);
+        this.feeToken = {
+            ...this.feeToken,
+            balanceLoading: true
+        };
+        this.updateFeeDisplay();
+
+        this.feeTokenBalanceLoadPromise = getTokenBalanceInfo(this.feeToken.address)
+            .then((balanceInfo) => {
+                if (!this.feeToken?.address || this.feeToken.address.toLowerCase() !== requestedTokenAddress) {
+                    return this.feeToken;
+                }
+
+                this.feeToken = {
+                    ...this.feeToken,
+                    balance: balanceInfo?.balance || '0',
+                    balanceLoading: false
+                };
+                this.updateFeeDisplay();
+                return this.feeToken;
+            })
+            .catch((error) => {
+                this.debug(`Error refreshing fee token balance (${source}):`, error);
+                if (this.feeToken?.address && this.feeToken.address.toLowerCase() === requestedTokenAddress) {
+                    this.feeToken = {
+                        ...this.feeToken,
+                        balanceLoading: false
+                    };
+                    this.updateFeeDisplay();
+                }
+                return this.feeToken;
+            })
+            .finally(() => {
+                this.feeTokenBalanceLoadPromise = null;
+            });
+
+        return this.feeTokenBalanceLoadPromise;
+    }
+
     async loadOrderCreationFee() {
         try {
             // Check if we have a cached value
@@ -825,19 +932,17 @@ export class CreateOrder extends BaseComponent {
                     ]);
 
                     // Cache the results
+                    const previousFeeToken = this.feeToken;
                     this.feeToken = {
                         address: feeTokenAddress,
                         amount: feeAmount,
                         symbol: symbol,
-                        decimals: decimals
+                        decimals: decimals,
+                        balance: previousFeeToken?.address?.toLowerCase() === feeTokenAddress.toLowerCase()
+                            ? previousFeeToken.balance
+                            : null,
+                        balanceLoading: !this.isReadOnlyMode
                     };
-
-                    // Update the fee display
-                    const feeDisplay = document.querySelector('.fee-amount');
-                    if (feeDisplay) {
-                        const formattedAmount = ethers.utils.formatUnits(feeAmount, decimals);
-                        feeDisplay.textContent = `${formattedAmount} ${symbol}`;
-                    }
 
                     return;
                 } catch (error) {
@@ -908,6 +1013,7 @@ export class CreateOrder extends BaseComponent {
             if (element) element.disabled = true;
         });
 
+        this.updateFeeDisplay();
         this.updateCreateButtonState();
     }
 
@@ -925,15 +1031,7 @@ export class CreateOrder extends BaseComponent {
             if (element) element.disabled = false;
         });
 
-        // Reload fee if we have it cached
-        if (this.feeToken) {
-            const feeElement = document.getElementById('orderFee');
-            if (feeElement) {
-                const formattedFee = ethers.utils.formatUnits(this.feeToken.amount, this.feeToken.decimals);
-                feeElement.textContent = `${formattedFee} ${this.feeToken.symbol}`;
-            }
-        }
-
+        this.updateFeeDisplay();
         this.updateCreateButtonState();
     }
 
@@ -2282,10 +2380,39 @@ export class CreateOrder extends BaseComponent {
             return;
         }
 
-        const feeDisplay = this.container?.querySelector('.fee-amount') || document.querySelector('.fee-amount');
-        if (feeDisplay) {
-            const formattedAmount = ethers.utils.formatUnits(this.feeToken.amount, this.feeToken.decimals);
-            feeDisplay.textContent = `${formattedAmount} ${this.feeToken.symbol}`;
+        const formattedAmount = ethers.utils.formatUnits(this.feeToken.amount, this.feeToken.decimals);
+        const feeAmountValue = this.container?.querySelector('.fee-amount-value') || document.querySelector('.fee-amount-value');
+        if (feeAmountValue) {
+            feeAmountValue.textContent = formattedAmount;
+        }
+
+        const feeTokenSymbol = this.container?.querySelector('.fee-token-symbol-label') || document.querySelector('.fee-token-symbol-label');
+        if (feeTokenSymbol) {
+            feeTokenSymbol.textContent = this.feeToken.symbol;
+        }
+
+        const feeTokenLink = this.container?.querySelector('.fee-token-explorer-link') || document.querySelector('.fee-token-explorer-link');
+        if (feeTokenLink) {
+            feeTokenLink.href = getTokenExplorerUrl(this.feeToken.address);
+            feeTokenLink.setAttribute('aria-label', `View ${this.feeToken.symbol} token on explorer`);
+            feeTokenLink.setAttribute('title', `View ${this.feeToken.symbol} on Explorer`);
+        }
+
+        const feeBalance = this.container?.querySelector('.fee-balance') || document.querySelector('.fee-balance');
+        const feeBalanceValue = this.container?.querySelector('.fee-balance-value') || document.querySelector('.fee-balance-value');
+        const wallet = this.ctx?.getWallet?.();
+        const isWalletConnected = Boolean(wallet?.isWalletConnected?.());
+        if (feeBalance && feeBalanceValue) {
+            if (!isWalletConnected || this.isReadOnlyMode) {
+                setVisibility(feeBalance, false);
+                feeBalanceValue.textContent = this.formatFeeTokenBalanceValue(0);
+            } else {
+                const balanceText = this.feeToken.balanceLoading
+                    ? 'loading...'
+                    : this.formatFeeTokenBalanceValue(this.feeToken.balance);
+                feeBalanceValue.textContent = balanceText;
+                setVisibility(feeBalance, true);
+            }
         }
 
         const feeTokenSymbols = this.container?.querySelectorAll('.fee-token-symbol') || [];
@@ -2953,8 +3080,19 @@ export class CreateOrder extends BaseComponent {
                                 </span>
                             </span>
                         </label>
-                        <div id="orderCreationFee">
-                            <span class="fee-amount"></span>
+                        <div id="orderCreationFee" class="fee-display">
+                            <span class="fee-amount">
+                                <span class="fee-amount-value"></span>
+                                <span class="fee-token-symbol-label"></span>
+                                <a class="fee-token-explorer-link token-explorer-link" href="#" target="_blank" rel="noopener noreferrer">
+                                    <svg class="token-explorer-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                        <path fill="currentColor" d="M14,3V5H17.59L7.76,14.83L9.17,16.24L19,6.41V10H21V3M19,19H5V5H12V3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V12H19V19Z" />
+                                    </svg>
+                                </a>
+                            </span>
+                            <span class="fee-balance is-hidden" aria-hidden="true">
+                                Balance: <span class="fee-balance-value">0.00</span>
+                            </span>
                         </div>
                     </div>
 
