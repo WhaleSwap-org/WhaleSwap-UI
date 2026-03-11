@@ -386,7 +386,7 @@ export class TakerOrders extends BaseComponent {
         const ws = this.ctx.getWebSocket();
 
         // For taker orders, user is the taker - show fill button if they can fill
-        if (this.helper.isFillProgressActive(order.id)) {
+        if (this.helper.hasTrackedFillProgress(order.id)) {
             actionCell.innerHTML = `<button class="fill-button" data-order-id="${order.id}"></button>`;
             const fillButton = actionCell.querySelector('.fill-button');
             this.helper.configureFillButton(fillButton, order.id);
