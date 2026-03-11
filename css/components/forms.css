@@ -520,9 +520,24 @@
   gap: 4px;
 }
 
+.fee-display {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
 .fee-amount {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 16px;
   font-weight: 500;
+}
+
+.fee-balance {
+  font-size: 14px;
+  color: var(--text-secondary, #6b7280);
 }
 
 .fee-gas {
@@ -598,15 +613,6 @@
 .token-list-empty {
   color: #666;
   font-style: italic;
-}
-
-.token-explorer-link {
-  display: inline-flex;
-  align-items: center;
-  margin-left: 4px;
-  color: var(--text-secondary);
-  opacity: 0.7;
-  transition: opacity 0.2s;
 }
 
 .token-explorer-link:hover {
