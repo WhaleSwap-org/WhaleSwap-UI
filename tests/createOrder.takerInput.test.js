@@ -5,16 +5,6 @@ function setupCreateOrderDom() {
     document.body.innerHTML = '<div id="create-order"></div>';
 }
 
-function createContextStub() {
-    return {
-        getSelectedChainSlug: () => 'test-chain',
-        showError: () => {},
-        showSuccess: () => {},
-        showWarning: () => {},
-        showInfo: () => {},
-    };
-}
-
 afterEach(() => {
     document.body.innerHTML = '';
 });
@@ -47,23 +37,5 @@ describe('CreateOrder taker address input', () => {
 
         expect(takerAddressInput.maxLength).toBe(42);
         expect(takerAddressInput.value).toBe(`0x${'a'.repeat(40)}`);
-    });
-
-    it('sanitizes restored taker input from saved form state', async () => {
-        setupCreateOrderDom();
-
-        const component = new CreateOrder();
-        component.setContext(createContextStub());
-        component.container.innerHTML = component.render();
-        component.tokens = [{}];
-        component.initializeTakerAddressInput();
-
-        await component.applyReloadFormState({
-            selectedChainSlug: 'test-chain',
-            takerAddress: '0X12g3456---7890',
-            isTakerExpanded: true,
-        });
-
-        expect(document.getElementById('takerAddress').value).toBe('0x1234567890');
     });
 });

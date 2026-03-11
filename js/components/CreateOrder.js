@@ -18,8 +18,6 @@ import { escapeHtmlText } from '../utils/html.js';
 import { getExplorerUrl } from '../utils/orderUtils.js';
 import { buildTokenDisplaySymbolMap, getDisplaySymbol } from '../utils/tokenDisplay.js';
 
-const CREATE_ORDER_RELOAD_STATE_KEY = 'whaleswap:create-order:reload-state:v1';
-const CREATE_ORDER_RELOAD_STATE_MAX_AGE_MS = 5 * 60 * 1000;
 const TAKER_ADDRESS_MAX_LENGTH = 42;
 
 export class CreateOrder extends BaseComponent {
@@ -254,100 +252,18 @@ export class CreateOrder extends BaseComponent {
         this.contractStateReadError = false;
         if (clearSelections) {
             this.clearSelectedTokens();
+            this.clearTakerState();
         }
         // Token cache is centralized in WebSocket - no local cache to clear
         this.resetBalanceDisplays();
     }
 
-    getCreateOrderFormStateForReload() {
-        const sellAmount = document.getElementById('sellAmount')?.value?.trim() || '';
-        const buyAmount = document.getElementById('buyAmount')?.value?.trim() || '';
-        const takerAddress = this.sanitizeTakerAddressInput(
-            document.getElementById('takerAddress')?.value?.trim() || ''
-        );
-        const takerToggle = this.container?.querySelector('.taker-toggle');
-        const isTakerExpanded = Boolean(takerToggle?.classList.contains('active'));
-        const selectedChainSlug = this.ctx?.getSelectedChainSlug?.() || getNetworkConfig()?.slug || null;
-
-        const snapshot = {
-            savedAt: Date.now(),
-            selectedChainSlug,
-            sellTokenAddress: this.sellToken?.address || '',
-            buyTokenAddress: this.buyToken?.address || '',
-            sellAmount,
-            buyAmount,
-            takerAddress,
-            isTakerExpanded: isTakerExpanded || Boolean(takerAddress),
-        };
-
-        const hasFormState = Boolean(
-            snapshot.sellTokenAddress
-            || snapshot.buyTokenAddress
-            || snapshot.sellAmount
-            || snapshot.buyAmount
-            || snapshot.takerAddress
-        );
-
-        return hasFormState ? snapshot : null;
-    }
-
-    persistFormStateForReload() {
-        try {
-            if (typeof window === 'undefined' || !window.sessionStorage) {
-                return false;
-            }
-
-            const snapshot = this.getCreateOrderFormStateForReload();
-            if (!snapshot) {
-                window.sessionStorage.removeItem(CREATE_ORDER_RELOAD_STATE_KEY);
-                return false;
-            }
-
-            window.sessionStorage.setItem(CREATE_ORDER_RELOAD_STATE_KEY, JSON.stringify(snapshot));
-            this.debug('Persisted create-order form state for reload');
-            return true;
-        } catch (error) {
-            this.debug('Unable to persist create-order form state for reload:', error);
-            return false;
+    clearTakerState() {
+        const takerAddressInput = document.getElementById('takerAddress');
+        if (takerAddressInput) {
+            takerAddressInput.value = '';
         }
-    }
-
-    readPendingReloadFormState() {
-        try {
-            if (typeof window === 'undefined' || !window.sessionStorage) {
-                return null;
-            }
-
-            const raw = window.sessionStorage.getItem(CREATE_ORDER_RELOAD_STATE_KEY);
-            if (!raw) {
-                return null;
-            }
-
-            const parsed = JSON.parse(raw);
-            const savedAt = Number(parsed?.savedAt || 0);
-            if (!savedAt || (Date.now() - savedAt) > CREATE_ORDER_RELOAD_STATE_MAX_AGE_MS) {
-                window.sessionStorage.removeItem(CREATE_ORDER_RELOAD_STATE_KEY);
-                return null;
-            }
-
-            return parsed;
-        } catch (error) {
-            this.debug('Unable to read pending create-order reload state:', error);
-            try {
-                window.sessionStorage?.removeItem?.(CREATE_ORDER_RELOAD_STATE_KEY);
-            } catch (_) {}
-            return null;
-        }
-    }
-
-    clearPendingReloadFormState() {
-        try {
-            if (typeof window !== 'undefined' && window.sessionStorage) {
-                window.sessionStorage.removeItem(CREATE_ORDER_RELOAD_STATE_KEY);
-            }
-        } catch (error) {
-            this.debug('Unable to clear pending create-order reload state:', error);
-        }
+        this.setTakerExpanded(false);
     }
 
     setTakerExpanded(isExpanded) {
@@ -396,91 +312,6 @@ export class CreateOrder extends BaseComponent {
             takerAddressInput.value = this.sanitizeTakerAddressInput(takerAddressInput.value);
         };
         takerAddressInput.value = this.sanitizeTakerAddressInput(takerAddressInput.value);
-    }
-
-    async applyReloadFormState(snapshot) {
-        if (!snapshot) {
-            return { clearSnapshot: false, restored: false };
-        }
-
-        const currentSelectedChainSlug = this.ctx?.getSelectedChainSlug?.() || getNetworkConfig()?.slug || null;
-        if (snapshot.selectedChainSlug && currentSelectedChainSlug && snapshot.selectedChainSlug !== currentSelectedChainSlug) {
-            this.debug('Skipping create-order form restore on different selected chain');
-            return { clearSnapshot: true, restored: false };
-        }
-
-        if ((!Array.isArray(this.tokens) || this.tokens.length === 0) && this.allowedTokensLoadPromise) {
-            await this.allowedTokensLoadPromise;
-        } else if (!Array.isArray(this.tokens) || this.tokens.length === 0) {
-            await this.loadContractTokens();
-        }
-
-        if (snapshot.sellTokenAddress && this.allowedTokensBalanceLoadPromise) {
-            await this.allowedTokensBalanceLoadPromise;
-        }
-
-        const sellToken = snapshot.sellTokenAddress
-            ? this.tokens.find(token => token.address?.toLowerCase() === snapshot.sellTokenAddress.toLowerCase())
-            : null;
-        if (sellToken) {
-            await this.handleTokenSelect('sell', sellToken);
-        }
-
-        const buyToken = snapshot.buyTokenAddress
-            ? this.tokens.find(token => token.address?.toLowerCase() === snapshot.buyTokenAddress.toLowerCase())
-            : null;
-        if (buyToken) {
-            await this.handleTokenSelect('buy', buyToken);
-        }
-
-        const sellAmountInput = document.getElementById('sellAmount');
-        if (sellAmountInput && snapshot.sellAmount) {
-            sellAmountInput.value = snapshot.sellAmount;
-            sellAmountInput.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-
-        const buyAmountInput = document.getElementById('buyAmount');
-        if (buyAmountInput && snapshot.buyAmount) {
-            buyAmountInput.value = snapshot.buyAmount;
-            buyAmountInput.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-
-        this.setTakerExpanded(Boolean(snapshot.isTakerExpanded));
-        const takerAddressInput = document.getElementById('takerAddress');
-        if (takerAddressInput) {
-            takerAddressInput.value = this.sanitizeTakerAddressInput(snapshot.takerAddress || '');
-        }
-
-        const restoredSellToken = !snapshot.sellTokenAddress
-            || this.sellToken?.address?.toLowerCase() === snapshot.sellTokenAddress.toLowerCase();
-        const restoredBuyToken = !snapshot.buyTokenAddress
-            || this.buyToken?.address?.toLowerCase() === snapshot.buyTokenAddress.toLowerCase();
-        const restored = restoredSellToken && restoredBuyToken;
-
-        if (!restored) {
-            this.debug('Create-order form restore deferred until token data is available');
-            return { clearSnapshot: false, restored: false };
-        }
-
-        this.updateCreateButtonState();
-        this.debug('Restored create-order form state after reload');
-        return { clearSnapshot: true, restored: true };
-    }
-
-    async restorePendingReloadFormState() {
-        const snapshot = this.readPendingReloadFormState();
-        if (!snapshot) {
-            return;
-        }
-
-        try {
-            const result = await this.applyReloadFormState(snapshot);
-            if (result?.clearSnapshot) {
-                this.clearPendingReloadFormState();
-            }
-        } catch (error) {
-            this.debug('Failed to restore create-order form state after reload:', error);
-        }
     }
 
     applyDisconnectedState() {
@@ -644,8 +475,6 @@ export class CreateOrder extends BaseComponent {
             // Initialize amount input listeners
             this.initializeAmountInputs();
             this.initializeTakerAddressInput();
-
-            await this.restorePendingReloadFormState();
             
             this.initialized = true;
             this.debug('Initialization complete');

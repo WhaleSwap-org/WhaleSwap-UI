@@ -4,6 +4,7 @@ import { getNetworkBySlug } from '../js/config/networks.js';
 import { walletManager } from '../js/services/WalletManager.js';
 
 const POLYGON_CHAIN_ID = '0x89';
+const BNB_CHAIN_ID = '0x38';
 const POLYGON_SLUG = 'polygon';
 const BNB_SLUG = 'bnb';
 
@@ -47,7 +48,6 @@ function initializeApp({
 	app.showGlobalLoader = vi.fn();
 	app.showWarning = vi.fn();
 	app.hideGlobalLoader = vi.fn();
-	app.flushPendingWalletCompatibilityNotice = vi.fn();
 	app.warn = vi.fn();
 	window.app = app;
 	walletManager.chainId = walletChainId;
@@ -71,20 +71,24 @@ afterEach(() => {
 	document.body.innerHTML = '';
 	window.history.replaceState({}, '', '/');
 	walletManager.chainId = null;
+	walletManager.injectedProvider = null;
 	vi.unstubAllGlobals();
 	vi.restoreAllMocks();
 });
 
 describe('App network switch failure behavior', () => {
-	it('restores the selected chain and URL to the wallet chain after a rejected switch', () => {
+	it('restores the selected chain and URL to the previous app selection after a rejected switch', () => {
 		const app = initializeApp();
 		const targetNetwork = getNetworkBySlug(BNB_SLUG);
+		const previousSelection = getNetworkBySlug(POLYGON_SLUG);
 		const error = Object.assign(new Error('user rejected request'), { code: 4001 });
 
 		expect(app.ctx.getSelectedChainSlug()).toBe(BNB_SLUG);
 		expect(getSelectedChainFromUrl()).toBe(BNB_SLUG);
 
-		app.handleNetworkSwitchFailure(error, targetNetwork);
+		app.handleNetworkSwitchFailure(error, targetNetwork, {
+			restoreSelectionNetwork: previousSelection,
+		});
 
 		expect(app.ctx.getSelectedChainSlug()).toBe(POLYGON_SLUG);
 		expect(getSelectedChainFromUrl()).toBe(POLYGON_SLUG);
@@ -96,6 +100,7 @@ describe('App network switch failure behavior', () => {
 	it('restores the selected chain for missing-network failures and removes retry-specific copy', () => {
 		const app = initializeApp();
 		const targetNetwork = getNetworkBySlug(BNB_SLUG);
+		const previousSelection = getNetworkBySlug(POLYGON_SLUG);
 		const error = Object.assign(new Error('Unrecognized chain'), {
 			code: 4902,
 			requiresWalletNetworkAddition: true
@@ -104,7 +109,9 @@ describe('App network switch failure behavior', () => {
 		expect(app.ctx.getSelectedChainSlug()).toBe(BNB_SLUG);
 		expect(getSelectedChainFromUrl()).toBe(BNB_SLUG);
 
-		app.handleNetworkSwitchFailure(error, targetNetwork);
+		app.handleNetworkSwitchFailure(error, targetNetwork, {
+			restoreSelectionNetwork: previousSelection,
+		});
 
 		const warningMessage = app.showWarning.mock.calls.at(-1)?.[0];
 		expect(app.ctx.getSelectedChainSlug()).toBe(POLYGON_SLUG);
@@ -113,5 +120,50 @@ describe('App network switch failure behavior', () => {
 			'Could not switch wallet to BNB Chain because it is not added in your wallet. Restored selection to Polygon Mainnet.'
 		);
 		expect(warningMessage).not.toContain('Add Network to retry');
+	});
+
+	it('keeps the selected chain when a write-triggered switch is rejected on the current app chain', () => {
+		const app = initializeApp({
+			walletChainId: BNB_CHAIN_ID,
+			selectedSlug: POLYGON_SLUG,
+		});
+		const targetNetwork = getNetworkBySlug(POLYGON_SLUG);
+		const error = Object.assign(new Error('user rejected request'), { code: 4001 });
+
+		expect(app.ctx.getSelectedChainSlug()).toBe(POLYGON_SLUG);
+		expect(getSelectedChainFromUrl()).toBe(POLYGON_SLUG);
+
+		app.handleNetworkSwitchFailure(error, targetNetwork, {
+			restoreSelectionNetwork: targetNetwork,
+		});
+
+		expect(app.ctx.getSelectedChainSlug()).toBe(POLYGON_SLUG);
+		expect(getSelectedChainFromUrl()).toBe(POLYGON_SLUG);
+		expect(app.showWarning).toHaveBeenCalledWith(
+			'Wallet request was cancelled. Kept selection on Polygon Mainnet.'
+		);
+	});
+
+	it('keeps the add-network retry affordance when a write-triggered switch fails because the selected network is missing', () => {
+		const app = initializeApp({
+			walletChainId: BNB_CHAIN_ID,
+			selectedSlug: POLYGON_SLUG,
+		});
+		const targetNetwork = getNetworkBySlug(POLYGON_SLUG);
+		const error = Object.assign(new Error('Unrecognized chain'), {
+			code: 4902,
+			requiresWalletNetworkAddition: true,
+		});
+		walletManager.injectedProvider = { request: vi.fn() };
+
+		app.handleNetworkSwitchFailure(error, targetNetwork, {
+			restoreSelectionNetwork: targetNetwork,
+		});
+
+		const addNetworkButton = document.getElementById('addNetworkButton');
+		expect(app.ctx.getSelectedChainSlug()).toBe(POLYGON_SLUG);
+		expect(getSelectedChainFromUrl()).toBe(POLYGON_SLUG);
+		expect(addNetworkButton?.classList.contains('hidden')).toBe(false);
+		expect(addNetworkButton?.textContent).toBe('Add Polygon Mainnet');
 	});
 });
