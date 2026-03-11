@@ -55,6 +55,11 @@ export class Footer extends BaseComponent {
             </div>
         `;
 
+        const overlay = document.getElementById('legal-modal-overlay');
+        if (overlay && overlay.parentElement !== document.body) {
+            document.body.appendChild(overlay);
+        }
+
         this.bindEvents();
     }
 
