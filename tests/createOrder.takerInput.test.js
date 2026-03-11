@@ -49,7 +49,7 @@ describe('CreateOrder taker address input', () => {
         expect(takerAddressInput.value).toBe(`0x${'a'.repeat(40)}`);
     });
 
-    it('sanitizes restored taker input from saved form state', async () => {
+    it('sanitizes restored taker input from a form snapshot', async () => {
         setupCreateOrderDom();
 
         const component = new CreateOrder();
@@ -58,7 +58,7 @@ describe('CreateOrder taker address input', () => {
         component.tokens = [{}];
         component.initializeTakerAddressInput();
 
-        await component.applyReloadFormState({
+        await component.applyFormStateSnapshot({
             selectedChainSlug: 'test-chain',
             takerAddress: '0X12g3456---7890',
             isTakerExpanded: true,

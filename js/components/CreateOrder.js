@@ -18,8 +18,6 @@ import { escapeHtmlText } from '../utils/html.js';
 import { getExplorerUrl } from '../utils/orderUtils.js';
 import { buildTokenDisplaySymbolMap, getDisplaySymbol } from '../utils/tokenDisplay.js';
 
-const CREATE_ORDER_RELOAD_STATE_KEY = 'whaleswap:create-order:reload-state:v1';
-const CREATE_ORDER_RELOAD_STATE_MAX_AGE_MS = 5 * 60 * 1000;
 const TAKER_ADDRESS_MAX_LENGTH = 42;
 
 export class CreateOrder extends BaseComponent {
@@ -254,12 +252,21 @@ export class CreateOrder extends BaseComponent {
         this.contractStateReadError = false;
         if (clearSelections) {
             this.clearSelectedTokens();
+            this.clearTakerState();
         }
         // Token cache is centralized in WebSocket - no local cache to clear
         this.resetBalanceDisplays();
     }
 
-    getCreateOrderFormStateForReload() {
+    clearTakerState() {
+        const takerAddressInput = document.getElementById('takerAddress');
+        if (takerAddressInput) {
+            takerAddressInput.value = '';
+        }
+        this.setTakerExpanded(false);
+    }
+
+    captureFormStateSnapshot() {
         const sellAmount = document.getElementById('sellAmount')?.value?.trim() || '';
         const buyAmount = document.getElementById('buyAmount')?.value?.trim() || '';
         const takerAddress = this.sanitizeTakerAddressInput(
@@ -270,7 +277,6 @@ export class CreateOrder extends BaseComponent {
         const selectedChainSlug = this.ctx?.getSelectedChainSlug?.() || getNetworkConfig()?.slug || null;
 
         const snapshot = {
-            savedAt: Date.now(),
             selectedChainSlug,
             sellTokenAddress: this.sellToken?.address || '',
             buyTokenAddress: this.buyToken?.address || '',
@@ -289,65 +295,6 @@ export class CreateOrder extends BaseComponent {
         );
 
         return hasFormState ? snapshot : null;
-    }
-
-    persistFormStateForReload() {
-        try {
-            if (typeof window === 'undefined' || !window.sessionStorage) {
-                return false;
-            }
-
-            const snapshot = this.getCreateOrderFormStateForReload();
-            if (!snapshot) {
-                window.sessionStorage.removeItem(CREATE_ORDER_RELOAD_STATE_KEY);
-                return false;
-            }
-
-            window.sessionStorage.setItem(CREATE_ORDER_RELOAD_STATE_KEY, JSON.stringify(snapshot));
-            this.debug('Persisted create-order form state for reload');
-            return true;
-        } catch (error) {
-            this.debug('Unable to persist create-order form state for reload:', error);
-            return false;
-        }
-    }
-
-    readPendingReloadFormState() {
-        try {
-            if (typeof window === 'undefined' || !window.sessionStorage) {
-                return null;
-            }
-
-            const raw = window.sessionStorage.getItem(CREATE_ORDER_RELOAD_STATE_KEY);
-            if (!raw) {
-                return null;
-            }
-
-            const parsed = JSON.parse(raw);
-            const savedAt = Number(parsed?.savedAt || 0);
-            if (!savedAt || (Date.now() - savedAt) > CREATE_ORDER_RELOAD_STATE_MAX_AGE_MS) {
-                window.sessionStorage.removeItem(CREATE_ORDER_RELOAD_STATE_KEY);
-                return null;
-            }
-
-            return parsed;
-        } catch (error) {
-            this.debug('Unable to read pending create-order reload state:', error);
-            try {
-                window.sessionStorage?.removeItem?.(CREATE_ORDER_RELOAD_STATE_KEY);
-            } catch (_) {}
-            return null;
-        }
-    }
-
-    clearPendingReloadFormState() {
-        try {
-            if (typeof window !== 'undefined' && window.sessionStorage) {
-                window.sessionStorage.removeItem(CREATE_ORDER_RELOAD_STATE_KEY);
-            }
-        } catch (error) {
-            this.debug('Unable to clear pending create-order reload state:', error);
-        }
     }
 
     setTakerExpanded(isExpanded) {
@@ -398,15 +345,15 @@ export class CreateOrder extends BaseComponent {
         takerAddressInput.value = this.sanitizeTakerAddressInput(takerAddressInput.value);
     }
 
-    async applyReloadFormState(snapshot) {
+    async applyFormStateSnapshot(snapshot) {
         if (!snapshot) {
-            return { clearSnapshot: false, restored: false };
+            return { restored: false };
         }
 
         const currentSelectedChainSlug = this.ctx?.getSelectedChainSlug?.() || getNetworkConfig()?.slug || null;
         if (snapshot.selectedChainSlug && currentSelectedChainSlug && snapshot.selectedChainSlug !== currentSelectedChainSlug) {
             this.debug('Skipping create-order form restore on different selected chain');
-            return { clearSnapshot: true, restored: false };
+            return { restored: false };
         }
 
         if ((!Array.isArray(this.tokens) || this.tokens.length === 0) && this.allowedTokensLoadPromise) {
@@ -459,28 +406,12 @@ export class CreateOrder extends BaseComponent {
 
         if (!restored) {
             this.debug('Create-order form restore deferred until token data is available');
-            return { clearSnapshot: false, restored: false };
+            return { restored: false };
         }
 
         this.updateCreateButtonState();
-        this.debug('Restored create-order form state after reload');
-        return { clearSnapshot: true, restored: true };
-    }
-
-    async restorePendingReloadFormState() {
-        const snapshot = this.readPendingReloadFormState();
-        if (!snapshot) {
-            return;
-        }
-
-        try {
-            const result = await this.applyReloadFormState(snapshot);
-            if (result?.clearSnapshot) {
-                this.clearPendingReloadFormState();
-            }
-        } catch (error) {
-            this.debug('Failed to restore create-order form state after reload:', error);
-        }
+        this.debug('Restored create-order form state snapshot');
+        return { restored: true };
     }
 
     applyDisconnectedState() {
@@ -644,8 +575,6 @@ export class CreateOrder extends BaseComponent {
             // Initialize amount input listeners
             this.initializeAmountInputs();
             this.initializeTakerAddressInput();
-
-            await this.restorePendingReloadFormState();
             
             this.initialized = true;
             this.debug('Initialization complete');
