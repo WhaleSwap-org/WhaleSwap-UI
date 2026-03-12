@@ -141,48 +141,7 @@ export class CreateOrder extends BaseComponent {
         return Number(trimmedValue) > 0;
     }
 
-    getNormalizedTokenDecimals(token) {
-        const decimals = Number(token?.decimals);
-        return Number.isInteger(decimals) && decimals >= 0 ? decimals : 18;
-    }
-
-    getCachedTokenRecord(tokenOrAddress) {
-        const requestedToken = typeof tokenOrAddress === 'object' ? tokenOrAddress : null;
-        const tokenAddress = typeof tokenOrAddress === 'string'
-            ? tokenOrAddress
-            : requestedToken?.address;
-        const normalizedAddress = String(tokenAddress || '').toLowerCase();
-
-        if (!normalizedAddress) {
-            return null;
-        }
-
-        for (const tokenList of [this.allowedTokens, this.tokens]) {
-            const matchedToken = Array.isArray(tokenList)
-                ? tokenList.find((token) => token.address?.toLowerCase() === normalizedAddress)
-                : null;
-
-            if (matchedToken) {
-                return this.normalizeTokenDisplay({
-                    ...requestedToken,
-                    ...matchedToken,
-                    displaySymbol: matchedToken.displaySymbol
-                        || requestedToken?.displaySymbol
-                        || matchedToken.symbol
-                });
-            }
-        }
-
-        if (requestedToken?.address) {
-            return this.normalizeTokenDisplay(requestedToken);
-        }
-
-        return null;
-    }
-
-    validateCachedSellToken(tokenOrAddress, { requiredAmount = '' } = {}) {
-        const token = this.getCachedTokenRecord(tokenOrAddress);
-
+    validateCachedSellToken(token, { requiredAmount = '' } = {}) {
         if (!token?.address) {
             return {
                 isValid: false,
@@ -196,12 +155,13 @@ export class CreateOrder extends BaseComponent {
             return {
                 isValid: false,
                 reason: 'balance-loading',
-                token,
                 tokenLabel
             };
         }
 
-        const tokenDecimals = this.getNormalizedTokenDecimals(token);
+        const tokenDecimals = Number.isInteger(token?.decimals) && token.decimals >= 0
+            ? token.decimals
+            : 18;
         let availableAmountWei;
         try {
             availableAmountWei = ethers.utils.parseUnits(token.balance || '0', tokenDecimals);
@@ -214,7 +174,6 @@ export class CreateOrder extends BaseComponent {
             return {
                 isValid: false,
                 reason: 'no-balance',
-                token,
                 tokenLabel,
                 formattedBalance: token.balance || '0'
             };
@@ -224,7 +183,6 @@ export class CreateOrder extends BaseComponent {
         if (!this.isValidPositiveAmount(normalizedRequiredAmount)) {
             return {
                 isValid: true,
-                token,
                 tokenLabel,
                 formattedBalance: token.balance || '0'
             };
@@ -238,7 +196,6 @@ export class CreateOrder extends BaseComponent {
             return {
                 isValid: false,
                 reason: 'invalid-required-amount',
-                token,
                 tokenLabel,
                 formattedRequired: normalizedRequiredAmount
             };
@@ -248,7 +205,6 @@ export class CreateOrder extends BaseComponent {
             return {
                 isValid: false,
                 reason: 'insufficient-balance',
-                token,
                 tokenLabel,
                 formattedBalance: token.balance || '0',
                 formattedRequired: normalizedRequiredAmount
@@ -257,7 +213,6 @@ export class CreateOrder extends BaseComponent {
 
         return {
             isValid: true,
-            token,
             tokenLabel,
             formattedBalance: token.balance || '0',
             formattedRequired: normalizedRequiredAmount
@@ -1509,16 +1464,11 @@ export class CreateOrder extends BaseComponent {
 
         const currentSellAmount = document.getElementById('sellAmount')?.value ?? '';
         const currentBuyAmount = document.getElementById('buyAmount')?.value ?? '';
-        const nextBuyToken = this.getCachedTokenRecord(currentSellToken);
-        const prospectiveSellToken = this.getCachedTokenRecord(currentBuyToken);
-        if (!prospectiveSellToken?.address) {
-            this.showWarning('Cannot swap right now because the selected buy token is no longer available.');
-            return;
-        }
-
-        const nextSellAmount = this.normalizeAmountInputValueForToken(prospectiveSellToken, currentBuyAmount);
+        const nextSellToken = currentBuyToken;
+        const nextBuyToken = currentSellToken;
+        const nextSellAmount = this.normalizeAmountInputValueForToken(nextSellToken, currentBuyAmount);
         const nextBuyAmount = this.normalizeAmountInputValueForToken(nextBuyToken, currentSellAmount);
-        const prospectiveSellValidation = this.validateCachedSellToken(prospectiveSellToken, {
+        const prospectiveSellValidation = this.validateCachedSellToken(nextSellToken, {
             requiredAmount: nextSellAmount
         });
 
@@ -1527,7 +1477,6 @@ export class CreateOrder extends BaseComponent {
             return;
         }
 
-        const nextSellToken = prospectiveSellValidation.token;
         await this.handleTokenSelect('sell', nextSellToken, { focusInput: false });
         await this.handleTokenSelect('buy', nextBuyToken, { focusInput: false });
 
@@ -2933,6 +2882,7 @@ export class CreateOrder extends BaseComponent {
                 displaySymbol: token.displaySymbol || token.symbol,
                 decimals: token.decimals || 18,
                 balance: token.balance || '0',
+                balanceLoading: this.isTokenBalanceLoading(token),
                 iconUrl: token.iconUrl || null,
                 usdPrice: usdPrice
             };
