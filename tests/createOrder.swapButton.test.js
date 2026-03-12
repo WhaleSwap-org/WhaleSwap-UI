@@ -174,7 +174,7 @@ describe('CreateOrder swap button', () => {
         expect(warningSpy.mock.calls[0][0]).toBe('Cannot swap: BBB balance is still loading. Please try again in a moment.');
     });
 
-    it('blocks swapping when the cached balance is lower than the swapped sell amount', async () => {
+    it('allows swapping when the cached balance is lower than the swapped sell amount', async () => {
         const component = createComponent();
         const warningSpy = vi.fn();
         component.showWarning = warningSpy;
@@ -193,12 +193,10 @@ describe('CreateOrder swap button', () => {
         document.getElementById('swapOrderSidesButton').click();
         await flushAsyncWork();
 
-        expect(component.sellToken?.address).toBe(TOKEN_A);
-        expect(component.buyToken?.address).toBe(TOKEN_B);
-        expect(document.getElementById('sellAmount').value).toBe('1');
-        expect(document.getElementById('buyAmount').value).toBe('2.5');
-        expect(warningSpy).toHaveBeenCalledTimes(1);
-        expect(warningSpy.mock.calls[0][0]).toContain('Cannot swap: you need 2.5 BBB');
-        expect(warningSpy.mock.calls[0][0]).toContain('1.5 BBB available to sell');
+        expect(component.sellToken?.address).toBe(TOKEN_B);
+        expect(component.buyToken?.address).toBe(TOKEN_A);
+        expect(document.getElementById('sellAmount').value).toBe('2.5');
+        expect(document.getElementById('buyAmount').value).toBe('1');
+        expect(warningSpy).not.toHaveBeenCalled();
     });
 });

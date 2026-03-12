@@ -141,7 +141,7 @@ export class CreateOrder extends BaseComponent {
         return Number(trimmedValue) > 0;
     }
 
-    validateCachedSellToken(token, { requiredAmount = '' } = {}) {
+    validateCachedSellToken(token) {
         if (!token?.address) {
             return {
                 isValid: false,
@@ -179,43 +179,10 @@ export class CreateOrder extends BaseComponent {
             };
         }
 
-        const normalizedRequiredAmount = String(requiredAmount ?? '').trim();
-        if (!this.isValidPositiveAmount(normalizedRequiredAmount)) {
-            return {
-                isValid: true,
-                tokenLabel,
-                formattedBalance: token.balance || '0'
-            };
-        }
-
-        let requiredAmountWei;
-        try {
-            requiredAmountWei = ethers.utils.parseUnits(normalizedRequiredAmount, tokenDecimals);
-        } catch (error) {
-            this.debug(`Failed to parse required sell amount for ${tokenLabel}:`, error);
-            return {
-                isValid: false,
-                reason: 'invalid-required-amount',
-                tokenLabel,
-                formattedRequired: normalizedRequiredAmount
-            };
-        }
-
-        if (availableAmountWei.lt(requiredAmountWei)) {
-            return {
-                isValid: false,
-                reason: 'insufficient-balance',
-                tokenLabel,
-                formattedBalance: token.balance || '0',
-                formattedRequired: normalizedRequiredAmount
-            };
-        }
-
         return {
             isValid: true,
             tokenLabel,
-            formattedBalance: token.balance || '0',
-            formattedRequired: normalizedRequiredAmount
+            formattedBalance: token.balance || '0'
         };
     }
 
@@ -230,14 +197,6 @@ export class CreateOrder extends BaseComponent {
             case 'no-balance':
                 this.showWarning(`Cannot swap: you have no balance of ${tokenLabel} to sell.`);
                 return;
-            case 'insufficient-balance':
-                this.showWarning(
-                    `Cannot swap: you need ${validation.formattedRequired} ${tokenLabel}, but only have ${validation.formattedBalance} ${tokenLabel} available to sell.`
-                );
-                return;
-            case 'invalid-required-amount':
-                this.showWarning(`Cannot swap: ${validation.formattedRequired} is not a valid sell amount for ${tokenLabel}.`);
-                return;
             default:
                 this.showWarning('Cannot swap right now because the selected buy token is no longer available.');
                 return;
@@ -250,11 +209,6 @@ export class CreateOrder extends BaseComponent {
             return;
         case 'no-balance':
             this.showWarning(`${tokenLabel} has no balance available for selling. Please select a token with a balance.`);
-            return;
-        case 'insufficient-balance':
-            this.showWarning(
-                `${tokenLabel} does not have enough balance for the current sell amount. Required: ${validation.formattedRequired} ${tokenLabel}. Available: ${validation.formattedBalance} ${tokenLabel}.`
-            );
             return;
         default:
             this.showWarning('Unable to select token: token is not available in the current list.');
@@ -1468,9 +1422,7 @@ export class CreateOrder extends BaseComponent {
         const nextBuyToken = currentSellToken;
         const nextSellAmount = this.normalizeAmountInputValueForToken(nextSellToken, currentBuyAmount);
         const nextBuyAmount = this.normalizeAmountInputValueForToken(nextBuyToken, currentSellAmount);
-        const prospectiveSellValidation = this.validateCachedSellToken(nextSellToken, {
-            requiredAmount: nextSellAmount
-        });
+        const prospectiveSellValidation = this.validateCachedSellToken(nextSellToken);
 
         if (!prospectiveSellValidation.isValid) {
             this.showCachedSellTokenValidationWarning(prospectiveSellValidation, { source: 'swap' });
