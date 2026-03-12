@@ -101,9 +101,11 @@ export class CreateOrder extends BaseComponent {
         return Number.isInteger(tokenDecimals) && tokenDecimals >= 0 ? tokenDecimals : null;
     }
 
-    normalizeAmountInputValue(type, value) {
+    normalizeAmountInputValueForToken(token, value) {
         const sanitizedValue = this.sanitizeAmountInputValue(value);
-        const maxDecimals = this.getAmountInputDecimals(type);
+        const maxDecimals = Number.isInteger(token?.decimals) && token.decimals >= 0
+            ? token.decimals
+            : null;
 
         if (maxDecimals === null || !sanitizedValue.includes('.')) {
             return sanitizedValue;
@@ -116,6 +118,10 @@ export class CreateOrder extends BaseComponent {
         }
 
         return `${whole}.${fraction.slice(0, maxDecimals)}`;
+    }
+
+    normalizeAmountInputValue(type, value) {
+        return this.normalizeAmountInputValueForToken(this[`${type}Token`], value);
     }
 
     isValidPositiveAmount(value) {
@@ -133,6 +139,171 @@ export class CreateOrder extends BaseComponent {
         }
 
         return Number(trimmedValue) > 0;
+    }
+
+    getNormalizedTokenDecimals(token) {
+        const decimals = Number(token?.decimals);
+        return Number.isInteger(decimals) && decimals >= 0 ? decimals : 18;
+    }
+
+    getCachedTokenRecord(tokenOrAddress) {
+        const requestedToken = typeof tokenOrAddress === 'object' ? tokenOrAddress : null;
+        const tokenAddress = typeof tokenOrAddress === 'string'
+            ? tokenOrAddress
+            : requestedToken?.address;
+        const normalizedAddress = String(tokenAddress || '').toLowerCase();
+
+        if (!normalizedAddress) {
+            return null;
+        }
+
+        for (const tokenList of [this.allowedTokens, this.tokens]) {
+            const matchedToken = Array.isArray(tokenList)
+                ? tokenList.find((token) => token.address?.toLowerCase() === normalizedAddress)
+                : null;
+
+            if (matchedToken) {
+                return this.normalizeTokenDisplay({
+                    ...requestedToken,
+                    ...matchedToken,
+                    displaySymbol: matchedToken.displaySymbol
+                        || requestedToken?.displaySymbol
+                        || matchedToken.symbol
+                });
+            }
+        }
+
+        if (requestedToken?.address) {
+            return this.normalizeTokenDisplay(requestedToken);
+        }
+
+        return null;
+    }
+
+    validateCachedSellToken(tokenOrAddress, { requiredAmount = '' } = {}) {
+        const token = this.getCachedTokenRecord(tokenOrAddress);
+
+        if (!token?.address) {
+            return {
+                isValid: false,
+                reason: 'missing-token'
+            };
+        }
+
+        const tokenLabel = token.displaySymbol || token.symbol || 'Selected token';
+
+        if (this.isTokenBalanceLoading(token)) {
+            return {
+                isValid: false,
+                reason: 'balance-loading',
+                token,
+                tokenLabel
+            };
+        }
+
+        const tokenDecimals = this.getNormalizedTokenDecimals(token);
+        let availableAmountWei;
+        try {
+            availableAmountWei = ethers.utils.parseUnits(token.balance || '0', tokenDecimals);
+        } catch (error) {
+            this.debug(`Failed to parse cached balance for ${tokenLabel}:`, error);
+            availableAmountWei = ethers.constants.Zero;
+        }
+
+        if (availableAmountWei.lte(ethers.constants.Zero)) {
+            return {
+                isValid: false,
+                reason: 'no-balance',
+                token,
+                tokenLabel,
+                formattedBalance: token.balance || '0'
+            };
+        }
+
+        const normalizedRequiredAmount = String(requiredAmount ?? '').trim();
+        if (!this.isValidPositiveAmount(normalizedRequiredAmount)) {
+            return {
+                isValid: true,
+                token,
+                tokenLabel,
+                formattedBalance: token.balance || '0'
+            };
+        }
+
+        let requiredAmountWei;
+        try {
+            requiredAmountWei = ethers.utils.parseUnits(normalizedRequiredAmount, tokenDecimals);
+        } catch (error) {
+            this.debug(`Failed to parse required sell amount for ${tokenLabel}:`, error);
+            return {
+                isValid: false,
+                reason: 'invalid-required-amount',
+                token,
+                tokenLabel,
+                formattedRequired: normalizedRequiredAmount
+            };
+        }
+
+        if (availableAmountWei.lt(requiredAmountWei)) {
+            return {
+                isValid: false,
+                reason: 'insufficient-balance',
+                token,
+                tokenLabel,
+                formattedBalance: token.balance || '0',
+                formattedRequired: normalizedRequiredAmount
+            };
+        }
+
+        return {
+            isValid: true,
+            token,
+            tokenLabel,
+            formattedBalance: token.balance || '0',
+            formattedRequired: normalizedRequiredAmount
+        };
+    }
+
+    showCachedSellTokenValidationWarning(validation, { source = 'selection' } = {}) {
+        const tokenLabel = validation?.tokenLabel || 'Selected token';
+
+        if (source === 'swap') {
+            switch (validation?.reason) {
+            case 'balance-loading':
+                this.showWarning(`Cannot swap: ${tokenLabel} balance is still loading. Please try again in a moment.`);
+                return;
+            case 'no-balance':
+                this.showWarning(`Cannot swap: you have no balance of ${tokenLabel} to sell.`);
+                return;
+            case 'insufficient-balance':
+                this.showWarning(
+                    `Cannot swap: you need ${validation.formattedRequired} ${tokenLabel}, but only have ${validation.formattedBalance} ${tokenLabel} available to sell.`
+                );
+                return;
+            case 'invalid-required-amount':
+                this.showWarning(`Cannot swap: ${validation.formattedRequired} is not a valid sell amount for ${tokenLabel}.`);
+                return;
+            default:
+                this.showWarning('Cannot swap right now because the selected buy token is no longer available.');
+                return;
+            }
+        }
+
+        switch (validation?.reason) {
+        case 'balance-loading':
+            this.showWarning('Balance is still loading for this token. Please try again in a moment.');
+            return;
+        case 'no-balance':
+            this.showWarning(`${tokenLabel} has no balance available for selling. Please select a token with a balance.`);
+            return;
+        case 'insufficient-balance':
+            this.showWarning(
+                `${tokenLabel} does not have enough balance for the current sell amount. Required: ${validation.formattedRequired} ${tokenLabel}. Available: ${validation.formattedBalance} ${tokenLabel}.`
+            );
+            return;
+        default:
+            this.showWarning('Unable to select token: token is not available in the current list.');
+        }
     }
 
     getAmountSuggestionButton(type) {
@@ -620,6 +791,8 @@ export class CreateOrder extends BaseComponent {
             
             // Initialize amount input listeners
             this.initializeAmountInputs();
+            this.initializeSwapButton();
+            this.updateSellAmountMax();
             this.initializeTakerAddressInput();
             
             this.initialized = true;
@@ -1317,6 +1490,75 @@ export class CreateOrder extends BaseComponent {
         this.setupInfoTooltipInteractions();
     }
 
+    initializeSwapButton() {
+        const swapButton = document.getElementById('swapOrderSidesButton');
+        if (!swapButton) {
+            this.debug('Swap button not found');
+            return;
+        }
+
+        const newSwapButton = swapButton.cloneNode(true);
+        swapButton.parentNode.replaceChild(newSwapButton, swapButton);
+        newSwapButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            void this.handleSwapSides();
+        });
+    }
+
+    async handleSwapSides() {
+        const currentSellToken = this.sellToken;
+        const currentBuyToken = this.buyToken;
+
+        if (!currentSellToken?.address || !currentBuyToken?.address) {
+            return;
+        }
+
+        const currentSellAmount = document.getElementById('sellAmount')?.value ?? '';
+        const currentBuyAmount = document.getElementById('buyAmount')?.value ?? '';
+        const nextBuyToken = this.getCachedTokenRecord(currentSellToken);
+        const prospectiveSellToken = this.getCachedTokenRecord(currentBuyToken);
+        if (!prospectiveSellToken?.address) {
+            this.showWarning('Cannot swap right now because the selected buy token is no longer available.');
+            return;
+        }
+        if (!nextBuyToken?.address) {
+            this.showWarning('Cannot swap right now because the selected sell token is no longer available.');
+            return;
+        }
+
+        const nextSellAmount = this.normalizeAmountInputValueForToken(prospectiveSellToken, currentBuyAmount);
+        const nextBuyAmount = this.normalizeAmountInputValueForToken(nextBuyToken, currentSellAmount);
+        const prospectiveSellValidation = this.validateCachedSellToken(prospectiveSellToken, {
+            requiredAmount: nextSellAmount
+        });
+
+        if (!prospectiveSellValidation.isValid) {
+            this.showCachedSellTokenValidationWarning(prospectiveSellValidation, { source: 'swap' });
+            return;
+        }
+
+        const nextSellToken = prospectiveSellValidation.token;
+        await this.handleTokenSelect('sell', nextSellToken, { focusInput: false });
+        await this.handleTokenSelect('buy', nextBuyToken, { focusInput: false });
+
+        const sellAmountInput = document.getElementById('sellAmount');
+        if (sellAmountInput) {
+            sellAmountInput.value = nextSellAmount;
+            sellAmountInput.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+
+        const buyAmountInput = document.getElementById('buyAmount');
+        if (buyAmountInput) {
+            buyAmountInput.value = nextBuyAmount;
+            buyAmountInput.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+
+        this.updateSellAmountMax();
+        this.refreshActiveAmountSuggestion();
+        this.updateCreateButtonState();
+    }
+
     setTooltipExpanded(tooltipElement, isExpanded, persistState = null) {
         if (!tooltipElement) return;
 
@@ -2005,6 +2247,15 @@ export class CreateOrder extends BaseComponent {
             
             // Assemble input wrapper
             inputWrapper.appendChild(amountInput);
+            if (type === 'sell') {
+                const maxButton = document.createElement('button');
+                maxButton.type = 'button';
+                maxButton.id = 'sellAmountMax';
+                maxButton.className = 'max-button';
+                maxButton.textContent = 'MAX';
+                maxButton.style.display = 'none';
+                inputWrapper.appendChild(maxButton);
+            }
             // Pre-create USD display to preserve layout; keep hidden until valid
             const usdDisplayStatic = document.createElement('div');
             usdDisplayStatic.id = `${type}AmountUSD`;
@@ -2620,8 +2871,9 @@ export class CreateOrder extends BaseComponent {
         });
     }
 
-    async handleTokenSelect(type, token) {
+    async handleTokenSelect(type, token, options = {}) {
         try {
+            const { focusInput = true } = options;
             this.debug(`Token selected for ${type}:`, token);
             
             // Hide USD display if no token is selected (preserve layout)
@@ -2641,6 +2893,7 @@ export class CreateOrder extends BaseComponent {
                 }
                 // Hide balance display when no token is selected
                 this.hideBalanceDisplay(type);
+                this.updateSellAmountMax();
                 if (this.focusedAmountField === type) {
                     this.focusedAmountField = null;
                 }
@@ -2695,6 +2948,9 @@ export class CreateOrder extends BaseComponent {
                 displaySymbol: token.displaySymbol || token.symbol,
                 decimals: token.decimals || 18,
                 balance: token.balance || '0',
+                balanceLoading: this.isTokenBalanceLoading(token),
+                iconUrl: token.iconUrl || null,
+                name: token.name || '',
                 usdPrice: usdPrice
             };
 
@@ -2749,6 +3005,7 @@ export class CreateOrder extends BaseComponent {
 
             // Update amount USD value immediately
             this.updateTokenAmounts(type);
+            this.updateSellAmountMax();
 
             // Add input event listener for amount changes
             const amountInput = document.getElementById(`${type}Amount`);
@@ -2760,9 +3017,11 @@ export class CreateOrder extends BaseComponent {
                 this.bindAmountInput(type, newInput);
                 
                 // Focus on the input field after token selection
-                setTimeout(() => {
-                    newInput.focus();
-                }, 100); // Small delay to ensure DOM is updated
+                if (focusInput) {
+                    setTimeout(() => {
+                        newInput.focus();
+                    }, 100); // Small delay to ensure DOM is updated
+                }
             }
         } catch (error) {
             this.debug('Error in handleTokenSelect:', error);
@@ -2809,17 +3068,12 @@ export class CreateOrder extends BaseComponent {
                 return;
             }
 
-            // For sell tokens, check if balance is zero
+            // For sell tokens, reuse cached sell-side validation before allowing selection.
             if (type === 'sell') {
-                if (this.isTokenBalanceLoading(token)) {
-                    this.showWarning('Balance is still loading for this token. Please try again in a moment.');
+                const sellTokenValidation = this.validateCachedSellToken(token);
+                if (!sellTokenValidation.isValid) {
+                    this.showCachedSellTokenValidationWarning(sellTokenValidation, { source: 'selection' });
                     return;
-                }
-                const balance = Number(token.balance) || 0;
-                if (balance <= 0) {
-                    const tokenLabel = token.displaySymbol || token.symbol;
-                    this.showWarning(`${tokenLabel} has no balance available for selling. Please select a token with a balance.`);
-                    return; // Don't allow selection of tokens with zero balance for selling
                 }
             }
             
@@ -2910,13 +3164,12 @@ export class CreateOrder extends BaseComponent {
 
     updateSellAmountMax() {
         try {
-            if (!this.sellToken) return;
-            
             const maxButton = document.getElementById('sellAmountMax');
             if (!maxButton) return;
 
             // Update max button visibility based on token balance
-            if (this.sellToken.balance) {
+            const sellBalance = Number(this.sellToken?.balance) || 0;
+            if (this.sellToken && sellBalance > 0) {
                 maxButton.style.display = 'inline';
                 maxButton.onclick = () => {
                     const sellAmount = document.getElementById('sellAmount');
@@ -3214,7 +3467,7 @@ export class CreateOrder extends BaseComponent {
                     <div id="sellContainer" class="swap-input-container">
                         <div class="amount-input-wrapper">
                             <input type="text" id="sellAmount" placeholder="0.0" inputmode="decimal" pattern="^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]*)$" autocomplete="off" spellcheck="false" />
-                            <button id="sellAmountMax" class="max-button">MAX</button>
+                            <button id="sellAmountMax" class="max-button" type="button" style="display:none;">MAX</button>
                         </div>
                         <div class="amount-usd is-hidden" id="sellAmountUSD" aria-hidden="true">≈ $0.00</div>
                         <div id="sellTokenSelector" class="token-selector">
@@ -3232,9 +3485,16 @@ export class CreateOrder extends BaseComponent {
 
                     <!-- Swap direction arrow -->
                     <div class="swap-arrow">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path d="M12 5l0 14M5 12l7 7 7-7" stroke-width="2" stroke-linecap="round" />
-                        </svg>
+                        <button
+                            id="swapOrderSidesButton"
+                            class="swap-arrow-button"
+                            type="button"
+                            aria-label="Swap sell and buy tokens and amounts"
+                        >
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <path d="M12 5l0 14M5 12l7 7 7-7" stroke-width="2" stroke-linecap="round" />
+                            </svg>
+                        </button>
                     </div>
 
                     <!-- Buy token input section -->
