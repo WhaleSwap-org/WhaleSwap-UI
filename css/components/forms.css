@@ -1149,9 +1149,18 @@
   background: transparent;
   color: inherit;
   cursor: pointer;
-  padding: 0;
+  padding: 6px;
   margin: 0;
   line-height: 0;
+  border-radius: 999px;
+  opacity: 0.72;
+  transition: color 0.2s ease, opacity 0.2s ease, transform 0.2s ease;
+}
+
+.swap-arrow-button:hover {
+  color: var(--text-primary);
+  opacity: 1;
+  transform: translateY(-1px) scale(1.06);
 }
 
 .swap-arrow-button:focus-visible {
