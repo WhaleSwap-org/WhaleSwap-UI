@@ -96,16 +96,19 @@ export class CreateOrder extends BaseComponent {
             + digitsAndDecimalOnly.slice(firstDecimalIndex + 1).replace(/\./g, '');
     }
 
+    getTokenInputDecimals(token) {
+        return Number.isInteger(token?.decimals) && token.decimals >= 0
+            ? token.decimals
+            : null;
+    }
+
     getAmountInputDecimals(type) {
-        const tokenDecimals = this[`${type}Token`]?.decimals;
-        return Number.isInteger(tokenDecimals) && tokenDecimals >= 0 ? tokenDecimals : null;
+        return this.getTokenInputDecimals(this[`${type}Token`]);
     }
 
     normalizeAmountInputValueForToken(token, value) {
         const sanitizedValue = this.sanitizeAmountInputValue(value);
-        const maxDecimals = Number.isInteger(token?.decimals) && token.decimals >= 0
-            ? token.decimals
-            : null;
+        const maxDecimals = this.getTokenInputDecimals(token);
 
         if (maxDecimals === null || !sanitizedValue.includes('.')) {
             return sanitizedValue;
@@ -159,9 +162,7 @@ export class CreateOrder extends BaseComponent {
             };
         }
 
-        const tokenDecimals = Number.isInteger(token?.decimals) && token.decimals >= 0
-            ? token.decimals
-            : 18;
+        const tokenDecimals = this.getTokenInputDecimals(token) ?? 18;
         let availableAmountWei;
         try {
             availableAmountWei = ethers.utils.parseUnits(token.balance || '0', tokenDecimals);
