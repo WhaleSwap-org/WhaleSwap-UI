@@ -2134,15 +2134,6 @@ export class CreateOrder extends BaseComponent {
             
             // Assemble input wrapper
             inputWrapper.appendChild(amountInput);
-            if (type === 'sell') {
-                const maxButton = document.createElement('button');
-                maxButton.type = 'button';
-                maxButton.id = 'sellAmountMax';
-                maxButton.className = 'max-button';
-                maxButton.textContent = 'MAX';
-                maxButton.style.display = 'none';
-                inputWrapper.appendChild(maxButton);
-            }
             // Pre-create USD display to preserve layout; keep hidden until valid
             const usdDisplayStatic = document.createElement('div');
             usdDisplayStatic.id = `${type}AmountUSD`;
@@ -2780,7 +2771,6 @@ export class CreateOrder extends BaseComponent {
                 }
                 // Hide balance display when no token is selected
                 this.hideBalanceDisplay(type);
-                this.updateSellAmountMax();
                 if (this.focusedAmountField === type) {
                     this.focusedAmountField = null;
                 }
@@ -2891,7 +2881,6 @@ export class CreateOrder extends BaseComponent {
 
             // Update amount USD value immediately
             this.updateTokenAmounts(type);
-            this.updateSellAmountMax();
 
             // Add input event listener for amount changes
             const amountInput = document.getElementById(`${type}Amount`);
@@ -3045,30 +3034,6 @@ export class CreateOrder extends BaseComponent {
             }
         } catch (error) {
             this.debug('Error updating create button state:', error);
-        }
-    }
-
-    updateSellAmountMax() {
-        try {
-            const maxButton = document.getElementById('sellAmountMax');
-            if (!maxButton) return;
-
-            // Update max button visibility based on token balance
-            const sellBalance = Number(this.sellToken?.balance) || 0;
-            if (this.sellToken && sellBalance > 0) {
-                maxButton.style.display = 'inline';
-                maxButton.onclick = () => {
-                    const sellAmount = document.getElementById('sellAmount');
-                    if (sellAmount) {
-                        sellAmount.value = this.sellToken.balance;
-                        this.updateTokenAmounts('sell');
-                    }
-                };
-            } else {
-                maxButton.style.display = 'none';
-            }
-        } catch (error) {
-            this.debug('Error updating sell amount max:', error);
         }
     }
 
@@ -3353,7 +3318,6 @@ export class CreateOrder extends BaseComponent {
                     <div id="sellContainer" class="swap-input-container">
                         <div class="amount-input-wrapper">
                             <input type="text" id="sellAmount" placeholder="0.0" inputmode="decimal" pattern="^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]*)$" autocomplete="off" spellcheck="false" />
-                            <button id="sellAmountMax" class="max-button" type="button" style="display:none;">MAX</button>
                         </div>
                         <div class="amount-usd is-hidden" id="sellAmountUSD" aria-hidden="true">≈ $0.00</div>
                         <div id="sellTokenSelector" class="token-selector">

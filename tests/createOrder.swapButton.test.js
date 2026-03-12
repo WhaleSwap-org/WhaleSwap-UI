@@ -53,7 +53,6 @@ function setupCreateOrderDom(component) {
     component.setupCreateOrderListener();
     component.initializeAmountInputs();
     component.initializeTakerAddressInput();
-    component.updateSellAmountMax();
 }
 
 function createComponent() {
@@ -119,7 +118,6 @@ describe('CreateOrder swap button', () => {
         expect(document.getElementById('sellTokenSelector')?.textContent).toContain('BBB');
         expect(document.getElementById('buyTokenSelector')?.textContent).toContain('AAA');
         expect(document.getElementById('sellTokenBalanceAmount')?.textContent).toBe('5.00');
-        expect(document.getElementById('sellAmountMax')?.style.display).toBe('inline');
         expect(document.getElementById('takerAddress')?.value).toBe('0x1234');
         expect(refreshSpy).not.toHaveBeenCalled();
         expect(warningSpy).not.toHaveBeenCalled();

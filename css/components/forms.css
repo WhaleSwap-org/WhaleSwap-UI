@@ -966,31 +966,6 @@
   position: relative;
 }
 
-.max-button {
-  position: absolute;
-  top: 0;
-  right: 0;
-  border: 1px solid var(--border-color);
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  border-radius: 999px;
-  padding: 4px 10px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
-}
-
-.max-button:hover {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-}
-
-.max-button:focus-visible {
-  outline: 2px solid #4b6bfb;
-  outline-offset: 2px;
-}
-
 .amount-input-header {
   display: flex;
   align-items: center;
