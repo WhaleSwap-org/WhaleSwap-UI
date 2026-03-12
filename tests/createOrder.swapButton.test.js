@@ -50,8 +50,8 @@ function createToken(address, {
 function setupCreateOrderDom(component) {
     document.getElementById('create-order').innerHTML = component.render();
     component.populateTokenDropdowns();
+    component.setupCreateOrderListener();
     component.initializeAmountInputs();
-    component.initializeSwapButton();
     component.initializeTakerAddressInput();
     component.updateSellAmountMax();
 }

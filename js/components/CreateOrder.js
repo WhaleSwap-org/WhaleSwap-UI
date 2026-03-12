@@ -791,8 +791,6 @@ export class CreateOrder extends BaseComponent {
             
             // Initialize amount input listeners
             this.initializeAmountInputs();
-            this.initializeSwapButton();
-            this.updateSellAmountMax();
             this.initializeTakerAddressInput();
             
             this.initialized = true;
@@ -1444,6 +1442,17 @@ export class CreateOrder extends BaseComponent {
         // Add single new listener
         newButton.addEventListener('click', this.boundCreateOrderHandler);
 
+        const swapButton = this.container?.querySelector('#swapOrderSidesButton');
+        if (swapButton) {
+            const newSwapButton = swapButton.cloneNode(true);
+            swapButton.parentNode.replaceChild(newSwapButton, swapButton);
+            newSwapButton.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                void this.handleSwapSides();
+            });
+        }
+
         // Setup taker toggle functionality
         const takerToggle = this.container?.querySelector('.taker-toggle');
         if (takerToggle) {
@@ -1490,22 +1499,6 @@ export class CreateOrder extends BaseComponent {
         this.setupInfoTooltipInteractions();
     }
 
-    initializeSwapButton() {
-        const swapButton = document.getElementById('swapOrderSidesButton');
-        if (!swapButton) {
-            this.debug('Swap button not found');
-            return;
-        }
-
-        const newSwapButton = swapButton.cloneNode(true);
-        swapButton.parentNode.replaceChild(newSwapButton, swapButton);
-        newSwapButton.addEventListener('click', (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            void this.handleSwapSides();
-        });
-    }
-
     async handleSwapSides() {
         const currentSellToken = this.sellToken;
         const currentBuyToken = this.buyToken;
@@ -1520,10 +1513,6 @@ export class CreateOrder extends BaseComponent {
         const prospectiveSellToken = this.getCachedTokenRecord(currentBuyToken);
         if (!prospectiveSellToken?.address) {
             this.showWarning('Cannot swap right now because the selected buy token is no longer available.');
-            return;
-        }
-        if (!nextBuyToken?.address) {
-            this.showWarning('Cannot swap right now because the selected sell token is no longer available.');
             return;
         }
 
@@ -1553,10 +1542,6 @@ export class CreateOrder extends BaseComponent {
             buyAmountInput.value = nextBuyAmount;
             buyAmountInput.dispatchEvent(new Event('input', { bubbles: true }));
         }
-
-        this.updateSellAmountMax();
-        this.refreshActiveAmountSuggestion();
-        this.updateCreateButtonState();
     }
 
     setTooltipExpanded(tooltipElement, isExpanded, persistState = null) {
@@ -2948,9 +2933,7 @@ export class CreateOrder extends BaseComponent {
                 displaySymbol: token.displaySymbol || token.symbol,
                 decimals: token.decimals || 18,
                 balance: token.balance || '0',
-                balanceLoading: this.isTokenBalanceLoading(token),
                 iconUrl: token.iconUrl || null,
-                name: token.name || '',
                 usdPrice: usdPrice
             };
 
