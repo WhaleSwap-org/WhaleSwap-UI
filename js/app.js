@@ -124,6 +124,19 @@ class App {
 			|| tabId === 'cleanup-orders';
 	}
 
+	getInitialRenderState() {
+		const wallet = this.ctx?.getWallet?.();
+		const isInitiallyConnected = !!wallet?.getSigner?.();
+		const isInitialNetworkMatch = this.isWalletOnSelectedNetwork(
+			this.ctx?.getWalletChainId?.() || walletManager.chainId || null
+		);
+
+		return {
+			defaultTab: isInitiallyConnected ? 'create-order' : 'view-orders',
+			hasInitialConnectedContext: isInitiallyConnected && isInitialNetworkMatch,
+		};
+	}
+
 	getTabButton(tabId) {
 		return document.querySelector(`.tab-button[data-tab="${tabId}"]`);
 	}
@@ -1307,15 +1320,11 @@ class App {
 				}
 			});
 
-			// Treat presence of signer as connected for initial render to avoid flicker,
-			// but only enable connected UX when wallet chain matches selected chain.
-			const wallet = this.ctx.getWallet();
-			const isInitiallyConnected = !!wallet?.getSigner?.();
-			const isInitialNetworkMatch = this.isWalletOnSelectedNetwork(
-				this.ctx.getWalletChainId() || walletManager.chainId || null
-			);
-			const hasInitialConnectedContext = isInitiallyConnected && isInitialNetworkMatch;
-			this.currentTab = hasInitialConnectedContext ? 'create-order' : 'view-orders';
+			const {
+				defaultTab,
+				hasInitialConnectedContext,
+			} = this.getInitialRenderState();
+			this.currentTab = defaultTab;
 
 				// Add wallet connection state handler
 				walletManager.addListener(async (event, data) => {
