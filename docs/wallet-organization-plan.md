@@ -1,5 +1,29 @@
 # Wallet Organization Plan
 
+## Issue Ordering Note
+
+Before executing the broader no-behavior-change organization pass in this document, the active wallet/network behavior issues should be handled first.
+
+Recommended order:
+
+1. `#147` Fix connected startup/connect flow defaulting to `View Orders`
+2. `#153` Make header/network selector reflect wallet connection only
+3. `#154` Decouple connected UI state from wallet network
+4. Treat `#152` as the umbrella tracking issue for the behavior change above
+5. Defer `#106` EIP-6963 wallet discovery and explicit wallet selection until after the decoupling work and after at least a light internal cleanup
+
+Why this order:
+
+- `#147`, `#153`, and `#154` define the behavior contract the wallet architecture should support
+- reorganizing first would risk preserving or reinforcing the current coupled wallet/network model
+- `#106` is structurally larger and is safer after connection state and selected-network state are already decoupled
+
+Practical interpretation:
+
+- use this document as a guardrail while implementing `#147`, `#153`, and `#154`
+- do not treat the rest of this document as a prerequisite project before those issues
+- revisit the organization phases below immediately after the decoupling work lands
+
 ## Goal
 
 Reorganize the WhaleSwap wallet code so it is easier to reason about, easier to test, and closer to the bridge repo's separation of concerns.
@@ -245,4 +269,3 @@ Once the reorganization above is complete, the bridge-style multi-wallet flow ca
 2. Add a picker UI before `eth_requestAccounts`.
 3. Keep the WhaleSwap facade methods/events stable.
 4. Let the app continue to listen to the same high-level events.
-
