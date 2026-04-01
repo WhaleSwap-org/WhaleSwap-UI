@@ -106,6 +106,20 @@ describe('App order tab visibility behavior', () => {
         expect(app.getTabButton('taker-orders').style.display).toBe('block');
     });
 
+    it('shows connected order tabs even when the wallet is on a different network', async () => {
+        setupTabDom();
+        const { app } = createAppWithContext({
+            networkMatch: false,
+            orders: [{ maker: ACCOUNT, taker: OTHER }]
+        });
+
+        const result = await app.refreshOrderTabVisibility();
+
+        expect(result).toEqual({ showMyOrders: true, showInvitedOrders: false });
+        expect(app.getTabButton('my-orders').style.display).toBe('block');
+        expect(app.getTabButton('taker-orders').style.display).toBe('none');
+    });
+
     it('redirects to View Orders if current order tab becomes hidden', async () => {
         setupTabDom();
         const { app } = createAppWithContext({
