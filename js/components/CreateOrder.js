@@ -1627,7 +1627,20 @@ export class CreateOrder extends BaseComponent {
             takerAddressInput.value = '';
         }
         
-        this.debug('Cleared order input values (amounts and taker address)');
+        // Clear USD displays
+        const sellUsdDisplay = document.getElementById('sellAmountUSD');
+        const buyUsdDisplay = document.getElementById('buyAmountUSD');
+        
+        if (sellUsdDisplay) {
+            sellUsdDisplay.textContent = '≈ $0.00';
+            setVisibility(sellUsdDisplay, false);
+        }
+        if (buyUsdDisplay) {
+            buyUsdDisplay.textContent = '≈ $0.00';
+            setVisibility(buyUsdDisplay, false);
+        }
+        
+        this.debug('Cleared order input values (amounts, taker address, and USD displays)');
     }
 
     setTransactionProgressSession(session) {
