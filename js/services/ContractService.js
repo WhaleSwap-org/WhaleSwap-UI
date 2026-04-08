@@ -58,28 +58,51 @@ class ContractService {
     }
 
     /**
+     * Get configured HTTP RPC URLs for the active network.
+     * @returns {string[]} Primary RPC followed by configured fallbacks
+     */
+    getHttpRpcUrls() {
+        const net = getNetworkConfig();
+        return [net?.rpcUrl, ...(net?.fallbackRpcUrls || [])].filter(Boolean);
+    }
+
+    /**
      * Run a read-only contract call via HTTP RPC (tries primary rpcUrl then fallbackRpcUrls).
      * Used for allowed-token reads to avoid WebSocket timeout on startup.
-     * @param {function(ethers.Contract): Promise<any>} readFn - Function that receives the HTTP-backed contract and returns the read result
+     * @param {function({ provider: ethers.providers.JsonRpcProvider, contract: ethers.Contract|null, url: string, networkConfig: object }): Promise<any>} readFn
+     * @param {Object} options
+     * @param {string} [options.contractAddress]
+     * @param {Array|Object} [options.contractAbi]
      * @returns {Promise<any>} Result of readFn(contract)
-     * @private
      */
-    async _readViaHttpRpc(readFn) {
+    async readViaHttpRpc(readFn, options = {}) {
         if (!this.initialized) {
             throw new Error('Contract service not initialized');
         }
+
         const net = getNetworkConfig();
-        const rpcUrls = [net?.rpcUrl, ...(net?.fallbackRpcUrls || [])].filter(Boolean);
+        const rpcUrls = this.getHttpRpcUrls();
         if (rpcUrls.length === 0) {
             throw new Error('No HTTP RPC URL configured for current network');
         }
+
+        const contractAddress = options.contractAddress ?? net?.contractAddress ?? null;
+        const contractAbi = options.contractAbi ?? net?.contractABI ?? null;
         let lastErr;
+
         for (const url of rpcUrls) {
             try {
                 this.debug(`Trying HTTP RPC: ${url}`);
                 const httpProvider = new ethers.providers.JsonRpcProvider(url);
-                const httpContract = new ethers.Contract(net.contractAddress, net.contractABI, httpProvider);
-                const result = await readFn(httpContract);
+                const httpContract = contractAddress && contractAbi
+                    ? new ethers.Contract(contractAddress, contractAbi, httpProvider)
+                    : null;
+                const result = await readFn({
+                    provider: httpProvider,
+                    contract: httpContract,
+                    url,
+                    networkConfig: net
+                });
                 this.debug(`HTTP RPC succeeded: ${url}`);
                 return result;
             } catch (e) {
@@ -89,6 +112,10 @@ class ContractService {
             }
         }
         throw lastErr || new Error('All HTTP RPC URLs failed');
+    }
+
+    async _readViaHttpRpc(readFn) {
+        return this.readViaHttpRpc(({ contract }) => readFn(contract));
     }
 
     /**
