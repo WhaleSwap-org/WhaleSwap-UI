@@ -427,6 +427,20 @@ export class WebSocketService {
             || this.getNetworkContextKey() !== networkContextKey;
     }
 
+    isProviderReadError(error) {
+        const errorCode = error?.code || error?.error?.code || '';
+        const errorMessage = String(
+            error?.message
+            || error?.reason
+            || error?.error?.message
+            || ''
+        );
+
+        return errorCode === 'NETWORK_ERROR'
+            || errorCode === 'SERVER_ERROR'
+            || /could not detect network|missing response/i.test(errorMessage);
+    }
+
     processRequestQueue() {
         if (this.processingQueue) {
             return;
@@ -1109,6 +1123,10 @@ export class WebSocketService {
                         orderCreationFee: order.orderCreationFee
                     });
                 } catch (e) {
+                    if (this.isProviderReadError(e)) {
+                        this.debug(`Provider error reading order ${orderId} via fallback`, e);
+                        throw e;
+                    }
                     this.debug(`Failed to read order ${orderId} via fallback`, e);
                 }
             }
