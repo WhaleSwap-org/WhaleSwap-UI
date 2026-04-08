@@ -1648,7 +1648,6 @@ export class WebSocketService {
                 decimals: 18,
                 name: 'Unknown Token'
             };
-            this.tokenCache.set(tokenAddress.toLowerCase(), fallback);
             return fallback;
         }
     }

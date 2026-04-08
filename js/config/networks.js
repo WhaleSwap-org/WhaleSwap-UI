@@ -144,9 +144,9 @@ const testNetworkConfig = {
         contractAddress: "0x0aB6ca718d12349B5477fD480a13F5e21a786222",
         contractABI: CONTRACT_ABI,
         explorer: "https://amoy.polygonscan.com",
-        rpcUrl: "https://rpc-amoy.polygon.technology",
+        rpcUrl: "https://polygon-amoy-bor-rpc.publicnode.com",
         fallbackRpcUrls: [
-            "https://polygon-amoy-bor-rpc.publicnode.com"
+            "https://rpc-amoy.polygon.technology"
         ],
         chainId: "0x13882",
         nativeCurrency: {
