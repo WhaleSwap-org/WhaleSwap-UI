@@ -567,6 +567,39 @@ If issues and PRs are numbered, they should follow dependency order:
 6. `06: Decouple startup from WebSocket readiness`
 7. `07: Post-connect reconcile and partial-failure semantics`
 
+## Minimum Viable Fix Set
+
+For the currently observed startup issue, the likely minimum set needed to materially improve stability is:
+
+1. `01: HTTP read foundation`
+2. `02: Order snapshot over HTTP`
+3. `03: Contract params over HTTP`
+
+Why these three first:
+
+- `01` provides the reusable HTTP query path and multicall support the rest depends on.
+- `02` addresses the original order-loading failure path that was reproduced locally and improved when order reads were moved to HTTP.
+- `03` addresses the remaining confirmed startup WebSocket timeout errors seen in local logs, especially `nextOrderId()` and `ORDER_EXPIRY()` from `ContractParams`.
+
+What this likely fixes:
+
+- startup order sync no longer depends on WebSocket for the initial order snapshot
+- startup contract parameter reads no longer burst read-only calls over the WebSocket provider
+- the main user-visible startup disruption should be reduced or removed
+
+What this does not fully cover:
+
+- startup fee-config and token-metadata reads in other components
+- the broken `queueRequest()` concurrency behavior
+- full startup lifecycle decoupling from WebSocket readiness
+- post-connect reconcile and partial-failure semantics
+
+Recommended approach:
+
+- implement and test `01-03`
+- reassess startup logs and behavior after those land
+- only pull in `04-07` if the remaining startup WebSocket reads still cause meaningful instability or if the follow-up cleanup is still justified
+
 ## Why PR Order Differs From Phase Order
 
 The phase order describes the architecture progression.
