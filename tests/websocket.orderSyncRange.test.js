@@ -98,4 +98,48 @@ describe('WebSocketService startup order sync', () => {
         );
         expect(orders).toEqual([{ id: 5 }, { id: 6 }, { id: 7 }, { id: 8 }]);
     });
+
+    it('rethrows provider errors from individual order reads so HTTP RPC fallback can engage', async () => {
+        const service = new WebSocketService();
+        const providerError = Object.assign(new Error('could not detect network'), {
+            code: 'NETWORK_ERROR'
+        });
+        const contract = {
+            orders: vi.fn().mockRejectedValue(providerError)
+        };
+
+        await expect(
+            service.fetchOrdersIndividually(0, 1, 1, { contract })
+        ).rejects.toBe(providerError);
+    });
+
+    it('continues past per-order call exceptions during individual fallback reads', async () => {
+        const service = new WebSocketService();
+        const validOrder = {
+            maker: '0x0000000000000000000000000000000000000011',
+            taker: ethers.constants.AddressZero,
+            sellToken: '0x00000000000000000000000000000000000000a1',
+            sellAmount: ethers.BigNumber.from(10),
+            buyToken: '0x00000000000000000000000000000000000000b1',
+            buyAmount: ethers.BigNumber.from(20),
+            timestamp: ethers.BigNumber.from(1700000000),
+            status: 0,
+            feeToken: '0x00000000000000000000000000000000000000c1',
+            orderCreationFee: ethers.BigNumber.from(1)
+        };
+        const callException = Object.assign(new Error('execution reverted'), {
+            code: 'CALL_EXCEPTION'
+        });
+        const contract = {
+            orders: vi
+                .fn()
+                .mockResolvedValueOnce(validOrder)
+                .mockRejectedValueOnce(callException)
+        };
+
+        const orders = await service.fetchOrdersIndividually(0, 2, 1, { contract });
+
+        expect(orders).toHaveLength(1);
+        expect(orders[0]).toEqual(expect.objectContaining({ id: 0 }));
+    });
 });
