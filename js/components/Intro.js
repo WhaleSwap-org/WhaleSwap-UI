@@ -26,18 +26,18 @@ export class Intro extends BaseComponent {
 
 	async refreshOrderFeeCopy() {
 		try {
+			// Use HTTP RPC for startup reads to avoid WebSocket timeout issues
+			const contractService = this.ctx.getContractService();
+			if (!contractService) {
+				this.debug('[Intro] ContractService not available');
+				return;
+			}
+
+			const { feeToken: feeTokenAddress, feeAmount: feeAmountRaw } = await contractService.getFeeConfig();
+
+			// Token info still comes from WebSocket (cached metadata)
 			const ws = this.ctx.getWebSocket();
-			if (!ws) return;
-
-			await ws.waitForInitialization();
-			if (!ws.contract) return;
-
-			const [feeTokenAddress, feeAmountRaw] = await Promise.all([
-				ws.queueRequest(async () => ws.contract.feeToken()),
-				ws.queueRequest(async () => ws.contract.orderCreationFeeAmount())
-			]);
-
-			const tokenInfo = await ws.getTokenInfo(feeTokenAddress);
+			const tokenInfo = ws ? await ws.getTokenInfo(feeTokenAddress) : null;
 			const tokenSymbol = tokenInfo?.symbol || `${feeTokenAddress.slice(0, 6)}...${feeTokenAddress.slice(-4)}`;
 			const tokenDecimals = Number.isInteger(tokenInfo?.decimals) ? tokenInfo.decimals : 18;
 			const formattedFee = ethers.utils.formatUnits(feeAmountRaw, tokenDecimals);

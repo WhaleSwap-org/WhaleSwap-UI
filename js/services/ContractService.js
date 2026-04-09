@@ -151,6 +151,60 @@ class ContractService {
     }
 
     /**
+     * Get the fee token address (via HTTP RPC to avoid WS timeout on startup).
+     * @returns {Promise<string>} Fee token address
+     */
+    async getFeeToken() {
+        try {
+            this.debug('Fetching fee token address via HTTP RPC...');
+            const feeToken = await this._readViaHttpRpc((contract) => contract.feeToken());
+            this.debug(`Fee token: ${feeToken}`);
+            return feeToken;
+        } catch (error) {
+            this.error('Failed to get fee token:', error);
+            throw new Error(`Failed to get fee token: ${error.message}`);
+        }
+    }
+
+    /**
+     * Get the order creation fee amount (via HTTP RPC to avoid WS timeout on startup).
+     * @returns {Promise<ethers.BigNumber>} Fee amount
+     */
+    async getOrderCreationFeeAmount() {
+        try {
+            this.debug('Fetching order creation fee amount via HTTP RPC...');
+            const feeAmount = await this._readViaHttpRpc((contract) => contract.orderCreationFeeAmount());
+            this.debug(`Order creation fee: ${feeAmount.toString()}`);
+            return feeAmount;
+        } catch (error) {
+            this.error('Failed to get order creation fee amount:', error);
+            throw new Error(`Failed to get order creation fee amount: ${error.message}`);
+        }
+    }
+
+    /**
+     * Get fee configuration (fee token and amount) in a single call (via HTTP RPC).
+     * @returns {Promise<{feeToken: string, feeAmount: ethers.BigNumber}>}
+     */
+    async getFeeConfig() {
+        try {
+            this.debug('Fetching fee config via HTTP RPC...');
+            const result = await this.readViaHttpRpc(({ contract }) => {
+                return Promise.all([
+                    contract.feeToken(),
+                    contract.orderCreationFeeAmount()
+                ]);
+            });
+            const [feeToken, feeAmount] = result;
+            this.debug(`Fee config: token=${feeToken}, amount=${feeAmount.toString()}`);
+            return { feeToken, feeAmount };
+        } catch (error) {
+            this.error('Failed to get fee config:', error);
+            throw new Error(`Failed to get fee config: ${error.message}`);
+        }
+    }
+
+    /**
      * Check if a specific token is allowed
      * @param {string} tokenAddress - The token address to check
      * @returns {Promise<boolean>} True if token is allowed
