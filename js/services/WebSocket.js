@@ -211,7 +211,11 @@ export class WebSocketService {
             return false;
         }
 
-        return this.reconnect('initialize-failed');
+        const reconnected = await this.reconnect('initialize-failed');
+        if (!reconnected) {
+            this.debug('Reconnection failed, falling back to HTTP-only mode');
+        }
+        return reconnected;
     }
 
     resetContractDisabledStateCache() {
@@ -689,7 +693,8 @@ export class WebSocketService {
                 }
                 
                 if (!connected) {
-                    throw new Error('Failed to connect to any WebSocket URL');
+                    this.debug('Failed to connect to any WebSocket URL, falling back to HTTP-only mode');
+                    return false;
                 }
 
                 await this.bootstrapChainTime();
@@ -1788,14 +1793,11 @@ export class WebSocketService {
             }
 
             retryCycleDelay = this.reconnectDelay * Math.pow(2, this.maxReconnectAttempts - 1);
-            this.debug(`Max reconnection attempts reached; scheduling another reconnect cycle in ${retryCycleDelay}ms`);
+            this.debug(`Max reconnection attempts reached; falling back to HTTP-only mode`);
             this.reconnectAttempts = 0;
             return false;
         })().finally(() => {
             this.reconnectPromise = null;
-            if (retryCycleDelay !== null && !this.isInitialized && !this.reconnectTimer) {
-                this.queueReconnect('retry-cycle', retryCycleDelay);
-            }
         });
 
         return await this.reconnectPromise;
