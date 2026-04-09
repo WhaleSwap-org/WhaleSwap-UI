@@ -1514,6 +1514,7 @@ class App {
 		this.hideGlobalLoader();
 
 		// Start initial order sync in the background so first render is not blocked.
+		// Reuse ws variable from earlier in load() method
 		if (ws) {
 			this.startInitialOrderSync(ws);
 		}
@@ -1614,21 +1615,13 @@ class App {
 
 			const initializationPromise = webSocketService.initialize();
 			if (awaitReady) {
-				const wsInitialized = await initializationPromise;
-				if (!wsInitialized) {
-					this.debug('WebSocket initialization failed, falling back to HTTP');
-				}
+				await initializationPromise;
+				// Order sync will be triggered by startInitialOrderSync() after components are ready
 			} else {
 				this.debug('Starting WebSocket initialization in background');
-				void initializationPromise
-					.then((wsInitialized) => {
-						if (!wsInitialized) {
-							this.debug('Background WebSocket initialization failed, HTTP snapshot mode remains active');
-						}
-					})
-					.catch((error) => {
-						this.debug('Background WebSocket initialization error:', error);
-					});
+				void initializationPromise.catch((error) => {
+					this.debug('Background WebSocket initialization error:', error);
+				});
 			}
 
 			this.debug('WebSocket initialized');
