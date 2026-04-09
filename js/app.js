@@ -1218,10 +1218,11 @@ class App {
 			this.updateGlobalLoaderText('Initializing wallet...');
 			await this.initializeWalletManager();
 			this.alignSelectedNetworkToRestoredWallet();
+			const hasInitialConnectedContext = this.isWalletConnectedForUi();
 			this.updateGlobalLoaderText('Initializing pricing...');
 			await this.initializePricingService();
 			this.updateGlobalLoaderText('Connecting to order feed...');
-			await this.initializeWebSocket();
+			await this.initializeWebSocket({ awaitReady: hasInitialConnectedContext });
 
 			// Initialize CreateOrder first
 			this.components = {
@@ -1297,8 +1298,6 @@ class App {
 				}
 			});
 
-			const isInitiallyConnected = this.isWalletConnectedForUi();
-			const hasInitialConnectedContext = isInitiallyConnected;
 			this.currentTab = hasInitialConnectedContext ? 'create-order' : 'view-orders';
 
 				// Add wallet connection state handler
@@ -1574,7 +1573,8 @@ class App {
 		}
 	}
 
-	async initializeWebSocket() {
+	async initializeWebSocket(options = {}) {
+		const { awaitReady = true } = options;
 		try {
 			this.debug('Initializing WebSocket...');
 			// Initialize WebSocket with injected pricingService
@@ -1612,9 +1612,23 @@ class App {
 				} catch (_) {}
 			});
 
-			const wsInitialized = await webSocketService.initialize();
-			if (!wsInitialized) {
-				this.debug('WebSocket initialization failed, falling back to HTTP');
+			const initializationPromise = webSocketService.initialize();
+			if (awaitReady) {
+				const wsInitialized = await initializationPromise;
+				if (!wsInitialized) {
+					this.debug('WebSocket initialization failed, falling back to HTTP');
+				}
+			} else {
+				this.debug('Starting WebSocket initialization in background');
+				void initializationPromise
+					.then((wsInitialized) => {
+						if (!wsInitialized) {
+							this.debug('Background WebSocket initialization failed, HTTP snapshot mode remains active');
+						}
+					})
+					.catch((error) => {
+						this.debug('Background WebSocket initialization error:', error);
+					});
 			}
 
 			this.debug('WebSocket initialized');
@@ -1628,19 +1642,17 @@ class App {
 			this.debug('Initializing components in ' +
 				(readOnlyMode ? 'read-only' : 'connected') + ' mode');
 
-			// In read-only mode, initialize the tabs that should always be visible
+			// In read-only mode, initialize only the active tab.
+			// Off-screen tabs initialize lazily when the user opens them.
 			if (readOnlyMode) {
-				const readOnlyTabs = ['intro', 'create-order', 'view-orders', 'cleanup-orders', 'contract-params'];
-				for (const tabId of readOnlyTabs) {
-					const component = this.components[tabId];
-					if (component && typeof component.initialize === 'function') {
-						this.debug(`Initializing read-only component: ${tabId}`);
-						try {
-							await component.initialize(readOnlyMode);
-							this.tabReady.add(tabId);
-						} catch (error) {
-							console.error(`[App] Error initializing ${tabId}:`, error);
-						}
+				const currentComponent = this.components[this.currentTab];
+				if (currentComponent && typeof currentComponent.initialize === 'function') {
+					this.debug(`Initializing read-only component: ${this.currentTab}`);
+					try {
+						await currentComponent.initialize(readOnlyMode);
+						this.tabReady.add(this.currentTab);
+					} catch (error) {
+						console.error(`[App] Error initializing ${this.currentTab}:`, error);
 					}
 				}
 			} else {
