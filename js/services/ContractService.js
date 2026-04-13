@@ -7,6 +7,7 @@ class ContractService {
     constructor() {
         this.initialized = false;
         this.webSocket = null; // Injected dependency
+        this.lastSuccessfulRpcUrl = null; // Track successful RPC URL for subsequent calls
         // Initialize logger per instance
         const logger = createLogger('CONTRACT_SERVICE');
         this.debug = logger.debug.bind(logger);
@@ -24,6 +25,7 @@ class ContractService {
             this.webSocket = options.webSocket;
         }
         this.initialized = true;
+        this.lastSuccessfulRpcUrl = null; // Reset on re-initialization (network change)
         this.debug('Contract service initialized');
     }
 
@@ -67,7 +69,8 @@ class ContractService {
     }
 
     /**
-     * Get an HTTP provider for the current network (uses primary rpcUrl).
+     * Get an HTTP provider for the current network.
+     * Prefers the last successful RPC URL if available, otherwise uses primary rpcUrl.
      * @returns {ethers.providers.JsonRpcProvider|null} HTTP provider or null if not configured
      */
     getHttpProvider() {
@@ -76,7 +79,9 @@ class ContractService {
             this.warn('No HTTP RPC URL configured for current network');
             return null;
         }
-        return new ethers.providers.JsonRpcProvider(rpcUrls[0]);
+        // Use last successful URL if available, otherwise primary
+        const url = this.lastSuccessfulRpcUrl || rpcUrls[0];
+        return new ethers.providers.JsonRpcProvider(url);
     }
 
     /**
@@ -117,6 +122,8 @@ class ContractService {
                     networkConfig: net
                 });
                 this.debug(`HTTP RPC succeeded: ${url}`);
+                // Track successful URL for subsequent calls
+                this.lastSuccessfulRpcUrl = url;
                 return result;
             } catch (e) {
                 lastErr = e;
