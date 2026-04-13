@@ -7,6 +7,7 @@ class ContractService {
     constructor() {
         this.initialized = false;
         this.webSocket = null; // Injected dependency
+        this.lastSuccessfulRpcUrl = null; // Track successful RPC URL for subsequent calls
         // Initialize logger per instance
         const logger = createLogger('CONTRACT_SERVICE');
         this.debug = logger.debug.bind(logger);
@@ -24,6 +25,7 @@ class ContractService {
             this.webSocket = options.webSocket;
         }
         this.initialized = true;
+        this.lastSuccessfulRpcUrl = null; // Reset on re-initialization (network change)
         this.debug('Contract service initialized');
     }
 
@@ -67,6 +69,22 @@ class ContractService {
     }
 
     /**
+     * Get an HTTP provider for the current network.
+     * Prefers the last successful RPC URL if available, otherwise uses primary rpcUrl.
+     * @returns {ethers.providers.JsonRpcProvider|null} HTTP provider or null if not configured
+     */
+    getHttpProvider() {
+        const rpcUrls = this.getHttpRpcUrls();
+        if (rpcUrls.length === 0) {
+            this.warn('No HTTP RPC URL configured for current network');
+            return null;
+        }
+        // Use last successful URL if available, otherwise primary
+        const url = this.lastSuccessfulRpcUrl || rpcUrls[0];
+        return new ethers.providers.JsonRpcProvider(url);
+    }
+
+    /**
      * Run a read-only contract call via HTTP RPC (tries primary rpcUrl then fallbackRpcUrls).
      * Used for allowed-token reads to avoid WebSocket timeout on startup.
      * @param {function({ provider: ethers.providers.JsonRpcProvider, contract: ethers.Contract|null, url: string, networkConfig: object }): Promise<any>} readFn
@@ -104,6 +122,8 @@ class ContractService {
                     networkConfig: net
                 });
                 this.debug(`HTTP RPC succeeded: ${url}`);
+                // Track successful URL for subsequent calls
+                this.lastSuccessfulRpcUrl = url;
                 return result;
             } catch (e) {
                 lastErr = e;
@@ -148,6 +168,60 @@ class ContractService {
         } catch (error) {
             this.error('Failed to get allowed tokens count:', error);
             throw new Error(`Failed to get allowed tokens count: ${error.message}`);
+        }
+    }
+
+    /**
+     * Get the fee token address (via HTTP RPC to avoid WS timeout on startup).
+     * @returns {Promise<string>} Fee token address
+     */
+    async getFeeToken() {
+        try {
+            this.debug('Fetching fee token address via HTTP RPC...');
+            const feeToken = await this._readViaHttpRpc((contract) => contract.feeToken());
+            this.debug(`Fee token: ${feeToken}`);
+            return feeToken;
+        } catch (error) {
+            this.error('Failed to get fee token:', error);
+            throw new Error(`Failed to get fee token: ${error.message}`);
+        }
+    }
+
+    /**
+     * Get the order creation fee amount (via HTTP RPC to avoid WS timeout on startup).
+     * @returns {Promise<ethers.BigNumber>} Fee amount
+     */
+    async getOrderCreationFeeAmount() {
+        try {
+            this.debug('Fetching order creation fee amount via HTTP RPC...');
+            const feeAmount = await this._readViaHttpRpc((contract) => contract.orderCreationFeeAmount());
+            this.debug(`Order creation fee: ${feeAmount.toString()}`);
+            return feeAmount;
+        } catch (error) {
+            this.error('Failed to get order creation fee amount:', error);
+            throw new Error(`Failed to get order creation fee amount: ${error.message}`);
+        }
+    }
+
+    /**
+     * Get fee configuration (fee token and amount) in a single call (via HTTP RPC).
+     * @returns {Promise<{feeToken: string, feeAmount: ethers.BigNumber}>}
+     */
+    async getFeeConfig() {
+        try {
+            this.debug('Fetching fee config via HTTP RPC...');
+            const result = await this.readViaHttpRpc(({ contract }) => {
+                return Promise.all([
+                    contract.feeToken(),
+                    contract.orderCreationFeeAmount()
+                ]);
+            });
+            const [feeToken, feeAmount] = result;
+            this.debug(`Fee config: token=${feeToken}, amount=${feeAmount.toString()}`);
+            return { feeToken, feeAmount };
+        } catch (error) {
+            this.error('Failed to get fee config:', error);
+            throw new Error(`Failed to get fee config: ${error.message}`);
         }
     }
 

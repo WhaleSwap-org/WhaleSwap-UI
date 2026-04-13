@@ -1141,17 +1141,16 @@ export class CreateOrder extends BaseComponent {
 
             while (retryCount < maxRetries) {
                 try {
-                    const feeTokenAddress = await this.contract.feeToken();
+                    // Use HTTP RPC for startup reads to avoid WebSocket timeout issues
+                    const { feeToken: feeTokenAddress, feeAmount } = await contractService.getFeeConfig();
                     this.debug('Fee token address:', feeTokenAddress);
-
-                    const feeAmount = await this.contract.orderCreationFeeAmount();
                     this.debug('Fee amount:', feeAmount);
 
-                    // Get token details
+                    // Get token details via HTTP RPC (read-only contract call)
                     const tokenContract = new ethers.Contract(
                         feeTokenAddress,
                         erc20Abi,
-                        this.provider
+                        contractService.getHttpProvider()
                     );
 
                     const [symbol, decimals] = await Promise.all([
