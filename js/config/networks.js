@@ -125,9 +125,8 @@ const primaryNetworkConfig = {
         },
         // Multicall2 contract (Uniswap) deployed on Polygon mainnet
         multicallAddress: "0x275617327c958bD06b5D6b871E7f491D76113dd8",
-        wsUrl: "wss://polygon.gateway..co",
+        wsUrl: "wss://polygon-bor.publicnode.com",
         fallbackWsUrls: [
-            "wss://polygon-bor.publicnode.com",
             "wss://polygon-bor-rpc.publicnode.com",
             "wss://polygon.api.onfinality.io/public-ws"
         ]
