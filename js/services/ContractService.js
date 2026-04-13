@@ -67,6 +67,19 @@ class ContractService {
     }
 
     /**
+     * Get an HTTP provider for the current network (uses primary rpcUrl).
+     * @returns {ethers.providers.JsonRpcProvider|null} HTTP provider or null if not configured
+     */
+    getHttpProvider() {
+        const rpcUrls = this.getHttpRpcUrls();
+        if (rpcUrls.length === 0) {
+            this.warn('No HTTP RPC URL configured for current network');
+            return null;
+        }
+        return new ethers.providers.JsonRpcProvider(rpcUrls[0]);
+    }
+
+    /**
      * Run a read-only contract call via HTTP RPC (tries primary rpcUrl then fallbackRpcUrls).
      * Used for allowed-token reads to avoid WebSocket timeout on startup.
      * @param {function({ provider: ethers.providers.JsonRpcProvider, contract: ethers.Contract|null, url: string, networkConfig: object }): Promise<any>} readFn
