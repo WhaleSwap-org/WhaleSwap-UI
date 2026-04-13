@@ -1796,14 +1796,23 @@ export class WebSocketService {
             this.debug(`Max reconnection attempts reached; falling back to HTTP-only mode; will retry in background`);
             this.reconnectAttempts = 0;
             
-            // Schedule background reconnection attempt to recover from transient outages
-            // This ensures live updates resume when WebSocket becomes available again
-            const backgroundRetryDelay = retryCycleDelay * 2; // Use longer delay for background retries
-            this.queueReconnect('background-retry-after-max-attempts', backgroundRetryDelay);
+            // Return false to indicate HTTP-only mode; schedule background retry in finally block
+            // (cannot call queueReconnect here because reconnectPromise is still set)
+            this._scheduleBackgroundRetry = true;
+            this._backgroundRetryDelay = retryCycleDelay * 2;
             
             return false;
         })().finally(() => {
             this.reconnectPromise = null;
+            
+            // Schedule background reconnection after reconnectPromise is cleared
+            // This ensures live updates resume when WebSocket becomes available again
+            if (this._scheduleBackgroundRetry) {
+                this._scheduleBackgroundRetry = false;
+                const delay = this._backgroundRetryDelay;
+                this._backgroundRetryDelay = null;
+                this.queueReconnect('background-retry-after-max-attempts', delay);
+            }
         });
 
         return await this.reconnectPromise;
