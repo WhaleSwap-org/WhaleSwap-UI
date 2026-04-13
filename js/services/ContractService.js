@@ -128,6 +128,7 @@ class ContractService {
     }
 
     async _readViaHttpRpc(readFn) {
+        console.log('[CONTRACT_SERVICE] _readViaHttpRpc called');
         return this.readViaHttpRpc(({ contract }) => readFn(contract));
     }
 
