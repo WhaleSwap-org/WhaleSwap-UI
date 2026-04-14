@@ -33,6 +33,7 @@ import { createAppContext, setGlobalContext } from './services/AppContext.js';
 import { hasAnyClaimables } from './utils/claims.js';
 import { isUserRejection } from './utils/ui.js';
 import { escapeHtml } from './utils/html.js';
+import { clearTokenCaches } from './utils/contractTokens.js';
 
 const BOOTSTRAP_LOADER_STATE_KEY = 'whaleswapBootstrapLoader';
 class App {
@@ -930,6 +931,9 @@ class App {
 	}
 
 	async recreateNetworkServices() {
+		// Clear token caches on network switch (issue #174)
+		clearTokenCaches();
+		
 		const ws = this.ctx?.getWebSocket?.();
 		if (ws?.cleanup) {
 			try {
@@ -1687,6 +1691,9 @@ class App {
 			return;
 		}
 		this.lastDisconnectNotification = now;
+
+		// Clear token caches on wallet disconnect (issue #174)
+		clearTokenCaches();
 
 		const walletConnectBtn = document.getElementById('walletConnect');
 		const walletInfo = document.getElementById('walletInfo');
