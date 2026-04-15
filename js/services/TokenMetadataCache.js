@@ -196,16 +196,23 @@ class TokenMetadataCache {
      * Set token metadata in cache
      * @param {string} tokenAddress 
      * @param {Object} metadata - {symbol, name, decimals, iconUrl?, displaySymbol?}
+     * @param {number} [chainId] - Optional chain ID (defaults to current network)
      */
-    set(tokenAddress, metadata) {
-        const cache = this._getCacheForCurrentNetwork();
-        const chainId = this._currentChainId;
+    set(tokenAddress, metadata, chainId) {
+        const targetChainId = chainId || this._currentChainId;
+        
+        // Get or create cache for the target chain
+        if (!this._caches.has(targetChainId)) {
+            this._caches.set(targetChainId, new Map());
+        }
+        const cache = this._caches.get(targetChainId);
+        
         const normalizedAddress = tokenAddress.toLowerCase();
         
         cache.set(normalizedAddress, { value: metadata, ts: Date.now() });
-        this._persistToStorage(chainId);
+        this._persistToStorage(targetChainId);
         
-        debug(`Cached metadata for ${normalizedAddress}:`, metadata);
+        debug(`Cached metadata for ${normalizedAddress} on chain ${targetChainId}:`, metadata);
     }
 
     /**
@@ -251,6 +258,9 @@ class TokenMetadataCache {
      */
     async fetch(tokenAddress, options = {}) {
         const normalizedAddress = tokenAddress.toLowerCase();
+        
+        // Capture the originating chain ID at the start to prevent race conditions
+        const originatingChainId = this._getCurrentChainId();
         
         // Check cache first (unless skipCache is true)
         if (!options.skipCache) {
@@ -315,8 +325,8 @@ class TokenMetadataCache {
                 iconUrl
             };
 
-            // Cache the result
-            this.set(normalizedAddress, metadata);
+            // Cache the result in the originating chain's cache (prevents race condition)
+            this.set(normalizedAddress, metadata, originatingChainId);
             
             return metadata;
 
