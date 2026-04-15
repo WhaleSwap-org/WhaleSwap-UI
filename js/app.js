@@ -865,6 +865,7 @@ class App {
 		if (missingNetwork && restoredNetwork?.slug === targetNetwork?.slug) {
 			setNetworkSetupRequired(targetNetwork.slug);
 			syncNetworkBadgeFromState();
+			syncAddNetworkButtonVisibility();
 		}
 		if (restoredNetwork) {
 			this.showWarning(this.getNetworkSwitchFailureWarning(error, targetNetwork, restoredNetwork));
@@ -874,11 +875,13 @@ class App {
 		if (missingNetwork) {
 			setNetworkSetupRequired(targetNetwork.slug);
 			syncNetworkBadgeFromState();
+			syncAddNetworkButtonVisibility();
 			this.showWarning(this.getNetworkSwitchFailureWarning(error, targetNetwork));
 			return;
 		}
 		clearNetworkSetupRequired();
 		syncNetworkBadgeFromState();
+		syncAddNetworkButtonVisibility();
 		this.showWarning(this.getNetworkSwitchFailureWarning(error, targetNetwork));
 	}
 
@@ -1139,29 +1142,11 @@ class App {
 			return;
 		}
 
-		const wallet = this.ctx?.getWallet?.();
-		const isConnected = !!wallet?.isWalletConnected?.() && !!wallet?.getSigner?.();
-		if (!isConnected) {
-			triggerPageReloadWithSwitchFallback({
-				loaderMode: 'spinner',
-				loaderMessage: `Switching to ${getNetworkLabel(network)}...`
-			});
-			return;
-		}
-
-		const walletNetwork = getNetworkById(this.ctx.getWalletChainId() || walletManager.chainId || null);
-		if (walletNetwork?.slug === network.slug) {
-			await this.handleSuccessfulConnectedNetworkTransition(network, {
-				source: 'network-selector',
-				selectedChainChanged,
-			});
-			return;
-		}
-
-		await this.switchWalletToNetwork(network, {
-			source: 'network-selector',
-			selectedChainChanged,
-			previousSelectedNetwork,
+		// Issue #153: Network selection only updates app state, does not trigger wallet operations
+		// The dropdown is an app network selector, not a wallet network switcher
+		triggerPageReloadWithSwitchFallback({
+			loaderMode: 'spinner',
+			loaderMessage: `Switching to ${getNetworkLabel(network)}...`
 		});
 	}
 
@@ -2148,12 +2133,20 @@ function triggerPageReloadWithSwitchFallback(options = {}) {
 		console.warn('[App] Reload failed after network switch:', error);
 	}
 }
+
+/**
+ * Sync network badge from app state (issue #153)
+ * The network badge shows the selected app network only.
+ * Wallet connection status is handled by the wallet button, not the network selector.
+ */
 function syncNetworkBadgeFromState() {
 	if (!networkBadge) return;
 
 	const selectedSlug = selectedNetworkSlug || window.app?.ctx?.getSelectedChainSlug?.() || getDefaultNetwork().slug;
 	const selectedNetwork = getNetworkBySlug(selectedSlug) || getDefaultNetwork();
 	renderNetworkBadge(selectedNetwork);
+
+	// Network badge only shows selected network, not wallet connection status
 	networkBadge.classList.remove('connected', 'setup-needed', 'wrong-network', 'disconnected');
 	if (networkButton) {
 		networkButton.dataset.networkStatus = 'default';
@@ -2162,48 +2155,10 @@ function syncNetworkBadgeFromState() {
 		networkDropdown.dataset.networkStatus = 'default';
 	}
 
-	const walletChainId = window.app?.ctx?.getWalletChainId?.();
-	if (!walletChainId) {
-		networkBadge.classList.add('disconnected');
-		if (networkButton) {
-			networkButton.dataset.networkStatus = 'disconnected';
-		}
-		if (networkDropdown) {
-			networkDropdown.dataset.networkStatus = 'disconnected';
-		}
-		syncAddNetworkButtonVisibility();
-		return;
+	// Hide add network button - network selection no longer triggers wallet operations
+	if (addNetworkButton) {
+		addNetworkButton.classList.add('hidden');
 	}
-
-	const walletNetwork = getNetworkById(walletChainId);
-	if (walletNetwork && walletNetwork.slug === selectedNetwork.slug) {
-		clearNetworkSetupRequired();
-		networkBadge.classList.add('connected');
-		if (networkButton) {
-			networkButton.dataset.networkStatus = 'connected';
-		}
-		if (networkDropdown) {
-			networkDropdown.dataset.networkStatus = 'connected';
-		}
-	} else if (networkSetupRequiredSlug && networkSetupRequiredSlug === selectedNetwork.slug) {
-		networkBadge.classList.add('setup-needed');
-		if (networkButton) {
-			networkButton.dataset.networkStatus = 'setup-needed';
-		}
-		if (networkDropdown) {
-			networkDropdown.dataset.networkStatus = 'setup-needed';
-		}
-	} else {
-		networkBadge.classList.add('wrong-network');
-		if (networkButton) {
-			networkButton.dataset.networkStatus = 'wrong-network';
-		}
-		if (networkDropdown) {
-			networkDropdown.dataset.networkStatus = 'wrong-network';
-		}
-	}
-
-	syncAddNetworkButtonVisibility();
 }
 
 function applySelectedNetwork(network, { updateUrl = true } = {}) {
