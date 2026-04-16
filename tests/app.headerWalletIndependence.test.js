@@ -177,6 +177,19 @@ describe('Header wallet connection independence (issue #153)', () => {
 				selectedSlug: ETHEREUM_SLUG, // App on Ethereum
 			});
 
+			// Mock methods needed for in-app transition
+			app.updateTabVisibility = vi.fn();
+			app.refreshAdminTabVisibility = vi.fn(async () => {});
+			app.refreshClaimTabVisibility = vi.fn(async () => {});
+			app.refreshOrderTabVisibility = vi.fn(async () => {});
+			app.recreateNetworkServices = vi.fn(async () => {});
+			app.reinitializeComponents = vi.fn(async () => {});
+			app.showTab = vi.fn(async () => {});
+			app.isTabVisible = vi.fn(() => true);
+			app.startInitialOrderSync = vi.fn();
+			app.currentTab = 'view-orders';
+			app.components = {};
+
 			const targetNetwork = getNetworkBySlug(POLYGON_SLUG);
 			const switchSpy = vi.spyOn(app, 'switchWalletToNetwork');
 
@@ -185,13 +198,47 @@ describe('Header wallet connection independence (issue #153)', () => {
 			// Should NOT call switchWalletToNetwork
 			expect(switchSpy).not.toHaveBeenCalled();
 
-			// Should trigger page reload to refresh app state
-			expect(window.location.reload).toHaveBeenCalled();
+			// Should NOT trigger page reload for connected users (uses in-app transition)
+			expect(window.location.reload).not.toHaveBeenCalled();
 		});
 
-		it('triggers page reload to refresh app state and services', async () => {
+		it('uses in-app transition for connected users to preserve navigation context', async () => {
 			const app = initializeApp({
 				walletChainId: BNB_CHAIN_ID,
+				selectedSlug: ETHEREUM_SLUG,
+			});
+
+			// Mock methods needed for in-app transition
+			app.updateTabVisibility = vi.fn();
+			app.refreshAdminTabVisibility = vi.fn(async () => {});
+			app.refreshClaimTabVisibility = vi.fn(async () => {});
+			app.refreshOrderTabVisibility = vi.fn(async () => {});
+			app.recreateNetworkServices = vi.fn(async () => {});
+			app.reinitializeComponents = vi.fn(async () => {});
+			app.showTab = vi.fn(async () => {});
+			app.isTabVisible = vi.fn(() => true);
+			app.startInitialOrderSync = vi.fn();
+			app.currentTab = 'view-orders';
+			app.components = {};
+
+			const targetNetwork = getNetworkBySlug(POLYGON_SLUG);
+			const transitionSpy = vi.spyOn(app, 'handleSuccessfulConnectedNetworkTransition');
+
+			await app.handleNetworkSelectionCommit(targetNetwork);
+
+			// Should use in-app transition for connected users
+			expect(transitionSpy).toHaveBeenCalledWith(targetNetwork, {
+				source: 'network-selector',
+				selectedChainChanged: false,
+			});
+
+			// Should NOT trigger page reload
+			expect(window.location.reload).not.toHaveBeenCalled();
+		});
+
+		it('triggers page reload for disconnected users', async () => {
+			const app = initializeApp({
+				walletChainId: null, // No wallet connected
 				selectedSlug: ETHEREUM_SLUG,
 			});
 
@@ -199,7 +246,7 @@ describe('Header wallet connection independence (issue #153)', () => {
 
 			await app.handleNetworkSelectionCommit(targetNetwork);
 
-			// Should trigger page reload
+			// Should trigger page reload for disconnected users
 			expect(window.location.reload).toHaveBeenCalled();
 		});
 

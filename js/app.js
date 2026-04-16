@@ -35,6 +35,7 @@ import { isUserRejection } from './utils/ui.js';
 import { escapeHtml } from './utils/html.js';
 
 const BOOTSTRAP_LOADER_STATE_KEY = 'whaleswapBootstrapLoader';
+const ACTIVE_TAB_STATE_KEY = 'whaleswapActiveTab';
 class App {
 	constructor() {
 		this.isInitializing = false;
@@ -694,7 +695,8 @@ class App {
 					[BOOTSTRAP_LOADER_STATE_KEY]: {
 						mode: mode === 'spinner' ? 'spinner' : 'skeleton',
 						message: String(message || '')
-					}
+					},
+					[ACTIVE_TAB_STATE_KEY]: this.currentTab || 'view-orders'
 				},
 				'',
 				window.location.href
@@ -1142,12 +1144,24 @@ class App {
 			return;
 		}
 
-		// Issue #153: Network selection only updates app state, does not trigger wallet operations
-		// The dropdown is an app network selector, not a wallet network switcher
-		triggerPageReloadWithSwitchFallback({
-			loaderMode: 'spinner',
-			loaderMessage: `Switching to ${getNetworkLabel(network)}...`
-		});
+		// Issue #153: Network selection updates app state without triggering wallet operations
+		// For connected users, use in-app transition to preserve navigation context (PR #178 review)
+		const wallet = this.ctx?.getWallet?.();
+		const isConnected = !!wallet?.isWalletConnected?.() && !!wallet?.getSigner?.();
+		
+		if (isConnected) {
+			// Use in-app transition for connected users to preserve active tab
+			await this.handleSuccessfulConnectedNetworkTransition(network, {
+				source: 'network-selector',
+				selectedChainChanged,
+			});
+		} else {
+			// Use page reload for disconnected/read-only users
+			triggerPageReloadWithSwitchFallback({
+				loaderMode: 'spinner',
+				loaderMessage: `Switching to ${getNetworkLabel(network)}...`
+			});
+		}
 	}
 
 	async load () {
@@ -1283,7 +1297,12 @@ class App {
 				}
 			});
 
-			this.currentTab = hasInitialConnectedContext ? 'create-order' : 'view-orders';
+			// Restore active tab from history state if available (PR #178 review)
+			const historyState = window.history?.state || {};
+			const restoredTab = historyState[ACTIVE_TAB_STATE_KEY];
+			this.currentTab = (restoredTab && this.isTabVisible(restoredTab)) 
+				? restoredTab 
+				: (hasInitialConnectedContext ? 'create-order' : 'view-orders');
 
 				// Add wallet connection state handler
 				walletManager.addListener(async (event, data) => {
@@ -2155,10 +2174,9 @@ function syncNetworkBadgeFromState() {
 		networkDropdown.dataset.networkStatus = 'default';
 	}
 
-	// Hide add network button - network selection no longer triggers wallet operations
-	if (addNetworkButton) {
-		addNetworkButton.classList.add('hidden');
-	}
+	// Let syncAddNetworkButtonVisibility() decide visibility based on networkSetupRequiredSlug (PR #178 review)
+	// This preserves the "Add <Network>" retry affordance when setup is required
+	syncAddNetworkButtonVisibility();
 }
 
 function applySelectedNetwork(network, { updateUrl = true } = {}) {
