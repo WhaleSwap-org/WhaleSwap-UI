@@ -38,32 +38,12 @@ export class Cleanup extends BaseComponent {
             this.debug('Starting Cleanup initialization...');
             this.debug('ReadOnly mode:', readOnlyMode);
             this.currentMode = readOnlyMode;
-            
-            // Wait for WebSocket to be fully initialized
+
             const ws = this.ctx.getWebSocket();
-            if (!ws?.isInitialized) {
-                this.debug('Waiting for WebSocket initialization...');
-                await new Promise(resolve => {
-                    const checkInterval = setInterval(() => {
-                        if (ws?.isInitialized) {
-                            clearInterval(checkInterval);
-                            resolve();
-                        }
-                    }, 100);
-                });
-            }
 
             // Get WebSocket and contract from context
             this.webSocket = ws;
-            this.contract = ws.contract;
-
-            // Verify contract is available
-            if (!this.contract) {
-                throw new Error('Contract not initialized');
-            }
-
-            // Wait for contract to be ready
-            await this.waitForContract();
+            this.contract = ws?.contract || null;
 
             // Setup WebSocket event listeners
             this.setupWebSocket();
@@ -133,7 +113,7 @@ export class Cleanup extends BaseComponent {
 
                 // Check cleanup opportunities even in read-only mode
                 this.debug('Starting cleanup opportunities check in read-only mode');
-                await this.checkCleanupOpportunities();
+                void this.checkCleanupOpportunities();
                 
                 this.intervalId = setInterval(() => this.checkCleanupOpportunities(), 5 * 60 * 1000);
                 
@@ -174,7 +154,7 @@ export class Cleanup extends BaseComponent {
             }
 
             this.debug('Starting cleanup opportunities check');
-            await this.checkCleanupOpportunities();
+            void this.checkCleanupOpportunities();
             
             this.intervalId = setInterval(() => this.checkCleanupOpportunities(), 5 * 60 * 1000);
             
@@ -201,18 +181,6 @@ export class Cleanup extends BaseComponent {
         } finally {
             this.isInitializing = false;
         }
-    }
-
-    // Add method to check if contract is ready (similar to CreateOrder)
-    async waitForContract(timeout = 10000) {
-        const start = Date.now();
-        while (Date.now() - start < timeout) {
-            if (this.contract && await this.contract.provider.getNetwork()) {
-                return true;
-            }
-            await new Promise(resolve => setTimeout(resolve, 100));
-        }
-        throw new Error('Contract not ready after timeout');
     }
 
     // Update cleanup method to use class contract reference

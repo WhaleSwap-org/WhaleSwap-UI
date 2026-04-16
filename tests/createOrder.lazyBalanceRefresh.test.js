@@ -75,6 +75,34 @@ afterEach(() => {
 });
 
 describe('CreateOrder lazy balance refresh', () => {
+    it('does not wait for websocket readiness during initialization', async () => {
+        vi.useFakeTimers();
+        document.body.innerHTML = '<div id="create-order"></div>';
+
+        const component = new CreateOrder();
+        component.setContext({
+            ...createContextStub(),
+            getWebSocket: () => ({
+                isInitialized: false,
+                contract: null,
+                provider: null,
+                subscribe: () => {},
+                unsubscribe: () => {},
+            }),
+        });
+
+        vi.spyOn(component, 'loadOrderCreationFee').mockResolvedValue();
+        vi.spyOn(component, 'loadContractTokens').mockResolvedValue([]);
+        const scheduleSpy = vi.spyOn(component, 'scheduleRealtimeContractStateRefresh');
+
+        await component.initialize(false);
+
+        expect(scheduleSpy).toHaveBeenCalledTimes(1);
+        expect(component.initialized).toBe(true);
+
+        vi.useRealTimers();
+    });
+
     it('does not eagerly refresh balances when loading allowed tokens', async () => {
         setupTokenModalDom();
         mockGetContractAllowedTokens.mockResolvedValue([

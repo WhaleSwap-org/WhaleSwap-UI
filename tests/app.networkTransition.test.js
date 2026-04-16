@@ -146,6 +146,29 @@ describe('App network transition behavior', () => {
 			skipInitialize: true,
 		});
 	});
+
+	it('recreates network services without waiting for websocket readiness', async () => {
+		const { app } = createConnectedApp();
+		const cleanup = vi.fn();
+		const refreshedWs = { subscribe: vi.fn() };
+		app.recreateNetworkServices = window.app.constructor.prototype.recreateNetworkServices.bind(app);
+
+		app.ctx = {
+			...app.ctx,
+			getWebSocket: vi.fn()
+				.mockReturnValueOnce({ cleanup })
+				.mockReturnValue(refreshedWs),
+		};
+		app.initializePricingService = vi.fn(async () => {});
+		app.initializeWebSocket = vi.fn(async () => {});
+		app.subscribeToAppWebSocketEvents = vi.fn();
+
+		await app.recreateNetworkServices();
+
+		expect(cleanup).toHaveBeenCalledTimes(1);
+		expect(app.initializeWebSocket).toHaveBeenCalledWith({ awaitReady: false });
+		expect(app.subscribeToAppWebSocketEvents).toHaveBeenCalledWith(refreshedWs);
+	});
 });
 
 describe('BaseComponent ensureWalletReadyForWrite', () => {

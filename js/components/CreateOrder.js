@@ -60,6 +60,7 @@ export class CreateOrder extends BaseComponent {
         this.tooltipCleanupCallbacks = [];
         this.tokenDisplaySymbolMap = new Map();
         this.focusedAmountField = null;
+        this.realtimeReadyRetryTimer = null;
         
         // Initialize logger
         const logger = createLogger('CREATE_ORDER');
@@ -449,6 +450,7 @@ export class CreateOrder extends BaseComponent {
     resetState(options = {}) {
         const { clearSelections = false, preserveAllowedTokens = false } = options;
         this.debug('Resetting CreateOrder component state...');
+        this.clearRealtimeReadyRetryTimer();
         this.initialized = false;
         this.initializing = false;
         this.hasLoadedData = false;
@@ -637,32 +639,15 @@ export class CreateOrder extends BaseComponent {
             const ws = this.ctx.getWebSocket();
             // CreateOrder only creates orders, it doesn't need to listen to order events
 
-            // Wait for WebSocket to be fully initialized
-            if (!ws?.isInitialized) {
-                this.debug('Waiting for WebSocket initialization...');
-                await new Promise(resolve => {
-                    const checkInterval = setInterval(() => {
-                        if (ws?.isInitialized) {
-                            clearInterval(checkInterval);
-                            resolve();
-                        }
-                    }, 100);
-                });
-            }
-
             // Clear existing content before re-populating
             const sellContainer = document.getElementById('sellContainer');
             const buyContainer = document.getElementById('buyContainer');
             if (sellContainer) sellContainer.innerHTML = '';
             if (buyContainer) buyContainer.innerHTML = '';
 
-            // Use WebSocket's contract instance
-            this.contract = ws.contract;
-            this.provider = ws.provider;
-
-            if (!this.contract) {
-                throw new Error('Contract not initialized');
-            }
+            // Prefer realtime contract/provider when available, otherwise keep startup reads on HTTP.
+            this.contract = ws?.contract || null;
+            this.provider = ws?.provider || contractService.getHttpProvider();
             
             // Initialize contract service
             contractService.initialize();
@@ -681,14 +666,18 @@ export class CreateOrder extends BaseComponent {
                 this.setAllowedTokenListsLoadingState('Loading allowed tokens...');
             }
             this.setupCreateOrderListener();
-            
-            // Wait for contract to be ready
-            await this.waitForContract();
+
             this.subscribeToContractDisabledUpdates();
-            await this.refreshContractDisabledState();
             this.subscribeToFeeConfigUpdates();
             this.subscribeToAllowedTokensUpdates();
             this.subscribeToPricingUpdates();
+
+            if (ws?.isInitialized && this.contract) {
+                await this.waitForContract();
+                await this.refreshContractDisabledState();
+            } else {
+                this.scheduleRealtimeContractStateRefresh();
+            }
             
             // Load fee/token data in background so initial tab render is not blocked.
             this.startBackgroundDataLoading();
@@ -716,6 +705,38 @@ export class CreateOrder extends BaseComponent {
         } finally {
             this.initializing = false;
         }
+    }
+
+    clearRealtimeReadyRetryTimer() {
+        if (this.realtimeReadyRetryTimer) {
+            clearTimeout(this.realtimeReadyRetryTimer);
+            this.realtimeReadyRetryTimer = null;
+        }
+    }
+
+    scheduleRealtimeContractStateRefresh() {
+        this.clearRealtimeReadyRetryTimer();
+
+        const poll = async () => {
+            const ws = this.ctx.getWebSocket();
+            if (!ws?.isInitialized || !ws?.contract || !ws?.provider) {
+                this.realtimeReadyRetryTimer = setTimeout(poll, 100);
+                return;
+            }
+
+            this.realtimeReadyRetryTimer = null;
+            this.contract = ws.contract;
+            this.provider = ws.provider;
+
+            try {
+                await this.waitForContract();
+                await this.refreshContractDisabledState();
+            } catch (error) {
+                this.debug('Deferred realtime contract-state refresh failed:', error);
+            }
+        };
+
+        this.realtimeReadyRetryTimer = setTimeout(poll, 100);
     }
 
     startBackgroundDataLoading() {
@@ -2561,6 +2582,7 @@ export class CreateOrder extends BaseComponent {
 
     cleanup() {
         // Only clear timers, keep table structure
+        this.clearRealtimeReadyRetryTimer();
         if (this.expiryTimers) {
             this.expiryTimers.forEach(timerId => clearInterval(timerId));
             this.expiryTimers.clear();

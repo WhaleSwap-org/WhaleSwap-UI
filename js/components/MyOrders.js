@@ -126,19 +126,6 @@ export class MyOrders extends BaseComponent {
                 return;
             }
 
-            // If no cache, then wait for WebSocket initialization
-            if (!ws?.isInitialized) {
-                this.warn('WebSocket not initialized, waiting...');
-                await new Promise(resolve => {
-                    const checkInterval = setInterval(() => {
-                        if (ws?.isInitialized) {
-                            clearInterval(checkInterval);
-                            resolve();
-                        }
-                    }, 100);
-                });
-            }
-
             // Refresh view
             await this.refreshOrdersView();
 

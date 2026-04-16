@@ -954,7 +954,7 @@ class App {
 		this.loadingOverlay = this.globalLoader;
 
 		await this.initializePricingService();
-		await this.initializeWebSocket();
+		await this.initializeWebSocket({ awaitReady: false });
 		this.subscribeToAppWebSocketEvents(this.ctx?.getWebSocket?.());
 	}
 
@@ -1226,7 +1226,7 @@ class App {
 			this.updateGlobalLoaderText('Initializing pricing...');
 			await this.initializePricingService();
 			this.updateGlobalLoaderText('Connecting to order feed...');
-			await this.initializeWebSocket({ awaitReady: hasInitialConnectedContext });
+			await this.initializeWebSocket({ awaitReady: false });
 
 			// Initialize CreateOrder first
 			this.components = {
