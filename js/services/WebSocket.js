@@ -6,6 +6,7 @@ import { contractService } from './ContractService.js';
 import { erc20Abi } from '../abi/erc20.js';
 import { createLogger } from './LogService.js';
 import { tokenIconService } from './TokenIconService.js';
+import { tokenMetadataCache } from './TokenMetadataCache.js';
 
 export class WebSocketService {
     constructor(options = {}) {
@@ -74,8 +75,29 @@ export class WebSocketService {
         this.error = logger.error.bind(logger);
         this.warn = logger.warn.bind(logger);
         
-        this.tokenCache = new Map();  // Add token cache
+        // Token metadata is now managed by the shared tokenMetadataCache service
+        // this.tokenCache is deprecated - use tokenMetadataCache instead
         this.pricingUpdateHandler = null;
+    }
+
+    /**
+     * Get the token cache (delegates to shared tokenMetadataCache)
+     * @deprecated Use tokenMetadataCache directly
+     */
+    get tokenCache() {
+        // Return a Map-like interface backed by the shared cache
+        return {
+            has: (address) => tokenMetadataCache.has(address),
+            get: (address) => tokenMetadataCache.get(address),
+            set: (address, metadata) => tokenMetadataCache.set(address, metadata),
+            values: () => tokenMetadataCache.getAll().values(),
+            entries: () => {
+                const tokens = tokenMetadataCache.getAll();
+                return tokens.map(t => [t.address, t]).values();
+            },
+            clear: () => tokenMetadataCache.clearCurrentNetwork(),
+            size: tokenMetadataCache.getAll().length
+        };
     }
 
     clearReconnectTimer() {
@@ -1611,10 +1633,11 @@ export class WebSocketService {
             // Normalize address to lowercase for consistent comparison
             const normalizedAddress = tokenAddress.toLowerCase();
 
-            // 1. First check cache
-            if (this.tokenCache.has(normalizedAddress)) {
-                this.debug('Token info found in cache:', normalizedAddress);
-                return this.tokenCache.get(normalizedAddress);
+            // 1. First check shared cache
+            const cached = tokenMetadataCache.get(normalizedAddress);
+            if (cached) {
+                this.debug('Token info found in shared cache:', normalizedAddress);
+                return cached;
             }
 
             // 2. Fetch from contract using queueRequest
@@ -1649,9 +1672,9 @@ export class WebSocketService {
                     iconUrl: iconUrl
                 };
 
-                // Cache the result
-                this.tokenCache.set(normalizedAddress, tokenInfo);
-                this.debug('Added token to cache:', tokenInfo);
+                // Cache the result in shared cache
+                tokenMetadataCache.set(normalizedAddress, tokenInfo);
+                this.debug('Added token to shared cache:', tokenInfo);
 
                 return tokenInfo;
             };
@@ -1664,12 +1687,13 @@ export class WebSocketService {
 
         } catch (error) {
             this.debug('Error getting token info:', error);
-            // Return a basic fallback object
+            // Return a basic fallback object (not cached - per issue #173)
             const fallback = {
                 address: tokenAddress.toLowerCase(),
                 symbol: `${tokenAddress.slice(0, 4)}...${tokenAddress.slice(-4)}`,
                 decimals: 18,
-                name: 'Unknown Token'
+                name: 'Unknown Token',
+                _isFallback: true
             };
             return fallback;
         }
