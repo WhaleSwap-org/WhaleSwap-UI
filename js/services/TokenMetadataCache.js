@@ -186,7 +186,8 @@ class TokenMetadataCache {
         
         if (cached && (Date.now() - cached.ts) < CACHE_TTL_MS) {
             debug(`Cache hit for ${normalizedAddress}`);
-            return cached.value;
+            // Reattach address to preserve caller contract (per PR #177 review)
+            return { ...cached.value, address: normalizedAddress };
         }
         
         return null;
@@ -328,7 +329,8 @@ class TokenMetadataCache {
             // Cache the result in the originating chain's cache (prevents race condition)
             this.set(normalizedAddress, metadata, originatingChainId);
             
-            return metadata;
+            // Return with address attached (per PR #177 review - preserve caller contract)
+            return { ...metadata, address: normalizedAddress };
 
         } catch (err) {
             error(`Failed to fetch metadata for token ${tokenAddress}:`, err);
