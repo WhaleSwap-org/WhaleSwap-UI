@@ -36,6 +36,7 @@ import { escapeHtml } from './utils/html.js';
 import { clearBalanceCache } from './utils/contractTokens.js';
 
 const BOOTSTRAP_LOADER_STATE_KEY = 'whaleswapBootstrapLoader';
+const ACTIVE_TAB_STATE_KEY = 'whaleswapActiveTab';
 class App {
 	constructor() {
 		this.isInitializing = false;
@@ -695,7 +696,8 @@ class App {
 					[BOOTSTRAP_LOADER_STATE_KEY]: {
 						mode: mode === 'spinner' ? 'spinner' : 'skeleton',
 						message: String(message || '')
-					}
+					},
+					[ACTIVE_TAB_STATE_KEY]: this.currentTab || 'view-orders'
 				},
 				'',
 				window.location.href
@@ -866,6 +868,7 @@ class App {
 		if (missingNetwork && restoredNetwork?.slug === targetNetwork?.slug) {
 			setNetworkSetupRequired(targetNetwork.slug);
 			syncNetworkBadgeFromState();
+			syncAddNetworkButtonVisibility();
 		}
 		if (restoredNetwork) {
 			this.showWarning(this.getNetworkSwitchFailureWarning(error, targetNetwork, restoredNetwork));
@@ -875,11 +878,13 @@ class App {
 		if (missingNetwork) {
 			setNetworkSetupRequired(targetNetwork.slug);
 			syncNetworkBadgeFromState();
+			syncAddNetworkButtonVisibility();
 			this.showWarning(this.getNetworkSwitchFailureWarning(error, targetNetwork));
 			return;
 		}
 		clearNetworkSetupRequired();
 		syncNetworkBadgeFromState();
+		syncAddNetworkButtonVisibility();
 		this.showWarning(this.getNetworkSwitchFailureWarning(error, targetNetwork));
 	}
 
@@ -1144,30 +1149,24 @@ class App {
 			return;
 		}
 
+		// Issue #153: Network selection updates app state without triggering wallet operations
+		// For connected users, use in-app transition to preserve navigation context (PR #178 review)
 		const wallet = this.ctx?.getWallet?.();
 		const isConnected = !!wallet?.isWalletConnected?.() && !!wallet?.getSigner?.();
-		if (!isConnected) {
-			triggerPageReloadWithSwitchFallback({
-				loaderMode: 'spinner',
-				loaderMessage: `Switching to ${getNetworkLabel(network)}...`
-			});
-			return;
-		}
-
-		const walletNetwork = getNetworkById(this.ctx.getWalletChainId() || walletManager.chainId || null);
-		if (walletNetwork?.slug === network.slug) {
+		
+		if (isConnected) {
+			// Use in-app transition for connected users to preserve active tab
 			await this.handleSuccessfulConnectedNetworkTransition(network, {
 				source: 'network-selector',
 				selectedChainChanged,
 			});
-			return;
+		} else {
+			// Use page reload for disconnected/read-only users
+			triggerPageReloadWithSwitchFallback({
+				loaderMode: 'spinner',
+				loaderMessage: `Switching to ${getNetworkLabel(network)}...`
+			});
 		}
-
-		await this.switchWalletToNetwork(network, {
-			source: 'network-selector',
-			selectedChainChanged,
-			previousSelectedNetwork,
-		});
 	}
 
 	async load () {
@@ -1303,7 +1302,12 @@ class App {
 				}
 			});
 
-			this.currentTab = hasInitialConnectedContext ? 'create-order' : 'view-orders';
+			// Restore active tab from history state if available (PR #178 review)
+			const historyState = window.history?.state || {};
+			const restoredTab = historyState[ACTIVE_TAB_STATE_KEY];
+			this.currentTab = (restoredTab && this.isTabVisible(restoredTab)) 
+				? restoredTab 
+				: (hasInitialConnectedContext ? 'create-order' : 'view-orders');
 
 				// Add wallet connection state handler
 				walletManager.addListener(async (event, data) => {
@@ -2091,7 +2095,9 @@ function getInitialSelectedNetwork() {
 function updateChainInUrl(slug) {
 	const url = new URL(window.location.href);
 	url.searchParams.set('chain', slug);
-	window.history.replaceState({}, '', url);
+	// Preserve existing history state (e.g., ACTIVE_TAB_STATE_KEY) when updating URL (PR #178 review)
+	const existingState = window.history?.state || {};
+	window.history.replaceState(existingState, '', url);
 }
 
 function markSelectedNetworkOption(slug) {
@@ -2157,12 +2163,20 @@ function triggerPageReloadWithSwitchFallback(options = {}) {
 		console.warn('[App] Reload failed after network switch:', error);
 	}
 }
+
+/**
+ * Sync network badge from app state (issue #153)
+ * The network badge shows the selected app network only.
+ * Wallet connection status is handled by the wallet button, not the network selector.
+ */
 function syncNetworkBadgeFromState() {
 	if (!networkBadge) return;
 
 	const selectedSlug = selectedNetworkSlug || window.app?.ctx?.getSelectedChainSlug?.() || getDefaultNetwork().slug;
 	const selectedNetwork = getNetworkBySlug(selectedSlug) || getDefaultNetwork();
 	renderNetworkBadge(selectedNetwork);
+
+	// Network badge only shows selected network, not wallet connection status
 	networkBadge.classList.remove('connected', 'setup-needed', 'wrong-network', 'disconnected');
 	if (networkButton) {
 		networkButton.dataset.networkStatus = 'default';
@@ -2171,47 +2185,8 @@ function syncNetworkBadgeFromState() {
 		networkDropdown.dataset.networkStatus = 'default';
 	}
 
-	const walletChainId = window.app?.ctx?.getWalletChainId?.();
-	if (!walletChainId) {
-		networkBadge.classList.add('disconnected');
-		if (networkButton) {
-			networkButton.dataset.networkStatus = 'disconnected';
-		}
-		if (networkDropdown) {
-			networkDropdown.dataset.networkStatus = 'disconnected';
-		}
-		syncAddNetworkButtonVisibility();
-		return;
-	}
-
-	const walletNetwork = getNetworkById(walletChainId);
-	if (walletNetwork && walletNetwork.slug === selectedNetwork.slug) {
-		clearNetworkSetupRequired();
-		networkBadge.classList.add('connected');
-		if (networkButton) {
-			networkButton.dataset.networkStatus = 'connected';
-		}
-		if (networkDropdown) {
-			networkDropdown.dataset.networkStatus = 'connected';
-		}
-	} else if (networkSetupRequiredSlug && networkSetupRequiredSlug === selectedNetwork.slug) {
-		networkBadge.classList.add('setup-needed');
-		if (networkButton) {
-			networkButton.dataset.networkStatus = 'setup-needed';
-		}
-		if (networkDropdown) {
-			networkDropdown.dataset.networkStatus = 'setup-needed';
-		}
-	} else {
-		networkBadge.classList.add('wrong-network');
-		if (networkButton) {
-			networkButton.dataset.networkStatus = 'wrong-network';
-		}
-		if (networkDropdown) {
-			networkDropdown.dataset.networkStatus = 'wrong-network';
-		}
-	}
-
+	// Let syncAddNetworkButtonVisibility() decide visibility based on networkSetupRequiredSlug (PR #178 review)
+	// This preserves the "Add <Network>" retry affordance when setup is required
 	syncAddNetworkButtonVisibility();
 }
 
