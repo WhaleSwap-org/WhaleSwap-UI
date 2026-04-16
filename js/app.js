@@ -2086,7 +2086,9 @@ function getInitialSelectedNetwork() {
 function updateChainInUrl(slug) {
 	const url = new URL(window.location.href);
 	url.searchParams.set('chain', slug);
-	window.history.replaceState({}, '', url);
+	// Preserve existing history state (e.g., ACTIVE_TAB_STATE_KEY) when updating URL (PR #178 review)
+	const existingState = window.history?.state || {};
+	window.history.replaceState(existingState, '', url);
 }
 
 function markSelectedNetworkOption(slug) {
