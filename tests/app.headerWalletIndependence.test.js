@@ -171,69 +171,37 @@ describe('Header wallet connection independence (issue #153)', () => {
 
 	describe('handleNetworkSelectionCommit', () => {
 		it('does not call switchWalletToNetwork when wallet is connected', async () => {
-			const polygonChainId = getNetworkBySlug(POLYGON_SLUG)?.chainId;
 			const app = initializeApp({
 				walletChainId: BNB_CHAIN_ID, // Wallet on BNB
 				selectedSlug: ETHEREUM_SLUG, // App on Ethereum
 			});
-
-			// Mock methods needed for in-app transition
-			app.updateTabVisibility = vi.fn();
-			app.refreshAdminTabVisibility = vi.fn(async () => {});
-			app.refreshClaimTabVisibility = vi.fn(async () => {});
-			app.refreshOrderTabVisibility = vi.fn(async () => {});
-			app.recreateNetworkServices = vi.fn(async () => {});
-			app.reinitializeComponents = vi.fn(async () => {});
-			app.showTab = vi.fn(async () => {});
-			app.isTabVisible = vi.fn(() => true);
-			app.startInitialOrderSync = vi.fn();
-			app.currentTab = 'view-orders';
-			app.components = {};
 
 			const targetNetwork = getNetworkBySlug(POLYGON_SLUG);
 			const switchSpy = vi.spyOn(app, 'switchWalletToNetwork');
 
 			await app.handleNetworkSelectionCommit(targetNetwork);
 
-			// Should NOT call switchWalletToNetwork
+			// Should NOT call switchWalletToNetwork - the header selector
+			// only updates the app's selected network, not the wallet.
 			expect(switchSpy).not.toHaveBeenCalled();
-
-			// Should NOT trigger page reload for connected users (uses in-app transition)
-			expect(window.location.reload).not.toHaveBeenCalled();
 		});
 
-		it('uses in-app transition for connected users to preserve navigation context', async () => {
+		it('triggers a full page reload for connected users', async () => {
 			const app = initializeApp({
 				walletChainId: BNB_CHAIN_ID,
 				selectedSlug: ETHEREUM_SLUG,
 			});
 
-			// Mock methods needed for in-app transition
-			app.updateTabVisibility = vi.fn();
-			app.refreshAdminTabVisibility = vi.fn(async () => {});
-			app.refreshClaimTabVisibility = vi.fn(async () => {});
-			app.refreshOrderTabVisibility = vi.fn(async () => {});
-			app.recreateNetworkServices = vi.fn(async () => {});
-			app.reinitializeComponents = vi.fn(async () => {});
-			app.showTab = vi.fn(async () => {});
-			app.isTabVisible = vi.fn(() => true);
-			app.startInitialOrderSync = vi.fn();
-			app.currentTab = 'view-orders';
-			app.components = {};
-
 			const targetNetwork = getNetworkBySlug(POLYGON_SLUG);
-			const transitionSpy = vi.spyOn(app, 'handleSuccessfulConnectedNetworkTransition');
 
 			await app.handleNetworkSelectionCommit(targetNetwork);
 
-			// Should use in-app transition for connected users
-			expect(transitionSpy).toHaveBeenCalledWith(targetNetwork, {
-				source: 'network-selector',
-				selectedChainChanged: false,
-			});
-
-			// Should NOT trigger page reload
-			expect(window.location.reload).not.toHaveBeenCalled();
+			// Network switches always do a full reload regardless of wallet
+			// connection state. The in-page transition path was a source of
+			// subtle bugs with stale WS subscriptions and half-torn-down
+			// contracts; a reload guarantees a clean slate. The active tab
+			// is preserved via ACTIVE_TAB_STATE_KEY in history.state.
+			expect(window.location.reload).toHaveBeenCalledTimes(1);
 		});
 
 		it('triggers page reload for disconnected users', async () => {
