@@ -151,6 +151,24 @@ describe('App active tab persistence', () => {
 			message: 'Switching network...'
 		});
 	});
+
+	it('restores cleanup-orders after initial visibility has been applied', () => {
+		document.body.innerHTML = `
+			<button class="tab-button" data-tab="create-order" style="display: block"></button>
+			<button class="tab-button" data-tab="view-orders" style="display: block"></button>
+			<button class="tab-button" data-tab="cleanup-orders" style="display: none"></button>
+		`;
+
+		const AppCtor = window.app.constructor;
+		const app = new AppCtor();
+
+		expect(app.resolveInitialTab('cleanup-orders', true)).toBe('create-order');
+
+		app.setTabVisible('cleanup-orders', true);
+
+		expect(app.resolveInitialTab('cleanup-orders', true)).toBe('cleanup-orders');
+		expect(app.resolveInitialTab('claim', false)).toBe('view-orders');
+	});
 });
 
 describe('BaseComponent ensureWalletReadyForWrite', () => {
