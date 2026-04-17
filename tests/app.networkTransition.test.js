@@ -56,95 +56,58 @@ function createConnectedApp({
 	return { app, createOrderComponent };
 }
 
+let originalLocation;
+
 afterEach(() => {
 	document.body.innerHTML = '';
 	window.history.replaceState({}, '', '/');
 	walletManager.chainId = null;
 	setActiveNetwork(getNetworkBySlug('polygon'));
+	if (originalLocation) {
+		Object.defineProperty(window, 'location', {
+			configurable: true,
+			writable: true,
+			value: originalLocation,
+		});
+		originalLocation = null;
+	}
 	vi.restoreAllMocks();
 });
 
+function stubWindowLocationReload() {
+	originalLocation = window.location;
+	Object.defineProperty(window, 'location', {
+		configurable: true,
+		writable: true,
+		value: {
+			...window.location,
+			reload: vi.fn(),
+		},
+	});
+}
+
 describe('App network transition behavior', () => {
-	it('uses the lightweight same-chain path when the wallet catches up to the selected network', async () => {
+	it('triggers a full page reload after a successful wallet network switch', async () => {
 		const targetNetwork = getNetworkBySlug('polygon');
 		const { app } = createConnectedApp();
+		stubWindowLocationReload();
 		const switchSpy = vi.spyOn(walletManager, 'switchToNetwork').mockResolvedValue(targetNetwork);
+		const prepareSpy = vi.spyOn(app, 'prepareForNetworkReload');
 
-		await app.switchWalletToNetwork(targetNetwork, {
+		const result = await app.switchWalletToNetwork(targetNetwork, {
 			source: 'write:create the order',
 			selectedChainChanged: false,
 		});
 
+		expect(result).toBe(true);
 		expect(switchSpy).toHaveBeenCalledWith(targetNetwork);
+		// No in-page transition code paths should run; the reload gives
+		// us a guaranteed clean slate.
 		expect(app.recreateNetworkServices).not.toHaveBeenCalled();
 		expect(app.reinitializeComponents).not.toHaveBeenCalled();
-		expect(app.showGlobalLoader).not.toHaveBeenCalled();
-		expect(app.refreshActiveComponent).toHaveBeenCalledTimes(1);
-	});
-
-	it('dedupes repeated successful transitions for the same network', async () => {
-		const targetNetwork = getNetworkBySlug('bnb');
-		const { app } = createConnectedApp();
-		let resolveTransition;
-		app.recreateNetworkServices.mockImplementation(
-			() => new Promise((resolve) => {
-				resolveTransition = resolve;
-			})
-		);
-
-		const firstTransition = app.handleSuccessfulConnectedNetworkTransition(targetNetwork, {
-			source: 'switch-call',
-			selectedChainChanged: true,
-		});
-		const secondTransition = app.handleSuccessfulConnectedNetworkTransition(targetNetwork, {
-			source: 'chain-changed',
-			selectedChainChanged: true,
-		});
-
-		expect(app.recreateNetworkServices).toHaveBeenCalledTimes(1);
-
-		resolveTransition();
-		await expect(Promise.all([firstTransition, secondTransition])).resolves.toEqual([true, true]);
-	});
-
-	it('preserves create-order form state on same-chain alignment without snapshotting or reinit', async () => {
-		const targetNetwork = getNetworkBySlug('polygon');
-		const { app } = createConnectedApp();
-
-		await app.handleSuccessfulConnectedNetworkTransition(targetNetwork, {
-			source: 'write:create the order',
-			selectedChainChanged: false,
-		});
-
-		expect(app.reinitializeComponents).not.toHaveBeenCalled();
-		expect(app.refreshActiveComponent).toHaveBeenCalledTimes(1);
-	});
-
-	it('clears create-order state when the selected chain changes explicitly', async () => {
-		const targetNetwork = getNetworkBySlug('bnb');
-		const { app, createOrderComponent } = createConnectedApp({
-			currentTab: 'claim',
-			isCurrentTabVisible: false,
-			snapshot: {
-				selectedChainSlug: 'polygon',
-				sellAmount: '9',
-			},
-		});
-
-		await app.handleSuccessfulConnectedNetworkTransition(targetNetwork, {
-			source: 'network-selector',
-			selectedChainChanged: true,
-		});
-
-		expect(app.recreateNetworkServices).toHaveBeenCalledTimes(1);
-		expect(app.reinitializeComponents).toHaveBeenCalledWith(expect.objectContaining({
-			createOrderResetOptions: {
-				clearSelections: true,
-			},
-		}));
-		expect(app.showTab).toHaveBeenCalledWith('create-order', false, {
-			skipInitialize: true,
-		});
+		expect(app.refreshActiveComponent).not.toHaveBeenCalled();
+		expect(prepareSpy).toHaveBeenCalledTimes(1);
+		expect(window.location.reload).toHaveBeenCalledTimes(1);
 	});
 });
 
