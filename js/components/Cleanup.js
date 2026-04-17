@@ -39,23 +39,10 @@ export class Cleanup extends BaseComponent {
             this.debug('ReadOnly mode:', readOnlyMode);
             this.currentMode = readOnlyMode;
             
-            // Wait for WebSocket to be fully initialized
+            // Get WebSocket and contract from context (no longer waiting for initialization)
             const ws = this.ctx.getWebSocket();
-            if (!ws?.isInitialized) {
-                this.debug('Waiting for WebSocket initialization...');
-                await new Promise(resolve => {
-                    const checkInterval = setInterval(() => {
-                        if (ws?.isInitialized) {
-                            clearInterval(checkInterval);
-                            resolve();
-                        }
-                    }, 100);
-                });
-            }
-
-            // Get WebSocket and contract from context
             this.webSocket = ws;
-            this.contract = ws.contract;
+            this.contract = ws?.contract;
 
             // Verify contract is available
             if (!this.contract) {

@@ -210,15 +210,8 @@ export class ContractParams extends BaseComponent {
     }
 
     async fetchParameters(ws) {
-        const wsReady = await this.readWithTimeout(
-            () => ws.waitForInitialization(),
-            'WebSocket initialization'
-        );
-        if (!wsReady) {
-            throw new Error('WebSocket initialization failed');
-        }
-
-        const contract = ws.contract;
+        // No longer waiting for WebSocket initialization (Issue #179)
+        const contract = ws?.contract;
         if (!contract) {
             throw new Error('Contract not initialized');
         }
@@ -364,12 +357,14 @@ export class ContractParams extends BaseComponent {
     }
 
     async waitForWsRecovery(ws) {
-        const recoveryPromise = ws.isInitialized
-            ? ws.reconnect()
-            : ws.waitForInitialization();
+        // Only attempt reconnect if already initialized (Issue #179)
+        // Don't wait for initialization if not ready
+        if (!ws?.isInitialized) {
+            return false;
+        }
 
         return await this.withTimeout(
-            Promise.resolve(recoveryPromise),
+            ws.reconnect(),
             this.RECONNECT_TIMEOUT_MS,
             'WebSocket recovery timeout'
         );

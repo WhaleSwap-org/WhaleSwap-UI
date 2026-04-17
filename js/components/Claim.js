@@ -45,7 +45,7 @@ export class Claim extends BaseComponent {
 
         try {
             const ws = this.ctx.getWebSocket();
-            await ws?.waitForInitialization?.();
+            // No longer waiting for WebSocket initialization (Issue #179)
             this.webSocket = ws;
             this.contract = ws?.contract || null;
 

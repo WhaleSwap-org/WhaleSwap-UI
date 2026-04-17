@@ -636,19 +636,7 @@ export class CreateOrder extends BaseComponent {
 
             const ws = this.ctx.getWebSocket();
             // CreateOrder only creates orders, it doesn't need to listen to order events
-
-            // Wait for WebSocket to be fully initialized
-            if (!ws?.isInitialized) {
-                this.debug('Waiting for WebSocket initialization...');
-                await new Promise(resolve => {
-                    const checkInterval = setInterval(() => {
-                        if (ws?.isInitialized) {
-                            clearInterval(checkInterval);
-                            resolve();
-                        }
-                    }, 100);
-                });
-            }
+            // No longer waiting for WebSocket initialization (Issue #179)
 
             // Clear existing content before re-populating
             const sellContainer = document.getElementById('sellContainer');
@@ -657,7 +645,7 @@ export class CreateOrder extends BaseComponent {
             if (buyContainer) buyContainer.innerHTML = '';
 
             // Use WebSocket's contract instance
-            this.contract = ws.contract;
+            this.contract = ws?.contract;
             this.provider = ws.provider;
 
             if (!this.contract) {
