@@ -12,6 +12,7 @@ export class Cleanup extends BaseComponent {
         this.isInitialized = false;
         this.currentMode = null; // track readOnly/connected mode to allow re-init on change
         this.eventSubscriptions = new Set(); // Track WebSocket subscriptions for cleanup
+        this.initializationRetryTimer = null;
         
         // Initialize logger
         const logger = createLogger('CLEANUP');
@@ -46,7 +47,14 @@ export class Cleanup extends BaseComponent {
 
             // Verify contract is available
             if (!this.contract) {
-                throw new Error('Contract not initialized');
+                this.debug('Cleanup contract not ready yet; scheduling initialization retry');
+                this.container.innerHTML = `
+                    <div class="tab-content-wrapper">
+                        <div class="loading-text">Connecting to order feed...</div>
+                    </div>
+                `;
+                this.scheduleInitializationRetry(readOnlyMode);
+                return;
             }
 
             // Wait for contract to be ready
@@ -200,6 +208,19 @@ export class Cleanup extends BaseComponent {
             await new Promise(resolve => setTimeout(resolve, 100));
         }
         throw new Error('Contract not ready after timeout');
+    }
+
+    scheduleInitializationRetry(readOnlyMode) {
+        if (this.initializationRetryTimer) {
+            return;
+        }
+
+        this.initializationRetryTimer = setTimeout(() => {
+            this.initializationRetryTimer = null;
+            this.initialize(readOnlyMode).catch((error) => {
+                this.debug('Deferred Cleanup initialization retry failed:', error);
+            });
+        }, 300);
     }
 
     // Update cleanup method to use class contract reference
@@ -648,6 +669,10 @@ export class Cleanup extends BaseComponent {
         if (this.intervalId) {
             this.debug('Cleaning up cleanup check interval');
             clearInterval(this.intervalId);
+        }
+        if (this.initializationRetryTimer) {
+            clearTimeout(this.initializationRetryTimer);
+            this.initializationRetryTimer = null;
         }
         
         // Unsubscribe from WebSocket events

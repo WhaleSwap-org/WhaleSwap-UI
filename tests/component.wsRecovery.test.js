@@ -1,0 +1,84 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { Cleanup } from '../js/components/Cleanup.js';
+import { ContractParams } from '../js/components/ContractParams.js';
+
+function createBaseContext(overrides = {}) {
+    return {
+        getWebSocket: () => overrides.ws,
+        getWallet: () => ({
+            isWalletConnected: () => false,
+            addListener: () => {},
+        }),
+        showError: () => {},
+        showSuccess: () => {},
+        showWarning: () => {},
+        showInfo: () => {},
+        ...overrides,
+    };
+}
+
+afterEach(() => {
+    document.body.innerHTML = '';
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+});
+
+describe('WS recovery behavior', () => {
+    it('Cleanup initialize schedules a single retry when websocket contract is not ready', async () => {
+        vi.useFakeTimers();
+        document.body.innerHTML = '<div id="cleanup-container"></div>';
+
+        const ws = { contract: null };
+        const component = new Cleanup();
+        component.setContext(createBaseContext({ ws }));
+
+        await component.initialize(true);
+        const firstRetryTimer = component.initializationRetryTimer;
+
+        await component.initialize(true);
+        const secondRetryTimer = component.initializationRetryTimer;
+
+        expect(firstRetryTimer).toBeTruthy();
+        expect(secondRetryTimer).toBe(firstRetryTimer);
+        expect(component.container.textContent).toContain('Connecting to order feed...');
+
+        component.cleanup();
+        expect(component.initializationRetryTimer).toBeNull();
+    });
+
+    it('ContractParams recovery waits for initialization when websocket is not initialized yet', async () => {
+        document.body.innerHTML = '<div id="contract-params"></div>';
+
+        const component = new ContractParams();
+        const waitForInitialization = vi.fn(async () => true);
+        const reconnect = vi.fn(async () => true);
+
+        const recovered = await component.waitForWsRecovery({
+            isInitialized: false,
+            waitForInitialization,
+            reconnect,
+        });
+
+        expect(recovered).toBe(true);
+        expect(waitForInitialization).toHaveBeenCalledTimes(1);
+        expect(reconnect).not.toHaveBeenCalled();
+    });
+
+    it('ContractParams recovery reconnects when websocket is already initialized', async () => {
+        document.body.innerHTML = '<div id="contract-params"></div>';
+
+        const component = new ContractParams();
+        const waitForInitialization = vi.fn(async () => true);
+        const reconnect = vi.fn(async () => true);
+
+        const recovered = await component.waitForWsRecovery({
+            isInitialized: true,
+            waitForInitialization,
+            reconnect,
+        });
+
+        expect(recovered).toBe(true);
+        expect(reconnect).toHaveBeenCalledTimes(1);
+        expect(waitForInitialization).not.toHaveBeenCalled();
+    });
+});

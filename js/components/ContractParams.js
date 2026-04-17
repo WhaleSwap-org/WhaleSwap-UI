@@ -185,7 +185,10 @@ export class ContractParams extends BaseComponent {
                 lastError = error;
                 this.debug(`Contract params fetch attempt ${attempt + 1} failed:`, error);
 
-                if (attempt >= this.RECONNECT_RETRY_LIMIT || typeof ws.reconnect !== 'function') {
+                if (
+                    attempt >= this.RECONNECT_RETRY_LIMIT
+                    || (typeof ws.reconnect !== 'function' && typeof ws.waitForInitialization !== 'function')
+                ) {
                     break;
                 }
 
@@ -356,14 +359,20 @@ export class ContractParams extends BaseComponent {
     }
 
     async waitForWsRecovery(ws) {
-        // Only attempt reconnect if already initialized (Issue #179)
-        // Don't wait for initialization if not ready
-        if (!ws?.isInitialized) {
+        if (!ws) {
+            return false;
+        }
+
+        const recoveryPromise = ws.isInitialized
+            ? (typeof ws.reconnect === 'function' ? ws.reconnect() : false)
+            : (typeof ws.waitForInitialization === 'function' ? ws.waitForInitialization() : false);
+
+        if (!recoveryPromise) {
             return false;
         }
 
         return await this.withTimeout(
-            ws.reconnect(),
+            Promise.resolve(recoveryPromise),
             this.RECONNECT_TIMEOUT_MS,
             'WebSocket recovery timeout'
         );
