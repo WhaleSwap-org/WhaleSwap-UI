@@ -713,6 +713,27 @@ class App {
 		}
 	}
 
+	persistActiveTabState(tabId = this.currentTab || 'view-orders') {
+		try {
+			const nextTabId = String(tabId || '').trim();
+			if (!nextTabId) {
+				return;
+			}
+
+			const historyState = window.history?.state || {};
+			window.history?.replaceState?.(
+				{
+					...historyState,
+					[ACTIVE_TAB_STATE_KEY]: nextTabId
+				},
+				'',
+				window.location.href
+			);
+		} catch (error) {
+			this.debug('Failed to persist active tab state:', error);
+		}
+	}
+
 	showGlobalLoader(message = 'Loading WhaleSwap...', options = {}) {
 		const { mode = null } = options;
 		if (window.__bootstrapLoaderTimeout) {
@@ -1846,6 +1867,7 @@ class App {
 
 			// Show and initialize selected tab
 			if (tabContent) {
+				this.persistActiveTabState(tabId);
 				tabContent.classList.add('active');
 
 				// Initialize component for this tab

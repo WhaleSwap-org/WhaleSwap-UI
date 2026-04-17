@@ -111,6 +111,48 @@ describe('App network transition behavior', () => {
 	});
 });
 
+describe('App active tab persistence', () => {
+	it('persists the selected tab in history state when showTab succeeds', async () => {
+		document.body.innerHTML = `
+			<button class="tab-button" data-tab="view-orders"></button>
+			<button class="tab-button" data-tab="cleanup-orders"></button>
+			<div id="view-orders" class="tab-content"></div>
+			<div id="cleanup-orders" class="tab-content"></div>
+		`;
+		window.history.replaceState(
+			{
+				whaleswapBootstrapLoader: {
+					mode: 'spinner',
+					message: 'Switching network...'
+				}
+			},
+			'',
+			'/'
+		);
+
+		const AppCtor = window.app.constructor;
+		const app = new AppCtor();
+		app.ctx = {
+			getWallet: () => ({
+				isWalletConnected: () => true,
+			}),
+		};
+		app.components = {};
+		app.refreshAdminTabVisibility = vi.fn(async () => false);
+		app.refreshClaimTabVisibility = vi.fn(async () => false);
+		app.refreshOrderTabVisibility = vi.fn(async () => ({ showMyOrders: false, showInvitedOrders: false }));
+		app.tabReady = new Set();
+
+		await app.showTab('cleanup-orders', false, { skipInitialize: true });
+
+		expect(window.history.state?.whaleswapActiveTab).toBe('cleanup-orders');
+		expect(window.history.state?.whaleswapBootstrapLoader).toEqual({
+			mode: 'spinner',
+			message: 'Switching network...'
+		});
+	});
+});
+
 describe('BaseComponent ensureWalletReadyForWrite', () => {
 	it('continues the write flow after a successful in-place network switch', async () => {
 		document.body.innerHTML = '<div id="test-component"></div>';
