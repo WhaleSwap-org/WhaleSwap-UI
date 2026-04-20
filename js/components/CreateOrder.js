@@ -1666,6 +1666,57 @@ export class CreateOrder extends BaseComponent {
         this.updateCreateButtonState();
     }
 
+    async validateFeeTokenBalanceBeforeSubmit(sellAmount) {
+        if (!this.feeToken?.address || !this.feeToken?.amount) {
+            this.debug('Skipping fee-token preflight balance check: fee config not loaded');
+            return { hasSufficientBalance: true };
+        }
+
+        const refreshedFeeToken = await this.refreshFeeTokenBalanceInBackground({
+            source: 'create-order:fee-balance-preflight',
+        });
+        if (!refreshedFeeToken || refreshedFeeToken.balanceLoading) {
+            throw new Error('Fee token balance is still loading');
+        }
+
+        const feeTokenAddress = String(refreshedFeeToken.address || '').toLowerCase();
+        const sellTokenAddress = String(this.sellToken?.address || '').toLowerCase();
+        const sameTokenForSellAndFee = feeTokenAddress && sellTokenAddress && feeTokenAddress === sellTokenAddress;
+
+        const feeTokenDecimals = Number.isInteger(refreshedFeeToken.decimals)
+            ? refreshedFeeToken.decimals
+            : 18;
+        const feeTokenSymbol = refreshedFeeToken.symbol || 'fee token';
+        const availableFeeTokenWei = ethers.utils.parseUnits(
+            refreshedFeeToken.balance || '0',
+            feeTokenDecimals
+        );
+        const feeAmountWei = ethers.BigNumber.from(refreshedFeeToken.amount);
+
+        let sellAmountWeiForFeeToken = ethers.constants.Zero;
+        if (sameTokenForSellAndFee) {
+            const sellTokenDecimals = Number.isInteger(this.sellToken?.decimals)
+                ? this.sellToken.decimals
+                : await this.getTokenDecimals(this.sellToken.address);
+            sellAmountWeiForFeeToken = ethers.utils.parseUnits(sellAmount, sellTokenDecimals);
+        }
+
+        const requiredFeeTokenWei = feeAmountWei.add(sellAmountWeiForFeeToken);
+        const hasSufficientBalance = availableFeeTokenWei.gte(requiredFeeTokenWei);
+
+        return {
+            hasSufficientBalance,
+            symbol: feeTokenSymbol,
+            sameTokenForSellAndFee,
+            formattedAvailable: ethers.utils.formatUnits(availableFeeTokenWei, feeTokenDecimals),
+            formattedFeeRequired: ethers.utils.formatUnits(feeAmountWei, feeTokenDecimals),
+            formattedTotalRequired: ethers.utils.formatUnits(requiredFeeTokenWei, feeTokenDecimals),
+            formattedSellAmount: sameTokenForSellAndFee
+                ? ethers.utils.formatUnits(sellAmountWeiForFeeToken, feeTokenDecimals)
+                : null,
+        };
+    }
+
     async handleCreateOrder(event) {
         event.preventDefault();
 
@@ -1824,6 +1875,36 @@ export class CreateOrder extends BaseComponent {
             } catch (balanceError) {
                 this.debug('Balance validation error:', balanceError);
                 this.showError(`Failed to validate balance: ${balanceError.message}`);
+                return;
+            }
+
+            // Validate fee-token balance before opening tx checklist / submitting tx.
+            try {
+                const feeBalanceValidation = await this.validateFeeTokenBalanceBeforeSubmit(sellAmount);
+                if (!feeBalanceValidation.hasSufficientBalance) {
+                    const tokenSymbol = feeBalanceValidation.symbol;
+                    if (feeBalanceValidation.sameTokenForSellAndFee) {
+                        this.showError(
+                            `Insufficient ${tokenSymbol} balance for this order.\n\n` +
+                            `Required for sell amount: ${Number(feeBalanceValidation.formattedSellAmount).toLocaleString()} ${tokenSymbol}\n` +
+                            `Required for order fee: ${Number(feeBalanceValidation.formattedFeeRequired).toLocaleString()} ${tokenSymbol}\n` +
+                            `Total required: ${Number(feeBalanceValidation.formattedTotalRequired).toLocaleString()} ${tokenSymbol}\n` +
+                            `Available: ${Number(feeBalanceValidation.formattedAvailable).toLocaleString()} ${tokenSymbol}\n\n` +
+                            `Please reduce the sell amount or top up your ${tokenSymbol} balance.`
+                        );
+                    } else {
+                        this.showError(
+                            `Insufficient ${tokenSymbol} balance for order creation fee.\n\n` +
+                            `Required fee: ${Number(feeBalanceValidation.formattedFeeRequired).toLocaleString()} ${tokenSymbol}\n` +
+                            `Available: ${Number(feeBalanceValidation.formattedAvailable).toLocaleString()} ${tokenSymbol}\n\n` +
+                            `Please top up your ${tokenSymbol} balance and try again.`
+                        );
+                    }
+                    return;
+                }
+            } catch (feeBalanceError) {
+                this.debug('Fee balance validation error:', feeBalanceError);
+                this.showError(`Failed to validate fee-token balance: ${feeBalanceError.message}`);
                 return;
             }
 
