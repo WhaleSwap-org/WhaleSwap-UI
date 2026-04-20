@@ -1033,6 +1033,17 @@ export class CreateOrder extends BaseComponent {
         });
     }
 
+    formatValidationAmount(amount) {
+        const value = String(amount ?? '0').trim() || '0';
+        const [wholeRaw = '0', fractionRaw = ''] = value.split('.');
+        let whole = wholeRaw;
+        try {
+            whole = ethers.utils.commify(wholeRaw);
+        } catch (_) {}
+        const fraction = fractionRaw.replace(/0+$/, '');
+        return fraction ? `${whole}.${fraction}` : whole;
+    }
+
     syncFeeTokenBalanceWithAllowedTokens(tokens = this.allowedTokens) {
         if (!this.feeToken?.address || !Array.isArray(tokens)) {
             return false;
@@ -1886,17 +1897,17 @@ export class CreateOrder extends BaseComponent {
                     if (feeBalanceValidation.sameTokenForSellAndFee) {
                         this.showError(
                             `Insufficient ${tokenSymbol} balance for this order.\n\n` +
-                            `Required for sell amount: ${Number(feeBalanceValidation.formattedSellAmount).toLocaleString()} ${tokenSymbol}\n` +
-                            `Required for order fee: ${Number(feeBalanceValidation.formattedFeeRequired).toLocaleString()} ${tokenSymbol}\n` +
-                            `Total required: ${Number(feeBalanceValidation.formattedTotalRequired).toLocaleString()} ${tokenSymbol}\n` +
-                            `Available: ${Number(feeBalanceValidation.formattedAvailable).toLocaleString()} ${tokenSymbol}\n\n` +
+                            `Required for sell amount: ${this.formatValidationAmount(feeBalanceValidation.formattedSellAmount)} ${tokenSymbol}\n` +
+                            `Required for order fee: ${this.formatValidationAmount(feeBalanceValidation.formattedFeeRequired)} ${tokenSymbol}\n` +
+                            `Total required: ${this.formatValidationAmount(feeBalanceValidation.formattedTotalRequired)} ${tokenSymbol}\n` +
+                            `Available: ${this.formatValidationAmount(feeBalanceValidation.formattedAvailable)} ${tokenSymbol}\n\n` +
                             `Please reduce the sell amount or top up your ${tokenSymbol} balance.`
                         );
                     } else {
                         this.showError(
                             `Insufficient ${tokenSymbol} balance for order creation fee.\n\n` +
-                            `Required fee: ${Number(feeBalanceValidation.formattedFeeRequired).toLocaleString()} ${tokenSymbol}\n` +
-                            `Available: ${Number(feeBalanceValidation.formattedAvailable).toLocaleString()} ${tokenSymbol}\n\n` +
+                            `Required fee: ${this.formatValidationAmount(feeBalanceValidation.formattedFeeRequired)} ${tokenSymbol}\n` +
+                            `Available: ${this.formatValidationAmount(feeBalanceValidation.formattedAvailable)} ${tokenSymbol}\n\n` +
                             `Please top up your ${tokenSymbol} balance and try again.`
                         );
                     }

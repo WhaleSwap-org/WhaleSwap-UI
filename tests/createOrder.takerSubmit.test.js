@@ -169,4 +169,24 @@ describe('CreateOrder taker submit handling', () => {
         expect(contract.createOrder).not.toHaveBeenCalled();
         expect(component.showError).toHaveBeenCalledWith('Invalid taker address format');
     });
+
+    it('does not submit create-order transaction when fee-token preflight balance is insufficient', async () => {
+        const { component, contract } = createSubmitHarness({
+            takerValue: '',
+        });
+        vi.spyOn(component, 'validateFeeTokenBalanceBeforeSubmit').mockResolvedValue({
+            hasSufficientBalance: false,
+            symbol: 'USDC',
+            sameTokenForSellAndFee: false,
+            formattedFeeRequired: '1.0',
+            formattedAvailable: '0.2',
+        });
+
+        await component.handleCreateOrder({ preventDefault: vi.fn() });
+
+        expect(contract.createOrder).not.toHaveBeenCalled();
+        expect(component.showError).toHaveBeenCalledWith(
+            expect.stringContaining('Insufficient USDC balance for order creation fee.')
+        );
+    });
 });
