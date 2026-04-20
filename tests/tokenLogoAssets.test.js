@@ -2,6 +2,8 @@ import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+const BSC_LIBERDUS_TOKEN_ADDRESS = '0x5afdcc93d794762c785ec14fb2a24c4abdbb8aaa';
+
 describe('token logo assets', () => {
     it('stores every token logo as a PNG file', () => {
         const tokenLogoDir = join(process.cwd(), 'img', 'token-logos');
@@ -11,5 +13,14 @@ describe('token logo assets', () => {
 
         expect(files.length).toBeGreaterThan(0);
         expect(files.every((name) => name.toLowerCase().endsWith('.png'))).toBe(true);
+    });
+
+    it('includes the BSC Liberdus token logo asset', () => {
+        const tokenLogoDir = join(process.cwd(), 'img', 'token-logos');
+        const files = readdirSync(tokenLogoDir, { withFileTypes: true })
+            .filter((entry) => entry.isFile())
+            .map((entry) => entry.name.toLowerCase());
+
+        expect(files).toContain(`${BSC_LIBERDUS_TOKEN_ADDRESS}.png`);
     });
 });
