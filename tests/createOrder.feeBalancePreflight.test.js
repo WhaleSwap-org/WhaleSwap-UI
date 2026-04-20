@@ -49,6 +49,15 @@ afterEach(() => {
 });
 
 describe('CreateOrder fee-token preflight balance checks', () => {
+    it('throws when fee configuration is not loaded yet', async () => {
+        const component = createComponent();
+        component.feeToken = null;
+
+        await expect(component.validateFeeTokenBalanceBeforeSubmit('1')).rejects.toThrow(
+            'Order creation fee data is still loading'
+        );
+    });
+
     it('fails preflight when fee-token balance is below required fee', async () => {
         const component = createComponent();
         component.feeToken = {

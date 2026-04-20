@@ -1679,8 +1679,7 @@ export class CreateOrder extends BaseComponent {
 
     async validateFeeTokenBalanceBeforeSubmit(sellAmount) {
         if (!this.feeToken?.address || !this.feeToken?.amount) {
-            this.debug('Skipping fee-token preflight balance check: fee config not loaded');
-            return { hasSufficientBalance: true };
+            throw new Error('Order creation fee data is still loading');
         }
 
         const refreshedFeeToken = await this.refreshFeeTokenBalanceInBackground({

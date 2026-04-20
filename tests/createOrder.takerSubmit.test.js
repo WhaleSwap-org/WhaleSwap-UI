@@ -31,6 +31,7 @@ import { walletManager } from '../js/services/WalletManager.js';
 const ACCOUNT = '0x3333333333333333333333333333333333333333';
 const SELL_TOKEN = '0x1111111111111111111111111111111111111111';
 const BUY_TOKEN = '0x2222222222222222222222222222222222222222';
+const FEE_TOKEN = '0x4444444444444444444444444444444444444444';
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 const TX_HASH = `0x${'a'.repeat(64)}`;
 
@@ -96,6 +97,17 @@ function createSubmitHarness({ takerValue = '' } = {}) {
     component.getCreateOrderApprovalRequirements = vi.fn(async () => []);
     component.updateCreateButtonState = vi.fn();
     component.refreshOpenTokenModals = vi.fn();
+    component.feeToken = {
+        address: FEE_TOKEN,
+        symbol: 'USDC',
+        decimals: 6,
+        amount: '1000000',
+    };
+    component.refreshFeeTokenBalanceInBackground = vi.fn(async () => ({
+        ...component.feeToken,
+        balance: '1000',
+        balanceLoading: false,
+    }));
     component.debug = vi.fn();
     component.error = vi.fn();
     component.showError = vi.fn();
