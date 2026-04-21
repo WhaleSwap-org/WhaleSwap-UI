@@ -52,10 +52,43 @@ describe('CreateOrder fee-token preflight balance checks', () => {
     it('throws when fee configuration is not loaded yet', async () => {
         const component = createComponent();
         component.feeToken = null;
+        const feeConfigRefreshSpy = vi
+            .spyOn(component, 'requestFeeConfigRefresh')
+            .mockResolvedValue(null);
 
         await expect(component.validateFeeTokenBalanceBeforeSubmit('1')).rejects.toThrow(
             'Order creation fee data is still loading'
         );
+        expect(feeConfigRefreshSpy).toHaveBeenCalledWith({
+            source: 'create-order:fee-balance-preflight',
+        });
+    });
+
+    it('waits for in-flight fee balance loading before evaluating preflight', async () => {
+        const component = createComponent();
+        component.feeToken = {
+            address: FEE_TOKEN,
+            symbol: 'USDC',
+            decimals: 6,
+            amount: '1000000',
+        };
+        vi.spyOn(component, 'requestFeeConfigRefresh').mockResolvedValue(null);
+        vi.spyOn(component, 'refreshFeeTokenBalanceInBackground').mockResolvedValue({
+            ...component.feeToken,
+            balance: '2.0',
+            balanceLoading: true,
+        });
+        component.feeTokenBalanceLoadPromise = Promise.resolve({
+            ...component.feeToken,
+            balance: '2.0',
+            balanceLoading: false,
+        });
+
+        const validation = await component.validateFeeTokenBalanceBeforeSubmit('1');
+
+        expect(validation.hasSufficientBalance).toBe(true);
+        expect(validation.formattedFeeRequired).toBe('1.0');
+        expect(validation.formattedAvailable).toBe('2.0');
     });
 
     it('fails preflight when fee-token balance is below required fee', async () => {
@@ -80,6 +113,34 @@ describe('CreateOrder fee-token preflight balance checks', () => {
         expect(validation.formattedAvailable).toBe('0.5');
     });
 
+    it('uses fee-token decimals for same-token preflight even if sell token cache is stale', async () => {
+        const component = createComponent();
+        component.sellToken = {
+            address: SELL_TOKEN,
+            symbol: 'ZERO',
+            decimals: 18,
+        };
+        component.feeToken = {
+            address: SELL_TOKEN,
+            symbol: 'ZERO',
+            decimals: 0,
+            amount: '1',
+        };
+        vi.spyOn(component, 'requestFeeConfigRefresh').mockResolvedValue(null);
+        vi.spyOn(component, 'refreshFeeTokenBalanceInBackground').mockResolvedValue({
+            ...component.feeToken,
+            balance: '2',
+            balanceLoading: false,
+        });
+
+        const validation = await component.validateFeeTokenBalanceBeforeSubmit('1');
+
+        expect(validation.sameTokenForSellAndFee).toBe(true);
+        expect(validation.hasSufficientBalance).toBe(true);
+        expect(validation.formattedSellAmount).toBe('1');
+        expect(validation.formattedTotalRequired).toBe('2');
+    });
+
     it('fails preflight when selling fee-token and balance cannot cover sell+fee', async () => {
         const component = createComponent();
         component.sellToken = {
@@ -93,6 +154,7 @@ describe('CreateOrder fee-token preflight balance checks', () => {
             decimals: 18,
             amount: '1000000000000000000',
         };
+        vi.spyOn(component, 'requestFeeConfigRefresh').mockResolvedValue(null);
         vi.spyOn(component, 'refreshFeeTokenBalanceInBackground').mockResolvedValue({
             ...component.feeToken,
             balance: '1.5',

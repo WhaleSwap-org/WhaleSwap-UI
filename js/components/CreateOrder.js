@@ -1677,17 +1677,34 @@ export class CreateOrder extends BaseComponent {
         this.updateCreateButtonState();
     }
 
-    async validateFeeTokenBalanceBeforeSubmit(sellAmount) {
+    async ensureFeeTokenReadyForSubmit() {
+        if (!this.feeToken?.address || !this.feeToken?.amount) {
+            await this.requestFeeConfigRefresh({ source: 'create-order:fee-balance-preflight' });
+        }
+
         if (!this.feeToken?.address || !this.feeToken?.amount) {
             throw new Error('Order creation fee data is still loading');
         }
 
-        const refreshedFeeToken = await this.refreshFeeTokenBalanceInBackground({
+        let refreshedFeeToken = await this.refreshFeeTokenBalanceInBackground({
             source: 'create-order:fee-balance-preflight',
         });
+        if (refreshedFeeToken?.balanceLoading && this.feeTokenBalanceLoadPromise) {
+            refreshedFeeToken = await this.feeTokenBalanceLoadPromise;
+        }
+        if (refreshedFeeToken?.balanceLoading) {
+            await this.requestVisibleBalanceRefresh('create-order:fee-balance-preflight');
+            refreshedFeeToken = this.feeToken;
+        }
         if (!refreshedFeeToken || refreshedFeeToken.balanceLoading) {
             throw new Error('Fee token balance is still loading');
         }
+
+        return refreshedFeeToken;
+    }
+
+    async validateFeeTokenBalanceBeforeSubmit(sellAmount) {
+        const refreshedFeeToken = await this.ensureFeeTokenReadyForSubmit();
 
         const feeTokenAddress = String(refreshedFeeToken.address || '').toLowerCase();
         const sellTokenAddress = String(this.sellToken?.address || '').toLowerCase();
@@ -1705,10 +1722,7 @@ export class CreateOrder extends BaseComponent {
 
         let sellAmountWeiForFeeToken = ethers.constants.Zero;
         if (sameTokenForSellAndFee) {
-            const sellTokenDecimals = Number.isInteger(this.sellToken?.decimals)
-                ? this.sellToken.decimals
-                : await this.getTokenDecimals(this.sellToken.address);
-            sellAmountWeiForFeeToken = ethers.utils.parseUnits(sellAmount, sellTokenDecimals);
+            sellAmountWeiForFeeToken = ethers.utils.parseUnits(sellAmount, feeTokenDecimals);
         }
 
         const requiredFeeTokenWei = feeAmountWei.add(sellAmountWeiForFeeToken);
@@ -2951,7 +2965,7 @@ export class CreateOrder extends BaseComponent {
                 address: token.address,
                 symbol: token.symbol,
                 displaySymbol: token.displaySymbol || token.symbol,
-                decimals: token.decimals || 18,
+                decimals: this.getTokenInputDecimals(token) ?? 18,
                 balance: token.balance || '0',
                 balanceLoading: this.isTokenBalanceLoading(token),
                 iconUrl: token.iconUrl || null,
