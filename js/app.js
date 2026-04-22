@@ -69,8 +69,6 @@ class App {
 		this.activeNetworkTransitionPromise = null;
 		this.activeNetworkTransitionSlug = null;
 		this.pendingWalletSwitchRequest = null;
-		this.skipNextWalletAlignedReloadTargetSlug = null;
-		this.skipNextWalletAlignedReloadTimer = null;
 
 		// Replace debug initialization with LogService
 		const logger = createLogger('APP');
@@ -904,9 +902,6 @@ class App {
 	handleNetworkSwitchFailure(error, targetNetwork, options = {}) {
 		const { restoreSelectionNetwork = null } = options;
 		this.warn('Wallet network switch rejected/failed:', error);
-		if (this.skipNextWalletAlignedReloadTargetSlug === targetNetwork?.slug) {
-			this.clearSkipNextWalletAlignedReload();
-		}
 		const missingNetwork = isNetworkAddRequiredError(error);
 		const restoredNetwork = this.restoreSelectedNetwork(restoreSelectionNetwork);
 		if (missingNetwork && restoredNetwork?.slug === targetNetwork?.slug) {
@@ -946,25 +941,8 @@ class App {
 		return this.pendingWalletSwitchRequest;
 	}
 
-	clearSkipNextWalletAlignedReload() {
-		if (this.skipNextWalletAlignedReloadTimer) {
-			clearTimeout(this.skipNextWalletAlignedReloadTimer);
-			this.skipNextWalletAlignedReloadTimer = null;
-		}
-		this.skipNextWalletAlignedReloadTargetSlug = null;
-	}
-
-	armSkipNextWalletAlignedReload(targetSlug) {
-		this.clearSkipNextWalletAlignedReload();
-		this.skipNextWalletAlignedReloadTargetSlug = targetSlug;
-		this.skipNextWalletAlignedReloadTimer = setTimeout(() => {
-			if (this.skipNextWalletAlignedReloadTargetSlug === targetSlug) {
-				this.clearSkipNextWalletAlignedReload();
-			}
-		}, 5000);
-	}
-
 	async handleWalletChainChangedEvent(walletChainId) {
+		const previousWalletChainId = this.ctx?.getWalletChainId?.() ?? null;
 		this.debug('Chain changed event received:', walletChainId);
 		this.ctx.setWalletChainId(walletChainId);
 		syncNetworkBadgeFromState();
@@ -972,8 +950,7 @@ class App {
 		const selectedNetwork = this.getSelectedNetwork();
 		const walletNetwork = getNetworkById(walletChainId);
 		if (walletNetwork && walletNetwork.slug === selectedNetwork.slug) {
-			if (this.skipNextWalletAlignedReloadTargetSlug === walletNetwork.slug) {
-				this.clearSkipNextWalletAlignedReload();
+			if (String(previousWalletChainId ?? '').toLowerCase() === String(walletChainId ?? '').toLowerCase()) {
 				return;
 			}
 
@@ -1229,7 +1206,6 @@ class App {
 				const walletChainId = walletManager.chainId;
 				const walletNetwork = getNetworkById(walletChainId);
 				if (walletNetwork?.slug === resolvedTargetNetwork.slug) {
-					this.armSkipNextWalletAlignedReload(resolvedTargetNetwork.slug);
 					await this.handleSuccessfulConnectedNetworkTransition(resolvedTargetNetwork, {
 						source,
 						selectedChainChanged: false,
