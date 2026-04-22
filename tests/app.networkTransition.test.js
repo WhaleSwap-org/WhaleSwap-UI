@@ -10,6 +10,7 @@ const BNB_CHAIN_ID = '0x38';
 function createConnectedApp({
 	currentTab = 'create-order',
 	isCurrentTabVisible = true,
+	walletChainId = POLYGON_CHAIN_ID,
 } = {}) {
 	const AppCtor = window.app.constructor;
 	const app = new AppCtor();
@@ -24,7 +25,7 @@ function createConnectedApp({
 			isWalletConnected: () => true,
 			getSigner: () => ({}),
 		}),
-		getWalletChainId: () => POLYGON_CHAIN_ID,
+		getWalletChainId: () => walletChainId,
 		setWalletChainId: vi.fn(),
 		getWebSocket: () => ({}),
 	};
@@ -96,7 +97,7 @@ describe('App network transition behavior', () => {
 
 		const result = await app.switchWalletToNetwork(targetNetwork, {
 			source: 'write:create the order',
-			selectedChainChanged: false,
+			selectedChainChanged: true,
 		});
 
 		expect(result).toBe(true);
@@ -108,6 +109,80 @@ describe('App network transition behavior', () => {
 		expect(app.refreshActiveComponent).not.toHaveBeenCalled();
 		expect(prepareSpy).toHaveBeenCalledTimes(1);
 		expect(window.location.reload).toHaveBeenCalledTimes(1);
+	});
+
+	it('handles write-triggered wallet-only alignment in place without reloading', async () => {
+		const targetNetwork = getNetworkBySlug('polygon');
+		const { app } = createConnectedApp({
+			walletChainId: BNB_CHAIN_ID,
+		});
+		stubWindowLocationReload();
+		const switchSpy = vi.spyOn(walletManager, 'switchToNetwork').mockImplementation(async () => {
+			walletManager.chainId = POLYGON_CHAIN_ID;
+			return targetNetwork;
+		});
+		const transitionSpy = vi.spyOn(app, 'handleSuccessfulConnectedNetworkTransition').mockResolvedValue(true);
+		const prepareSpy = vi.spyOn(app, 'prepareForNetworkReload');
+
+		const result = await app.switchWalletToNetwork(targetNetwork, {
+			source: 'write:create the order',
+			selectedChainChanged: false,
+		});
+
+		expect(result).toBe(true);
+		expect(switchSpy).toHaveBeenCalledWith(targetNetwork);
+		expect(transitionSpy).toHaveBeenCalledWith(targetNetwork, {
+			source: 'write:create the order',
+			selectedChainChanged: false,
+			walletChainId: POLYGON_CHAIN_ID,
+		});
+		expect(prepareSpy).not.toHaveBeenCalled();
+		expect(window.location.reload).not.toHaveBeenCalled();
+	});
+
+	it('uses in-place alignment on chainChanged for pending wallet-only catch-up', async () => {
+		const targetNetwork = getNetworkBySlug('polygon');
+		const { app } = createConnectedApp({
+			walletChainId: BNB_CHAIN_ID,
+		});
+		stubWindowLocationReload();
+		app.pendingWalletSwitchRequest = {
+			source: 'write:create the order',
+			selectedChainChanged: false,
+			previousSelectedSlug: targetNetwork.slug,
+			targetSlug: targetNetwork.slug,
+		};
+		const transitionSpy = vi.spyOn(app, 'handleSuccessfulConnectedNetworkTransition').mockResolvedValue(true);
+		const prepareSpy = vi.spyOn(app, 'prepareForNetworkReload');
+
+		await app.handleWalletChainChangedEvent(POLYGON_CHAIN_ID);
+
+		expect(app.ctx.setWalletChainId).toHaveBeenCalledWith(POLYGON_CHAIN_ID);
+		expect(transitionSpy).toHaveBeenCalledWith(targetNetwork, {
+			source: 'write:create the order',
+			selectedChainChanged: false,
+			walletChainId: POLYGON_CHAIN_ID,
+		});
+		expect(prepareSpy).not.toHaveBeenCalled();
+		expect(window.location.reload).not.toHaveBeenCalled();
+	});
+
+	it('ignores the duplicate reload when chainChanged arrives after wallet-only alignment', async () => {
+		const targetNetwork = getNetworkBySlug('polygon');
+		const { app } = createConnectedApp({
+			walletChainId: BNB_CHAIN_ID,
+		});
+		stubWindowLocationReload();
+		app.skipNextWalletAlignedReloadTargetSlug = targetNetwork.slug;
+		const transitionSpy = vi.spyOn(app, 'handleSuccessfulConnectedNetworkTransition').mockResolvedValue(true);
+		const prepareSpy = vi.spyOn(app, 'prepareForNetworkReload');
+
+		await app.handleWalletChainChangedEvent(POLYGON_CHAIN_ID);
+
+		expect(transitionSpy).not.toHaveBeenCalled();
+		expect(prepareSpy).not.toHaveBeenCalled();
+		expect(window.location.reload).not.toHaveBeenCalled();
+		expect(app.skipNextWalletAlignedReloadTargetSlug).toBeNull();
 	});
 });
 
