@@ -1768,12 +1768,25 @@ export class CreateOrder extends BaseComponent {
         this.orderCreatedSuccessfully = false;
 
         if (this.transactionProgressSession) {
-            if (this.transactionProgressSession.isHidden()) {
-                this.transactionProgressSession.reopen();
+            const existingSession = this.transactionProgressSession;
+            const sessionHidden = existingSession.isHidden();
+            const sessionActive = existingSession.isActive();
+
+            if (sessionHidden) {
+                if (sessionActive) {
+                    existingSession.reopen();
+                    this.updateCreateButtonState();
+                    this.debug('Create order checklist already exists');
+                    return;
+                }
+
+                // Stale hidden terminal checklists should not block the next submit attempt.
+                this.clearTransactionProgressSession();
+            } else {
+                this.updateCreateButtonState();
+                this.debug('Create order checklist already exists');
+                return;
             }
-            this.updateCreateButtonState();
-            this.debug('Create order checklist already exists');
-            return;
         }
 
         if (this.isSubmitting) {

@@ -103,6 +103,20 @@ describe('CreateOrder checklist session lifecycle', () => {
         expect(component.isSubmitting).toBe(false);
     });
 
+    it('does not reopen a hidden terminal checklist and starts a fresh create flow', async () => {
+        const component = createComponent();
+        const { session } = createSessionDouble({ hidden: true, active: false });
+        component.transactionProgressSession = session;
+        const clearSessionSpy = vi.spyOn(component, 'clearTransactionProgressSession');
+        component.ensureWalletReadyForWrite = vi.fn(async () => false);
+
+        await component.handleCreateOrder({ preventDefault: vi.fn() });
+
+        expect(session.reopen).not.toHaveBeenCalled();
+        expect(clearSessionSpy).toHaveBeenCalledTimes(1);
+        expect(component.refreshContractDisabledState).toHaveBeenCalledTimes(1);
+    });
+
     it('disables the create button while a terminal checklist remains visible', () => {
         const component = createComponent();
         const { session } = createSessionDouble({ hidden: false, active: false });
