@@ -83,6 +83,25 @@ describe('CreateOrder fee display', () => {
             .toBe(`https://polygonscan.com/token/${ethers.utils.getAddress(FEE_TOKEN)}`);
         expect(document.querySelector('.fee-balance')?.classList.contains('is-hidden')).toBe(false);
         expect(document.querySelector('.fee-balance-value')?.textContent).toBe('42.1235');
+        expect(document.querySelector('.fee-balance-value')?.classList.contains('fee-balance-value--insufficient')).toBe(false);
+    });
+
+    it('highlights fee balance in red when balance is below required fee amount', () => {
+        const component = createComponent({ connected: true });
+        component.isReadOnlyMode = false;
+        component.feeToken = {
+            address: FEE_TOKEN,
+            amount: ethers.utils.parseUnits('1', 6),
+            symbol: 'USDC',
+            decimals: 6,
+            balance: '0.5',
+            balanceLoading: false,
+        };
+
+        component.updateFeeDisplay();
+
+        expect(document.querySelector('.fee-balance-value')?.textContent).toBe('0.50');
+        expect(document.querySelector('.fee-balance-value')?.classList.contains('fee-balance-value--insufficient')).toBe(true);
     });
 
     it('refreshes the fee token wallet balance through the connected refresh path', async () => {
