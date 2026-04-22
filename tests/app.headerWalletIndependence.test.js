@@ -4,8 +4,8 @@
  * 
  * Key behaviors:
  * - Network badge shows selected app network only, not wallet connection status
- * - Network dropdown selection does not trigger wallet switch/add-network
- * - Selected-network changes still refresh app state/services correctly
+ * - Connected-wallet header selection switches the wallet when needed
+ * - Disconnected header selection still uses the reload path
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -170,38 +170,66 @@ describe('Header wallet connection independence (issue #153)', () => {
 	});
 
 	describe('handleNetworkSelectionCommit', () => {
-		it('does not call switchWalletToNetwork when wallet is connected', async () => {
+		it('calls switchWalletToNetwork when a connected wallet changes the selected network', async () => {
 			const app = initializeApp({
 				walletChainId: BNB_CHAIN_ID, // Wallet on BNB
 				selectedSlug: ETHEREUM_SLUG, // App on Ethereum
 			});
 
 			const targetNetwork = getNetworkBySlug(POLYGON_SLUG);
-			const switchSpy = vi.spyOn(app, 'switchWalletToNetwork');
+			const previousSelectedNetwork = getNetworkBySlug(ETHEREUM_SLUG);
+			const switchSpy = vi.spyOn(app, 'switchWalletToNetwork').mockResolvedValue(true);
 
-			await app.handleNetworkSelectionCommit(targetNetwork);
-
-			// Should NOT call switchWalletToNetwork - the header selector
-			// only updates the app's selected network, not the wallet.
-			expect(switchSpy).not.toHaveBeenCalled();
-		});
-
-		it('triggers a full page reload for connected users', async () => {
-			const app = initializeApp({
-				walletChainId: BNB_CHAIN_ID,
-				selectedSlug: ETHEREUM_SLUG,
+			await app.handleNetworkSelectionCommit(targetNetwork, {
+				selectedChainChanged: true,
+				previousSelectedNetwork,
 			});
 
+			expect(switchSpy).toHaveBeenCalledWith(targetNetwork, {
+				source: 'header:network-selection',
+				selectedChainChanged: true,
+				previousSelectedNetwork,
+			});
+			expect(window.location.reload).not.toHaveBeenCalled();
+		});
+
+		it('retries wallet alignment from the header without reload when the selected network did not change', async () => {
+			const app = initializeApp({
+				walletChainId: BNB_CHAIN_ID,
+				selectedSlug: POLYGON_SLUG,
+			});
 			const targetNetwork = getNetworkBySlug(POLYGON_SLUG);
+			const switchSpy = vi.spyOn(app, 'switchWalletToNetwork').mockResolvedValue(true);
 
-			await app.handleNetworkSelectionCommit(targetNetwork);
+			await app.handleNetworkSelectionCommit(targetNetwork, {
+				selectedChainChanged: false,
+				previousSelectedNetwork: targetNetwork,
+			});
 
-			// Network switches always do a full reload regardless of wallet
-			// connection state. The in-page transition path was a source of
-			// subtle bugs with stale WS subscriptions and half-torn-down
-			// contracts; a reload guarantees a clean slate. The active tab
-			// is preserved via ACTIVE_TAB_STATE_KEY in history.state.
-			expect(window.location.reload).toHaveBeenCalledTimes(1);
+			expect(switchSpy).toHaveBeenCalledWith(targetNetwork, {
+				source: 'header:network-selection',
+				selectedChainChanged: false,
+				previousSelectedNetwork: targetNetwork,
+			});
+			expect(window.location.reload).not.toHaveBeenCalled();
+		});
+
+		it('does nothing when a connected wallet already matches the unchanged selected network', async () => {
+			const polygonChainId = getNetworkBySlug(POLYGON_SLUG)?.chainId;
+			const app = initializeApp({
+				walletChainId: polygonChainId,
+				selectedSlug: POLYGON_SLUG,
+			});
+			const targetNetwork = getNetworkBySlug(POLYGON_SLUG);
+			const switchSpy = vi.spyOn(app, 'switchWalletToNetwork');
+
+			await app.handleNetworkSelectionCommit(targetNetwork, {
+				selectedChainChanged: false,
+				previousSelectedNetwork: targetNetwork,
+			});
+
+			expect(switchSpy).not.toHaveBeenCalled();
+			expect(window.location.reload).not.toHaveBeenCalled();
 		});
 
 		it('triggers page reload for disconnected users', async () => {
@@ -209,12 +237,16 @@ describe('Header wallet connection independence (issue #153)', () => {
 				walletChainId: null, // No wallet connected
 				selectedSlug: ETHEREUM_SLUG,
 			});
-
+			const switchSpy = vi.spyOn(app, 'switchWalletToNetwork');
 			const targetNetwork = getNetworkBySlug(POLYGON_SLUG);
+			const previousSelectedNetwork = getNetworkBySlug(ETHEREUM_SLUG);
 
-			await app.handleNetworkSelectionCommit(targetNetwork);
+			await app.handleNetworkSelectionCommit(targetNetwork, {
+				selectedChainChanged: true,
+				previousSelectedNetwork,
+			});
 
-			// Should trigger page reload for disconnected users
+			expect(switchSpy).not.toHaveBeenCalled();
 			expect(window.location.reload).toHaveBeenCalled();
 		});
 
@@ -226,7 +258,6 @@ describe('Header wallet connection independence (issue #153)', () => {
 
 			await app.handleNetworkSelectionCommit(null);
 
-			// Should NOT trigger page reload
 			expect(window.location.reload).not.toHaveBeenCalled();
 		});
 	});
