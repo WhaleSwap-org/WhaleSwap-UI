@@ -81,7 +81,10 @@ class App {
 
 	async handleWalletConnectEvent(data = {}) {
 		const walletChainId = data?.chainId || walletManager.chainId || null;
-		const shouldShowCompatibilityNotice = data?.userInitiated === true;
+		const isMetaMaskWallet = typeof data?.isMetaMaskWallet === 'boolean'
+			? data.isMetaMaskWallet
+			: walletManager.isConnectedWalletMetaMask();
+		const shouldShowCompatibilityNotice = data?.userInitiated === true && !isMetaMaskWallet;
 
 		clearNetworkSetupRequired();
 		this.ctx.setWalletChainId(walletChainId);
