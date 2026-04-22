@@ -107,6 +107,7 @@ describe('CreateOrder fee display', () => {
 
         vi.spyOn(component, 'refreshAllowedTokenBalancesInBackground').mockResolvedValue(component.allowedTokens);
         mockGetTokenBalanceInfo.mockResolvedValue({
+            type: 'ok',
             balance: '7.5',
             symbol: 'USDC',
             decimals: 6,
@@ -134,6 +135,7 @@ describe('CreateOrder fee display', () => {
             };
         });
         mockGetTokenBalanceInfo.mockResolvedValue({
+            type: 'ok',
             balance: '15.01',
             symbol: 'USDC',
             decimals: 6,
@@ -145,5 +147,31 @@ describe('CreateOrder fee display', () => {
         expect(document.querySelector('.fee-balance-value')?.textContent).toBe('15.01');
         expect(document.querySelector('.fee-token-explorer-link')?.getAttribute('href'))
             .toBe(`https://polygonscan.com/token/${ethers.utils.getAddress(FEE_TOKEN)}`);
+    });
+
+    it('preserves the last known fee-token balance when a refresh lookup fails', async () => {
+        const component = createComponent({ connected: true });
+        component.isReadOnlyMode = false;
+        component.allowedTokens = [];
+        component.feeToken = {
+            address: FEE_TOKEN,
+            amount: ethers.utils.parseUnits('2', 6),
+            symbol: 'USDC',
+            decimals: 6,
+            balance: '7.5',
+            balanceLoading: false,
+        };
+
+        mockGetTokenBalanceInfo.mockResolvedValue({
+            type: 'unavailable',
+            symbol: 'USDC',
+            decimals: 6,
+        });
+
+        await component.refreshFeeTokenBalanceInBackground({ source: 'test-failure' });
+
+        expect(component.feeToken.balance).toBe('7.5');
+        expect(component.feeToken.balanceLookupFailed).toBe(true);
+        expect(document.querySelector('.fee-balance-value')?.textContent).toBe('7.50');
     });
 });
