@@ -113,6 +113,27 @@ describe('CreateOrder fee-token preflight balance checks', () => {
         expect(validation.formattedAvailable).toBe('0.5');
     });
 
+    it('retries when the fee-token balance lookup fails instead of treating it as zero', async () => {
+        const component = createComponent();
+        component.feeToken = {
+            address: FEE_TOKEN,
+            symbol: 'USDC',
+            decimals: 6,
+            amount: '1000000',
+            balance: '8.25',
+        };
+        vi.spyOn(component, 'requestFeeConfigRefresh').mockResolvedValue(null);
+        vi.spyOn(component, 'refreshFeeTokenBalanceInBackground').mockResolvedValue({
+            ...component.feeToken,
+            balanceLoading: false,
+            balanceLookupFailed: true,
+        });
+
+        await expect(component.validateFeeTokenBalanceBeforeSubmit('1')).rejects.toThrow(
+            'Fee token balance could not be refreshed. Please try again.'
+        );
+    });
+
     it('uses fee-token decimals for same-token preflight even if sell token cache is stale', async () => {
         const component = createComponent();
         component.sellToken = {

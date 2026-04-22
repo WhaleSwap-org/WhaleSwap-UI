@@ -1060,7 +1060,8 @@ export class CreateOrder extends BaseComponent {
         this.feeToken = {
             ...this.feeToken,
             balance: updatedFeeToken.balance,
-            balanceLoading: this.isTokenBalanceLoading(updatedFeeToken)
+            balanceLoading: this.isTokenBalanceLoading(updatedFeeToken),
+            balanceLookupFailed: false,
         };
         this.updateFeeDisplay();
         return true;
@@ -1073,7 +1074,8 @@ export class CreateOrder extends BaseComponent {
             if (this.feeToken?.balanceLoading) {
                 this.feeToken = {
                     ...this.feeToken,
-                    balanceLoading: false
+                    balanceLoading: false,
+                    balanceLookupFailed: false,
                 };
                 this.updateFeeDisplay();
             }
@@ -1102,20 +1104,35 @@ export class CreateOrder extends BaseComponent {
                     return this.feeToken;
                 }
 
-                this.feeToken = {
-                    ...this.feeToken,
-                    balance: balanceInfo?.balance || '0',
-                    balanceLoading: false
-                };
-                this.updateFeeDisplay();
-                return this.feeToken;
+                switch (balanceInfo.type) {
+                    case 'ok':
+                        this.feeToken = {
+                            ...this.feeToken,
+                            balance: balanceInfo.balance,
+                            balanceLoading: false,
+                            balanceLookupFailed: false,
+                        };
+                        this.updateFeeDisplay();
+                        return this.feeToken;
+                    case 'unavailable':
+                        this.feeToken = {
+                            ...this.feeToken,
+                            balanceLoading: false,
+                            balanceLookupFailed: true,
+                        };
+                        this.updateFeeDisplay();
+                        return this.feeToken;
+                    default:
+                        throw new Error(`Unknown fee token balance state: ${balanceInfo.type}`);
+                }
             })
             .catch((error) => {
                 this.debug(`Error refreshing fee token balance (${source}):`, error);
                 if (this.feeToken?.address && this.feeToken.address.toLowerCase() === requestedTokenAddress) {
                     this.feeToken = {
                         ...this.feeToken,
-                        balanceLoading: false
+                        balanceLoading: false,
+                        balanceLookupFailed: true,
                     };
                     this.updateFeeDisplay();
                 }
@@ -1698,6 +1715,9 @@ export class CreateOrder extends BaseComponent {
         }
         if (!refreshedFeeToken || refreshedFeeToken.balanceLoading) {
             throw new Error('Fee token balance is still loading');
+        }
+        if (refreshedFeeToken.balanceLookupFailed) {
+            throw new Error('Fee token balance could not be refreshed. Please try again.');
         }
 
         return refreshedFeeToken;
