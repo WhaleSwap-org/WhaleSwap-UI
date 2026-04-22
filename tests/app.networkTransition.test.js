@@ -140,6 +140,30 @@ describe('App network transition behavior', () => {
 		expect(window.location.reload).not.toHaveBeenCalled();
 	});
 
+	it('aligns in place when the wallet is already on the target chain but cached chain state is stale', async () => {
+		const targetNetwork = getNetworkBySlug('polygon');
+		const { app } = createConnectedApp({
+			walletChainId: BNB_CHAIN_ID,
+		});
+		stubWindowLocationReload();
+		const switchSpy = vi.spyOn(walletManager, 'switchToNetwork').mockResolvedValue(targetNetwork);
+		const transitionSpy = vi.spyOn(app, 'handleSuccessfulConnectedNetworkTransition').mockResolvedValue(true);
+
+		const result = await app.switchWalletToNetwork(targetNetwork, {
+			source: 'write:create the order',
+			selectedChainChanged: false,
+		});
+
+		expect(result).toBe(true);
+		expect(switchSpy).toHaveBeenCalledWith(targetNetwork);
+		expect(transitionSpy).toHaveBeenCalledWith(targetNetwork, {
+			source: 'write:create the order',
+			selectedChainChanged: false,
+			walletChainId: POLYGON_CHAIN_ID,
+		});
+		expect(window.location.reload).not.toHaveBeenCalled();
+	});
+
 	it('uses in-place alignment on chainChanged for pending wallet-only catch-up', async () => {
 		const targetNetwork = getNetworkBySlug('polygon');
 		const { app } = createConnectedApp({

@@ -1216,15 +1216,14 @@ class App {
 		}
 
 		if (selectedChainChanged === false) {
-			const walletChainId = walletManager.chainId;
-			const walletNetwork = getNetworkById(walletChainId);
-			if (walletNetwork?.slug === resolvedTargetNetwork.slug) {
-				await this.handleSuccessfulConnectedNetworkTransition(resolvedTargetNetwork, {
-					source,
-					selectedChainChanged: false,
-					walletChainId,
-				});
-			}
+			const walletChainId = getNetworkById(walletManager.chainId)?.slug === resolvedTargetNetwork.slug
+				? walletManager.chainId
+				: resolvedTargetNetwork.chainId;
+			await this.handleSuccessfulConnectedNetworkTransition(resolvedTargetNetwork, {
+				source,
+				selectedChainChanged: false,
+				walletChainId,
+			});
 			return true;
 		}
 
