@@ -167,13 +167,13 @@ describe('App network transition behavior', () => {
 		expect(window.location.reload).not.toHaveBeenCalled();
 	});
 
-	it('ignores the duplicate reload when chainChanged arrives after wallet-only alignment', async () => {
+	it('ignores a duplicate chainChanged after wallet-only alignment', async () => {
 		const targetNetwork = getNetworkBySlug('polygon');
 		const { app } = createConnectedApp({
 			walletChainId: BNB_CHAIN_ID,
 		});
 		stubWindowLocationReload();
-		app.skipNextWalletAlignedReloadTargetSlug = targetNetwork.slug;
+		app.ctx.getWalletChainId = () => POLYGON_CHAIN_ID;
 		const transitionSpy = vi.spyOn(app, 'handleSuccessfulConnectedNetworkTransition').mockResolvedValue(true);
 		const prepareSpy = vi.spyOn(app, 'prepareForNetworkReload');
 
@@ -182,7 +182,55 @@ describe('App network transition behavior', () => {
 		expect(transitionSpy).not.toHaveBeenCalled();
 		expect(prepareSpy).not.toHaveBeenCalled();
 		expect(window.location.reload).not.toHaveBeenCalled();
-		expect(app.skipNextWalletAlignedReloadTargetSlug).toBeNull();
+	});
+
+	it('clears pending wallet-only switch state when in-place alignment fails', async () => {
+		const targetNetwork = getNetworkBySlug('polygon');
+		const { app } = createConnectedApp({
+			walletChainId: BNB_CHAIN_ID,
+		});
+		const expectedError = new Error('alignment failed');
+		app.pendingWalletSwitchRequest = {
+			source: 'write:create the order',
+			selectedChainChanged: false,
+			previousSelectedSlug: targetNetwork.slug,
+			targetSlug: targetNetwork.slug,
+		};
+		vi.spyOn(app, 'handleWalletAlignedToSelectedNetwork').mockRejectedValue(expectedError);
+
+		await expect(
+			app.handleSuccessfulConnectedNetworkTransition(targetNetwork, {
+				source: 'write:create the order',
+				selectedChainChanged: false,
+				walletChainId: POLYGON_CHAIN_ID,
+			})
+		).rejects.toThrow('alignment failed');
+		expect(app.pendingWalletSwitchRequest).toBeNull();
+	});
+
+	it('does not report wallet switch failure when post-switch alignment fails', async () => {
+		const targetNetwork = getNetworkBySlug('polygon');
+		const { app } = createConnectedApp({
+			walletChainId: BNB_CHAIN_ID,
+		});
+		const expectedError = new Error('alignment failed');
+		const switchSpy = vi.spyOn(walletManager, 'switchToNetwork').mockImplementation(async () => {
+			walletManager.chainId = POLYGON_CHAIN_ID;
+			return targetNetwork;
+		});
+		const failureSpy = vi.spyOn(app, 'handleNetworkSwitchFailure');
+		vi.spyOn(app, 'handleWalletAlignedToSelectedNetwork').mockRejectedValue(expectedError);
+
+		await expect(
+			app.switchWalletToNetwork(targetNetwork, {
+				source: 'write:create the order',
+				selectedChainChanged: false,
+			})
+		).rejects.toThrow('alignment failed');
+
+		expect(switchSpy).toHaveBeenCalledWith(targetNetwork);
+		expect(failureSpy).not.toHaveBeenCalled();
+		expect(app.pendingWalletSwitchRequest).toBeNull();
 	});
 });
 

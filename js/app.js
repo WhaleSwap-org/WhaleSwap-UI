@@ -1110,14 +1110,16 @@ class App {
 			});
 
 			if (!requiresNetworkDataRefresh) {
-				const result = await this.handleWalletAlignedToSelectedNetwork(targetNetwork, {
-					source,
-					walletChainId,
-				});
-				if (this.pendingWalletSwitchRequest?.targetSlug === targetNetwork.slug) {
-					this.pendingWalletSwitchRequest = null;
+				try {
+					return await this.handleWalletAlignedToSelectedNetwork(targetNetwork, {
+						source,
+						walletChainId,
+					});
+				} finally {
+					if (this.pendingWalletSwitchRequest?.targetSlug === targetNetwork.slug) {
+						this.pendingWalletSwitchRequest = null;
+					}
 				}
-				return result;
 			}
 
 			this.showGlobalLoader(`Switching to ${getNetworkLabel(targetNetwork)}...`, { mode: 'spinner' });
@@ -1202,28 +1204,6 @@ class App {
 
 		try {
 			await walletManager.switchToNetwork(resolvedTargetNetwork);
-			if (selectedChainChanged === false) {
-				const walletChainId = walletManager.chainId;
-				const walletNetwork = getNetworkById(walletChainId);
-				if (walletNetwork?.slug === resolvedTargetNetwork.slug) {
-					await this.handleSuccessfulConnectedNetworkTransition(resolvedTargetNetwork, {
-						source,
-						selectedChainChanged: false,
-						walletChainId,
-					});
-				}
-				return true;
-			}
-
-			// The wallet's chainChanged event (see handler above) will fire
-			// and trigger the full-reload path. Trigger it here as a safety
-			// net in case the wallet does not emit chainChanged (some
-			// providers skip the event when the chain is already correct).
-			triggerPageReloadWithSwitchFallback({
-				loaderMode: 'spinner',
-				loaderMessage: `Switching to ${getNetworkLabel(resolvedTargetNetwork)}...`
-			});
-			return true;
 		} catch (error) {
 			const pendingSwitchRequest = this.pendingWalletSwitchRequest;
 			if (this.pendingWalletSwitchRequest?.targetSlug === resolvedTargetNetwork.slug) {
@@ -1234,6 +1214,29 @@ class App {
 			});
 			return false;
 		}
+
+		if (selectedChainChanged === false) {
+			const walletChainId = walletManager.chainId;
+			const walletNetwork = getNetworkById(walletChainId);
+			if (walletNetwork?.slug === resolvedTargetNetwork.slug) {
+				await this.handleSuccessfulConnectedNetworkTransition(resolvedTargetNetwork, {
+					source,
+					selectedChainChanged: false,
+					walletChainId,
+				});
+			}
+			return true;
+		}
+
+		// The wallet's chainChanged event (see handler above) will fire
+		// and trigger the full-reload path. Trigger it here as a safety
+		// net in case the wallet does not emit chainChanged (some
+		// providers skip the event when the chain is already correct).
+		triggerPageReloadWithSwitchFallback({
+			loaderMode: 'spinner',
+			loaderMessage: `Switching to ${getNetworkLabel(resolvedTargetNetwork)}...`
+		});
+		return true;
 	}
 
 	async handleNetworkSelectionCommit(network, options = {}) {
