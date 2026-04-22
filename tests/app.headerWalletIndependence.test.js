@@ -10,12 +10,13 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import '../js/app.js';
-import { getNetworkBySlug, getNetworkById } from '../js/config/networks.js';
+import { getDefaultNetwork, getNetworkBySlug, getNetworkById } from '../js/config/networks.js';
 import { walletManager } from '../js/services/WalletManager.js';
 
 const BNB_CHAIN_ID = '0x38';
 const POLYGON_SLUG = 'polygon';
 const ETHEREUM_SLUG = 'ethereum';
+const DEFAULT_NETWORK = getDefaultNetwork();
 
 function setupNetworkSelectorDom() {
 	document.body.innerHTML = `
@@ -112,8 +113,8 @@ describe('Header wallet connection independence (issue #153)', () => {
 			const networkButton = document.querySelector('.network-button');
 			const networkDropdown = document.querySelector('.network-dropdown');
 
-			// Network badge should show selected network (Polygon)
-			expect(networkBadge?.textContent).toContain('Polygon');
+			// Network badge should show the current selected/default network label
+			expect(networkBadge?.textContent).toContain(DEFAULT_NETWORK.name);
 
 			// Should NOT have wallet connection status classes
 			expect(networkBadge?.classList.contains('connected')).toBe(false);
@@ -134,8 +135,8 @@ describe('Header wallet connection independence (issue #153)', () => {
 
 			const networkBadge = document.querySelector('.network-badge');
 
-			// Network badge should show selected network (Polygon), not wallet network (BNB)
-			expect(networkBadge?.textContent).toContain('Polygon');
+			// Network badge should show selected/default network label, not wallet state
+			expect(networkBadge?.textContent).toContain(DEFAULT_NETWORK.name);
 			expect(networkBadge?.classList.contains('wrong-network')).toBe(false);
 		});
 
@@ -148,8 +149,8 @@ describe('Header wallet connection independence (issue #153)', () => {
 
 			const networkBadge = document.querySelector('.network-badge');
 
-			// Network badge should show selected network (Polygon)
-			expect(networkBadge?.textContent).toContain('Polygon');
+			// Network badge should show selected/default network label
+			expect(networkBadge?.textContent).toContain(DEFAULT_NETWORK.name);
 			// Should NOT have 'connected' class (wallet connection status is separate)
 			expect(networkBadge?.classList.contains('connected')).toBe(false);
 		});
@@ -162,8 +163,8 @@ describe('Header wallet connection independence (issue #153)', () => {
 
 			const networkBadge = document.querySelector('.network-badge');
 
-			// Network badge should show selected network (Polygon)
-			expect(networkBadge?.textContent).toContain('Polygon');
+			// Network badge should show selected/default network label
+			expect(networkBadge?.textContent).toContain(DEFAULT_NETWORK.name);
 			// Should NOT have 'disconnected' class
 			expect(networkBadge?.classList.contains('disconnected')).toBe(false);
 		});

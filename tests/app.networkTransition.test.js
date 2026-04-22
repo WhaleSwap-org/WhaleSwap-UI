@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import '../js/app.js';
 import { BaseComponent } from '../js/components/BaseComponent.js';
-import { getNetworkBySlug, setActiveNetwork } from '../js/config/networks.js';
+import { getDefaultNetwork, getNetworkBySlug, setActiveNetwork } from '../js/config/networks.js';
 import { walletManager } from '../js/services/WalletManager.js';
 
 const POLYGON_CHAIN_ID = '0x89';
@@ -165,9 +165,12 @@ describe('App network transition behavior', () => {
 	});
 
 	it('uses in-place alignment on chainChanged for pending wallet-only catch-up', async () => {
-		const targetNetwork = getNetworkBySlug('polygon');
+		const targetNetwork = getDefaultNetwork();
+		const initialWalletChainId = targetNetwork.chainId === BNB_CHAIN_ID
+			? POLYGON_CHAIN_ID
+			: BNB_CHAIN_ID;
 		const { app } = createConnectedApp({
-			walletChainId: BNB_CHAIN_ID,
+			walletChainId: initialWalletChainId,
 		});
 		stubWindowLocationReload();
 		app.pendingWalletSwitchRequest = {
@@ -179,13 +182,13 @@ describe('App network transition behavior', () => {
 		const transitionSpy = vi.spyOn(app, 'handleSuccessfulConnectedNetworkTransition').mockResolvedValue(true);
 		const prepareSpy = vi.spyOn(app, 'prepareForNetworkReload');
 
-		await app.handleWalletChainChangedEvent(POLYGON_CHAIN_ID);
+		await app.handleWalletChainChangedEvent(targetNetwork.chainId);
 
-		expect(app.ctx.setWalletChainId).toHaveBeenCalledWith(POLYGON_CHAIN_ID);
+		expect(app.ctx.setWalletChainId).toHaveBeenCalledWith(targetNetwork.chainId);
 		expect(transitionSpy).toHaveBeenCalledWith(targetNetwork, {
 			source: 'write:create the order',
 			selectedChainChanged: false,
-			walletChainId: POLYGON_CHAIN_ID,
+			walletChainId: targetNetwork.chainId,
 		});
 		expect(prepareSpy).not.toHaveBeenCalled();
 		expect(window.location.reload).not.toHaveBeenCalled();
