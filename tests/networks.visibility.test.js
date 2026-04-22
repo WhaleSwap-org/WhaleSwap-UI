@@ -18,6 +18,12 @@ afterEach(() => {
 });
 
 describe('network visibility', () => {
+    it('defaults to BNB Chain', async () => {
+        const networks = await loadNetworksModule();
+
+        expect(networks.getDefaultNetwork().slug).toBe('bnb');
+    });
+
     it('hides Amoy on non-local hosts without an explicit override', async () => {
         const networks = await loadNetworksModule();
 

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ethers } from 'ethers';
 import { CreateOrder } from '../js/components/CreateOrder.js';
+import { getDefaultNetwork } from '../js/config/networks.js';
 import { buildTokenDisplaySymbolMap } from '../js/utils/tokenDisplay.js';
 import { walletManager } from '../js/services/WalletManager.js';
 
@@ -108,7 +109,7 @@ describe('CreateOrder display symbol wiring', () => {
 
         const explorerLink = listContainer.querySelector('.token-explorer-link');
         expect(explorerLink?.getAttribute('href'))
-            .toBe(`https://polygonscan.com/token/${ethers.utils.getAddress(TOKEN_C)}`);
+            .toBe(`${getDefaultNetwork().explorer}/token/${ethers.utils.getAddress(TOKEN_C)}`);
     });
 
     it('allows searching by displaySymbol', async () => {

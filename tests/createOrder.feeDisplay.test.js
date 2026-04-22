@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ethers } from 'ethers';
+import { getDefaultNetwork } from '../js/config/networks.js';
 
 const mockGetAllWalletTokens = vi.fn();
 const mockGetContractAllowedTokens = vi.fn();
@@ -80,7 +81,7 @@ describe('CreateOrder fee display', () => {
         expect(document.querySelector('.fee-amount-value')?.textContent).toBe('1.5');
         expect(document.querySelector('.fee-token-symbol-label')?.textContent).toBe('USDC');
         expect(document.querySelector('.fee-token-explorer-link')?.getAttribute('href'))
-            .toBe(`https://polygonscan.com/token/${ethers.utils.getAddress(FEE_TOKEN)}`);
+            .toBe(`${getDefaultNetwork().explorer}/token/${ethers.utils.getAddress(FEE_TOKEN)}`);
         expect(document.querySelector('.fee-balance')?.classList.contains('is-hidden')).toBe(false);
         expect(document.querySelector('.fee-balance-value')?.textContent).toBe('42.1235');
     });
@@ -146,7 +147,7 @@ describe('CreateOrder fee display', () => {
         expect(mockGetTokenBalanceInfo).toHaveBeenCalledWith(FEE_TOKEN);
         expect(document.querySelector('.fee-balance-value')?.textContent).toBe('15.01');
         expect(document.querySelector('.fee-token-explorer-link')?.getAttribute('href'))
-            .toBe(`https://polygonscan.com/token/${ethers.utils.getAddress(FEE_TOKEN)}`);
+            .toBe(`${getDefaultNetwork().explorer}/token/${ethers.utils.getAddress(FEE_TOKEN)}`);
     });
 
     it('preserves the last known fee-token balance when a refresh lookup fails', async () => {
