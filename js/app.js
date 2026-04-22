@@ -1241,21 +1241,39 @@ class App {
 	async handleNetworkSelectionCommit(network, options = {}) {
 		if (!network) return;
 
-		try {
-			setActiveNetwork(network);
-		} catch (error) {
-			this.error('Failed to set active network from selection:', error);
+		const {
+			selectedChainChanged = true,
+			previousSelectedNetwork = null,
+		} = options;
+
+		setActiveNetwork(network);
+
+		const wallet = this.ctx?.getWallet?.();
+		if (!wallet?.isWalletConnected?.()) {
+			if (!selectedChainChanged) {
+				return;
+			}
+
+			// Network switches always do a full page reload. In-page transitions
+			// were a source of subtle bugs (stale WS subscriptions, orphaned
+			// promises, half-torn-down contracts). A reload gives a guaranteed
+			// clean slate, and the active tab is already preserved via
+			// ACTIVE_TAB_STATE_KEY in history.state (see persistBootstrapLoaderState).
+			triggerPageReloadWithSwitchFallback({
+				loaderMode: 'spinner',
+				loaderMessage: `Switching to ${getNetworkLabel(network)}...`
+			});
 			return;
 		}
 
-		// Network switches always do a full page reload. In-page transitions
-		// were a source of subtle bugs (stale WS subscriptions, orphaned
-		// promises, half-torn-down contracts). A reload gives a guaranteed
-		// clean slate, and the active tab is already preserved via
-		// ACTIVE_TAB_STATE_KEY in history.state (see persistBootstrapLoaderState).
-		triggerPageReloadWithSwitchFallback({
-			loaderMode: 'spinner',
-			loaderMessage: `Switching to ${getNetworkLabel(network)}...`
+		if (!selectedChainChanged && this.isWalletOnSelectedNetwork()) {
+			return;
+		}
+
+		return await this.switchWalletToNetwork(network, {
+			source: 'header:network-selection',
+			selectedChainChanged,
+			previousSelectedNetwork,
 		});
 	}
 
