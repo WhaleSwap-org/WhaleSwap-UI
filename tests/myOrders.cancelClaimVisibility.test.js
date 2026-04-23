@@ -23,11 +23,19 @@ function createComponent() {
     };
 
     const component = new MyOrders();
+    let isWalletActionActive = false;
     component.setContext({
         getWebSocket: () => ws,
         getWallet: () => ({
             getAccount: () => ACCOUNT
-        })
+        }),
+        beginWalletAction: () => {
+            isWalletActionActive = true;
+        },
+        endWalletAction: () => {
+            isWalletActionActive = false;
+        },
+        isWalletActionInFlight: () => isWalletActionActive,
     });
     component.provider = {
         getSigner: vi.fn(() => ({}))

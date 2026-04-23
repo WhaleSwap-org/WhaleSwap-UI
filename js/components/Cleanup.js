@@ -405,6 +405,10 @@ export class Cleanup extends BaseComponent {
     }
 
     async performCleanup() {
+        if (!this.startWalletAction()) {
+            return;
+        }
+
         try {
             // Check if wallet is connected first
             const wallet = this.ctx.getWallet();
@@ -527,6 +531,7 @@ export class Cleanup extends BaseComponent {
             this.cleanupButton.textContent = 'Clean Orders';
             this.cleanupButton.disabled = false;
             await this.checkCleanupOpportunities();
+            this.endWalletAction();
         }
     }
 
@@ -650,6 +655,10 @@ export class Cleanup extends BaseComponent {
     }
 
     async disableContract() {
+        if (!this.startWalletAction()) {
+            return;
+        }
+
         try {
             const contract = this.webSocket?.contract;
             if (!contract) {
@@ -683,6 +692,8 @@ export class Cleanup extends BaseComponent {
             this.showError(`Failed to disable contract: ${error.message}`);
             this.disableContractButton.disabled = false;
             this.disableContractButton.textContent = 'Disable Contract';
+        } finally {
+            this.endWalletAction();
         }
     }
 
@@ -723,6 +734,10 @@ export class Cleanup extends BaseComponent {
     }
 
     async updateFeeConfig() {
+        if (!this.startWalletAction()) {
+            return;
+        }
+
         try {
             const contract = this.webSocket?.contract;
             if (!contract) {
@@ -769,6 +784,7 @@ export class Cleanup extends BaseComponent {
         } finally {
             this.updateFeeConfigButton.disabled = false;
             this.updateFeeConfigButton.textContent = 'Update Fee Config';
+            this.endWalletAction();
         }
     }
 } 

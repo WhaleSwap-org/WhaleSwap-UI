@@ -1794,8 +1794,7 @@ export class CreateOrder extends BaseComponent {
             return;
         }
 
-        if (this.isSubmitting) {
-            this.debug('Already processing a transaction');
+        if (!this.startWalletAction()) {
             return;
         }
 
@@ -2172,6 +2171,7 @@ export class CreateOrder extends BaseComponent {
         } finally {
             this.isSubmitting = false;
             this.updateCreateButtonState();
+            this.endWalletAction();
         }
     }
 

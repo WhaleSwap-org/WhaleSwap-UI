@@ -33,6 +33,12 @@
  * Values are populated by App during initialization
  * @returns {AppContext}
  */
+function assert(condition, message) {
+    if (!condition) {
+        throw new Error(message);
+    }
+}
+
 export function createAppContext() {
     return {
         // Core services (set by App during load)
@@ -42,6 +48,7 @@ export function createAppContext() {
         contractService: null,
         selectedChainSlug: null,
         walletChainId: null,
+        isWalletActionActive: false,
         
         // Toast functions
         toast: {
@@ -114,6 +121,20 @@ export function createAppContext() {
          */
         getWalletChainId() {
             return this.walletChainId;
+        },
+
+        beginWalletAction() {
+            assert(!this.isWalletActionActive, 'Wallet action already active');
+            this.isWalletActionActive = true;
+        },
+
+        endWalletAction() {
+            assert(this.isWalletActionActive, 'Wallet action not active');
+            this.isWalletActionActive = false;
+        },
+
+        isWalletActionInFlight() {
+            return this.isWalletActionActive;
         },
         
         /**
