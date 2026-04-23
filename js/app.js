@@ -1227,6 +1227,10 @@ class App {
 
 	async handleNetworkSelectionCommit(network, options = {}) {
 		if (!network) return;
+		if (isNetworkSelectorLockedByWalletAction()) {
+			this.showWarning(NETWORK_SELECTOR_LOCK_WARNING);
+			return false;
+		}
 
 		const {
 			selectedChainChanged = true,
@@ -2119,6 +2123,7 @@ let addNetworkButton, networkButton, networkDropdown, networkBadge;
 let networkSelectorElement;
 let selectedNetworkSlug = null;
 let networkSetupRequiredSlug = null;
+const NETWORK_SELECTOR_LOCK_WARNING = 'Finish or cancel the current wallet action before switching networks.';
 
 function getNetworkLogoPath(network) {
 	return typeof network?.logo === 'string' ? network.logo : '';
@@ -2236,6 +2241,29 @@ function syncAddNetworkButtonVisibility() {
 		: 'Add Network';
 }
 
+function isNetworkSelectorLockedByWalletAction() {
+	return Boolean(window.app?.ctx?.isWalletActionInFlight?.());
+}
+
+function syncNetworkSelectorWalletActionState() {
+	const isLocked = isNetworkSelectorLockedByWalletAction();
+
+	if (networkButton) {
+		networkButton.disabled = isLocked;
+		networkButton.setAttribute('aria-disabled', String(isLocked));
+		networkButton.classList.toggle('wallet-action-pending', isLocked);
+	}
+
+	if (networkDropdown) {
+		networkDropdown.dataset.walletActionPending = String(isLocked);
+		networkDropdown.classList.toggle('wallet-action-pending', isLocked);
+	}
+
+	if (isLocked) {
+		toggleNetworkDropdown(false);
+	}
+}
+
 function triggerPageReloadWithSwitchFallback(options = {}) {
 	try {
 		window.app?.prepareForNetworkReload?.(options);
@@ -2270,6 +2298,7 @@ function syncNetworkBadgeFromState() {
 	if (networkDropdown) {
 		networkDropdown.dataset.networkStatus = 'default';
 	}
+	syncNetworkSelectorWalletActionState();
 
 	// Let syncAddNetworkButtonVisibility() decide visibility based on networkSetupRequiredSlug (PR #178 review)
 	// This preserves the "Add <Network>" retry affordance when setup is required
@@ -2332,6 +2361,11 @@ const populateNetworkOptions = () => {
 	// Re-attach click handlers only if multiple networks.
 		document.querySelectorAll('.network-option').forEach(option => {
 			const commitSelection = async () => {
+				if (isNetworkSelectorLockedByWalletAction()) {
+					window.app?.showWarning?.(NETWORK_SELECTOR_LOCK_WARNING);
+					return;
+				}
+
 				const network = getNetworkBySlug(option.dataset.slug);
 				if (!network) return;
 				const previousSelectedNetwork = getNetworkBySlug(
@@ -2364,6 +2398,7 @@ const populateNetworkOptions = () => {
 	});
 
 	applySelectedNetwork(getInitialSelectedNetwork(), { updateUrl: true });
+	syncNetworkSelectorWalletActionState();
 };
 
 // Initialize network dropdown when DOM is ready
@@ -2412,6 +2447,10 @@ document.addEventListener('DOMContentLoaded', () => {
 		networkButton.addEventListener('click', (event) => {
 			event.preventDefault();
 			if (networkButton.classList.contains('single-network')) return;
+			if (isNetworkSelectorLockedByWalletAction()) {
+				window.app?.showWarning?.(NETWORK_SELECTOR_LOCK_WARNING);
+				return;
+			}
 			toggleNetworkDropdown();
 		});
 	}
@@ -2435,6 +2474,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
 	window.addEventListener('popstate', () => {
 		applySelectedNetwork(getInitialSelectedNetwork(), { updateUrl: false });
+	});
+	window.addEventListener('wallet-action-lock-changed', () => {
+		syncNetworkSelectorWalletActionState();
 	});
 
 	window.syncNetworkBadgeFromState = syncNetworkBadgeFromState;
