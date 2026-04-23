@@ -60,11 +60,19 @@ function createSubmitHarness({ takerValue = '' } = {}) {
     const ws = {
         syncAllOrders: vi.fn(async () => {}),
     };
+    let isWalletActionActive = false;
     const ctx = {
         toast,
         getWebSocket: () => ws,
         getWalletChainId: () => '0x89',
         getSelectedChainSlug: () => 'test-chain',
+        isWalletActionInFlight: () => isWalletActionActive,
+        beginWalletAction: () => {
+            isWalletActionActive = true;
+        },
+        endWalletAction: () => {
+            isWalletActionActive = false;
+        },
         showError: vi.fn(),
         showSuccess: vi.fn(),
         showWarning: vi.fn(),
