@@ -46,6 +46,30 @@ describe('WS recovery behavior', () => {
         expect(component.initializationRetryTimer).toBeNull();
     });
 
+    it('Cleanup replaces a pending retry when mode changes before timer fires', () => {
+        vi.useFakeTimers();
+        document.body.innerHTML = '<div id="cleanup-container"></div>';
+
+        const component = new Cleanup();
+        const initSpy = vi.spyOn(component, 'initialize').mockResolvedValue();
+
+        component.scheduleInitializationRetry(true);
+        const firstRetryTimer = component.initializationRetryTimer;
+        expect(component.initializationRetryMode).toBe(true);
+
+        component.scheduleInitializationRetry(false);
+        const secondRetryTimer = component.initializationRetryTimer;
+        expect(secondRetryTimer).toBeTruthy();
+        expect(secondRetryTimer).not.toBe(firstRetryTimer);
+        expect(component.initializationRetryMode).toBe(false);
+
+        vi.advanceTimersByTime(300);
+        expect(initSpy).toHaveBeenCalledTimes(1);
+        expect(initSpy).toHaveBeenCalledWith(false);
+        expect(component.initializationRetryTimer).toBeNull();
+        expect(component.initializationRetryMode).toBeNull();
+    });
+
     it('ContractParams recovery waits for initialization when websocket is not initialized yet', async () => {
         document.body.innerHTML = '<div id="contract-params"></div>';
 
