@@ -1050,31 +1050,15 @@ class App {
 		const {
 			walletChainId = null,
 		} = options;
-		const preferredTab = this.currentTab;
-		const wallet = this.ctx?.getWallet?.();
 
 		this.debug('Handling wallet alignment on already-selected network:', {
 			targetNetwork: targetNetwork.slug,
-			preferredTab,
 		});
 
 		this.ctx?.setWalletChainId?.(walletChainId ?? walletManager.chainId ?? targetNetwork.chainId);
 		clearNetworkSetupRequired();
 		setActiveNetwork(targetNetwork);
 		syncNetworkBadgeFromState();
-
-		this.updateTabVisibility(true);
-		await this.refreshAdminTabVisibility();
-		await this.refreshClaimTabVisibility({ force: true });
-		await this.refreshOrderTabVisibility({ force: true });
-
-		await this.refreshActiveComponent();
-
-		if (!this.isTabVisible(preferredTab)) {
-			await this.showTab('create-order', !wallet?.isWalletConnected?.(), {
-				skipInitialize: this.tabReady.has('create-order'),
-			});
-		}
 
 		return true;
 	}

@@ -259,6 +259,31 @@ describe('App network transition behavior', () => {
 		expect(failureSpy).not.toHaveBeenCalled();
 		expect(app.pendingWalletSwitchRequest).toBeNull();
 	});
+
+	it('skips heavy UI refresh work for wallet-only alignment on the already-selected network', async () => {
+		const targetNetwork = getNetworkBySlug('polygon');
+		setActiveNetwork(targetNetwork);
+		const { app } = createConnectedApp({
+			walletChainId: BNB_CHAIN_ID,
+		});
+
+		const result = await app.handleSuccessfulConnectedNetworkTransition(targetNetwork, {
+			source: 'write:create the order',
+			selectedChainChanged: false,
+			walletChainId: POLYGON_CHAIN_ID,
+		});
+
+		expect(result).toBe(true);
+		expect(app.ctx.setWalletChainId).toHaveBeenCalledWith(POLYGON_CHAIN_ID);
+		expect(app.recreateNetworkServices).not.toHaveBeenCalled();
+		expect(app.reinitializeComponents).not.toHaveBeenCalled();
+		expect(app.updateTabVisibility).not.toHaveBeenCalled();
+		expect(app.refreshAdminTabVisibility).not.toHaveBeenCalled();
+		expect(app.refreshClaimTabVisibility).not.toHaveBeenCalled();
+		expect(app.refreshOrderTabVisibility).not.toHaveBeenCalled();
+		expect(app.refreshActiveComponent).not.toHaveBeenCalled();
+		expect(app.showTab).not.toHaveBeenCalled();
+	});
 });
 
 describe('App active tab persistence', () => {
