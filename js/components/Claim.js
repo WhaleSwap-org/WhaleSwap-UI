@@ -258,7 +258,6 @@ export class Claim extends BaseComponent {
         }
 
         const tokenLower = normalizedToken.toLowerCase();
-        if (this.pendingClaims.has(tokenLower)) return;
 
         const wallet = this.ctx.getWallet();
         if (!wallet?.isWalletConnected?.()) {
