@@ -208,14 +208,19 @@ export class BaseComponent {
         });
     }
 
-    acquireWalletActionLock() {
+    startWalletAction() {
         const ctx = this.ctx;
         if (ctx.isWalletActionInFlight()) {
             this.showWarning('Finish or cancel the current wallet action before starting another one.');
-            return null;
+            return false;
         }
 
-        return ctx.beginWalletAction();
+        ctx.beginWalletAction();
+        return true;
+    }
+
+    endWalletAction() {
+        this.ctx.endWalletAction();
     }
 
     /**

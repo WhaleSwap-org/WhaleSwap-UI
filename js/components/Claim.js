@@ -271,15 +271,12 @@ export class Claim extends BaseComponent {
             return;
         }
 
-        this.pendingClaims.add(tokenLower);
-        this.renderClaimRows(this.claims);
-
-        const releaseWalletActionLock = this.acquireWalletActionLock();
-        if (!releaseWalletActionLock) {
-            this.pendingClaims.delete(tokenLower);
-            this.renderClaimRows(this.claims);
+        if (!this.startWalletAction()) {
             return;
         }
+
+        this.pendingClaims.add(tokenLower);
+        this.renderClaimRows(this.claims);
 
         try {
             if (!await this.ensureWalletReadyForWrite('claim this token')) {
@@ -336,7 +333,7 @@ export class Claim extends BaseComponent {
             }
         } finally {
             this.pendingClaims.delete(tokenLower);
-            releaseWalletActionLock();
+            this.endWalletAction();
             await this.refreshClaimables();
         }
     }

@@ -383,8 +383,7 @@ export class MyOrders extends BaseComponent {
                 cancelButton.textContent = 'Cancel';
                 
                 cancelButton.addEventListener('click', async () => {
-                    const releaseWalletActionLock = this.acquireWalletActionLock();
-                    if (!releaseWalletActionLock) {
+                    if (!this.startWalletAction()) {
                         return;
                     }
 
@@ -452,7 +451,7 @@ export class MyOrders extends BaseComponent {
                         cancelButton.disabled = false;
                         cancelButton.textContent = 'Cancel';
                         cancelButton.classList.remove('disabled');
-                        releaseWalletActionLock();
+                        this.endWalletAction();
                     }
                 });
                 
@@ -503,8 +502,7 @@ export class MyOrders extends BaseComponent {
                 cancelButton.textContent = 'Cancel';
                 
                 cancelButton.addEventListener('click', async () => {
-                    const releaseWalletActionLock = this.acquireWalletActionLock();
-                    if (!releaseWalletActionLock) {
+                    if (!this.startWalletAction()) {
                         return;
                     }
 
@@ -555,7 +553,7 @@ export class MyOrders extends BaseComponent {
                         cancelButton.disabled = false;
                         cancelButton.textContent = 'Cancel';
                     } finally {
-                        releaseWalletActionLock();
+                        this.endWalletAction();
                     }
                 });
                 

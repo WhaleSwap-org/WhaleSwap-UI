@@ -31,9 +31,9 @@ function createComponent() {
         }),
         beginWalletAction: () => {
             isWalletActionActive = true;
-            return () => {
-                isWalletActionActive = false;
-            };
+        },
+        endWalletAction: () => {
+            isWalletActionActive = false;
         },
         isWalletActionInFlight: () => isWalletActionActive,
     });

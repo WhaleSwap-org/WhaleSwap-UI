@@ -126,16 +126,10 @@ export function createAppContext() {
         beginWalletAction() {
             assert(!this.isWalletActionActive, 'Wallet action already active');
             this.isWalletActionActive = true;
-
-            let released = false;
-            return () => {
-                if (released) return;
-                released = true;
-                this.endWalletAction();
-            };
         },
 
         endWalletAction() {
+            assert(this.isWalletActionActive, 'Wallet action not active');
             this.isWalletActionActive = false;
         },
 

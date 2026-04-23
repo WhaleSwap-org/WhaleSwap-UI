@@ -405,8 +405,7 @@ export class Cleanup extends BaseComponent {
     }
 
     async performCleanup() {
-        const releaseWalletActionLock = this.acquireWalletActionLock();
-        if (!releaseWalletActionLock) {
+        if (!this.startWalletAction()) {
             return;
         }
 
@@ -532,7 +531,7 @@ export class Cleanup extends BaseComponent {
             this.cleanupButton.textContent = 'Clean Orders';
             this.cleanupButton.disabled = false;
             await this.checkCleanupOpportunities();
-            releaseWalletActionLock();
+            this.endWalletAction();
         }
     }
 
@@ -656,8 +655,7 @@ export class Cleanup extends BaseComponent {
     }
 
     async disableContract() {
-        const releaseWalletActionLock = this.acquireWalletActionLock();
-        if (!releaseWalletActionLock) {
+        if (!this.startWalletAction()) {
             return;
         }
 
@@ -695,7 +693,7 @@ export class Cleanup extends BaseComponent {
             this.disableContractButton.disabled = false;
             this.disableContractButton.textContent = 'Disable Contract';
         } finally {
-            releaseWalletActionLock();
+            this.endWalletAction();
         }
     }
 
@@ -736,8 +734,7 @@ export class Cleanup extends BaseComponent {
     }
 
     async updateFeeConfig() {
-        const releaseWalletActionLock = this.acquireWalletActionLock();
-        if (!releaseWalletActionLock) {
+        if (!this.startWalletAction()) {
             return;
         }
 
@@ -787,7 +784,7 @@ export class Cleanup extends BaseComponent {
         } finally {
             this.updateFeeConfigButton.disabled = false;
             this.updateFeeConfigButton.textContent = 'Update Fee Config';
-            releaseWalletActionLock();
+            this.endWalletAction();
         }
     }
 } 

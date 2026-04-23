@@ -838,8 +838,7 @@ export class Admin extends BaseComponent {
             return;
         }
 
-        const releaseWalletActionLock = this.acquireWalletActionLock();
-        if (!releaseWalletActionLock) {
+        if (!this.startWalletAction()) {
             return;
         }
 
@@ -882,7 +881,7 @@ export class Admin extends BaseComponent {
         } finally {
             this.updateFeeButton.disabled = false;
             this.updateFeeButton.textContent = 'Update Fee Config';
-            releaseWalletActionLock();
+            this.endWalletAction();
         }
     }
 
@@ -954,8 +953,7 @@ export class Admin extends BaseComponent {
             return;
         }
 
-        const releaseWalletActionLock = this.acquireWalletActionLock();
-        if (!releaseWalletActionLock) {
+        if (!this.startWalletAction()) {
             return;
         }
 
@@ -985,7 +983,7 @@ export class Admin extends BaseComponent {
         } finally {
             this.updateTokensButton.disabled = false;
             this.updateTokensButton.textContent = 'Update Allowed Tokens';
-            releaseWalletActionLock();
+            this.endWalletAction();
         }
     }
 
@@ -995,8 +993,7 @@ export class Admin extends BaseComponent {
         );
         if (!confirmed) return;
 
-        const releaseWalletActionLock = this.acquireWalletActionLock();
-        if (!releaseWalletActionLock) {
+        if (!this.startWalletAction()) {
             return;
         }
 
@@ -1021,7 +1018,7 @@ export class Admin extends BaseComponent {
             this.disableButton.disabled = false;
             this.disableButton.textContent = 'Disable New Orders Permanently';
         } finally {
-            releaseWalletActionLock();
+            this.endWalletAction();
         }
     }
 
