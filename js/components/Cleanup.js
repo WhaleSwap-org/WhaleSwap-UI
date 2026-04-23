@@ -13,6 +13,7 @@ export class Cleanup extends BaseComponent {
         this.currentMode = null; // track readOnly/connected mode to allow re-init on change
         this.eventSubscriptions = new Set(); // Track WebSocket subscriptions for cleanup
         this.initializationRetryTimer = null;
+        this.initializationRetryMode = null;
         
         // Initialize logger
         const logger = createLogger('CLEANUP');
@@ -228,12 +229,21 @@ export class Cleanup extends BaseComponent {
 
     scheduleInitializationRetry(readOnlyMode) {
         if (this.initializationRetryTimer) {
-            return;
+            if (this.initializationRetryMode === readOnlyMode) {
+                return;
+            }
+
+            clearTimeout(this.initializationRetryTimer);
+            this.initializationRetryTimer = null;
+            this.initializationRetryMode = null;
         }
 
+        this.initializationRetryMode = readOnlyMode;
         this.initializationRetryTimer = setTimeout(() => {
             this.initializationRetryTimer = null;
-            this.initialize(readOnlyMode).catch((error) => {
+            const retryMode = this.initializationRetryMode;
+            this.initializationRetryMode = null;
+            this.initialize(retryMode).catch((error) => {
                 this.debug('Deferred Cleanup initialization retry failed:', error);
             });
         }, 300);
@@ -707,6 +717,7 @@ export class Cleanup extends BaseComponent {
             clearTimeout(this.initializationRetryTimer);
             this.initializationRetryTimer = null;
         }
+        this.initializationRetryMode = null;
         
         // Unsubscribe from WebSocket events
         if (this.eventSubscriptions && this.eventSubscriptions.size > 0) {
