@@ -2346,31 +2346,29 @@ const populateNetworkOptions = () => {
 	networkDropdown.innerHTML = networks.map(network => buildNetworkOptionMarkup(network)).join('');
 
 	// Re-attach click handlers only if multiple networks.
-	document.querySelectorAll('.network-option').forEach(option => {
-		const commitSelection = async () => {
-			const network = getNetworkBySlug(option.dataset.slug);
-			if (!network) return;
-
-			const previousSelectedNetwork = getNetworkBySlug(
-				selectedNetworkSlug || window.app?.ctx?.getSelectedChainSlug?.() || getDefaultNetwork().slug
-			) || getDefaultNetwork();
-			const hasChanged = applySelectedNetwork(network, { updateUrl: true });
-			const walletChainId = window.app?.ctx?.getWalletChainId?.();
-			const shouldRetryCurrentSelection = Boolean(
-				!hasChanged
-				&& walletChainId
-				&& typeof window.app?.isWalletOnSelectedNetwork === 'function'
-				&& !window.app.isWalletOnSelectedNetwork()
-			);
-
-			toggleNetworkDropdown(false);
-			if ((hasChanged || shouldRetryCurrentSelection) && typeof window.app?.handleNetworkSelectionCommit === 'function') {
-				await window.app.handleNetworkSelectionCommit(network, {
-					selectedChainChanged: hasChanged,
-					previousSelectedNetwork,
-				});
-			}
-		};
+		document.querySelectorAll('.network-option').forEach(option => {
+			const commitSelection = async () => {
+				const network = getNetworkBySlug(option.dataset.slug);
+				if (!network) return;
+				const previousSelectedNetwork = getNetworkBySlug(
+					selectedNetworkSlug || window.app?.ctx?.getSelectedChainSlug?.() || getDefaultNetwork().slug
+				) || getDefaultNetwork();
+				const hasChanged = applySelectedNetwork(network, { updateUrl: true });
+				const walletChainId = window.app?.ctx?.getWalletChainId?.();
+				const shouldRetryCurrentSelection = Boolean(
+					!hasChanged
+					&& walletChainId
+					&& typeof window.app?.isWalletOnSelectedNetwork === 'function'
+					&& !window.app.isWalletOnSelectedNetwork()
+				);
+				toggleNetworkDropdown(false);
+				if ((hasChanged || shouldRetryCurrentSelection) && typeof window.app?.handleNetworkSelectionCommit === 'function') {
+					await window.app.handleNetworkSelectionCommit(network, {
+						selectedChainChanged: hasChanged,
+						previousSelectedNetwork,
+					});
+				}
+			};
 
 		option.addEventListener('click', commitSelection);
 		option.addEventListener('keydown', async (event) => {
@@ -2392,12 +2390,12 @@ document.addEventListener('DOMContentLoaded', () => {
 	networkBadge = document.querySelector('.network-badge');
 	networkSelectorElement = document.querySelector('.network-selector');
 
-		if (addNetworkButton) {
-			addNetworkButton.addEventListener('click', async (event) => {
-				event.preventDefault();
+	if (addNetworkButton) {
+		addNetworkButton.addEventListener('click', async (event) => {
+			event.preventDefault();
 
-				const selectedSlug = selectedNetworkSlug || window.app?.ctx?.getSelectedChainSlug?.() || getDefaultNetwork().slug;
-				const selectedNetwork = getNetworkBySlug(selectedSlug) || getDefaultNetwork();
+			const selectedSlug = selectedNetworkSlug || window.app?.ctx?.getSelectedChainSlug?.() || getDefaultNetwork().slug;
+			const selectedNetwork = getNetworkBySlug(selectedSlug) || getDefaultNetwork();
 
 			if (!walletManager.hasInjectedProvider()) {
 				window.app?.showWarning?.('No injected wallet detected.');
@@ -2413,7 +2411,7 @@ document.addEventListener('DOMContentLoaded', () => {
 			addNetworkButton.textContent = 'Retrying...';
 
 			try {
-				await window.app.switchWalletToNetwork(selectedNetwork, {
+				await window.app?.switchWalletToNetwork?.(selectedNetwork, {
 					source: 'add-network-button',
 					selectedChainChanged: false,
 				});
@@ -2424,14 +2422,14 @@ document.addEventListener('DOMContentLoaded', () => {
 		});
 	}
 
-		if (networkButton) {
-			networkButton.setAttribute('aria-haspopup', 'listbox');
-			networkButton.setAttribute('aria-expanded', 'false');
-			networkButton.addEventListener('click', (event) => {
-				event.preventDefault();
-				if (networkButton.classList.contains('single-network')) return;
-				toggleNetworkDropdown();
-			});
+	if (networkButton) {
+		networkButton.setAttribute('aria-haspopup', 'listbox');
+		networkButton.setAttribute('aria-expanded', 'false');
+		networkButton.addEventListener('click', (event) => {
+			event.preventDefault();
+			if (networkButton.classList.contains('single-network')) return;
+			toggleNetworkDropdown();
+		});
 	}
 
 	if (networkDropdown) {
