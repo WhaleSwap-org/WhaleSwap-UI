@@ -167,6 +167,42 @@ describe('Header wallet connection independence (issue #153)', () => {
 			// Should NOT have 'disconnected' class
 			expect(networkBadge?.classList.contains('disconnected')).toBe(false);
 		});
+
+		it('disables the header network selector while a wallet action is pending', () => {
+			const isPendingSpy = vi.spyOn(walletManager, 'isWalletActionPending').mockReturnValue(true);
+			initializeApp({
+				walletChainId: BNB_CHAIN_ID,
+				selectedSlug: POLYGON_SLUG,
+			});
+
+			window.syncNetworkBadgeFromState?.();
+
+			const networkButton = document.querySelector('.network-button');
+			const networkDropdown = document.querySelector('.network-dropdown');
+			expect(networkButton?.disabled).toBe(true);
+			expect(networkButton?.classList.contains('wallet-action-pending')).toBe(true);
+			expect(networkDropdown?.dataset.walletActionPending).toBe('true');
+
+			isPendingSpy.mockRestore();
+		});
+
+		it('re-enables the header network selector after wallet action completes', () => {
+			const isPendingSpy = vi.spyOn(walletManager, 'isWalletActionPending').mockReturnValue(false);
+			initializeApp({
+				walletChainId: BNB_CHAIN_ID,
+				selectedSlug: POLYGON_SLUG,
+			});
+
+			window.syncNetworkBadgeFromState?.();
+
+			const networkButton = document.querySelector('.network-button');
+			const networkDropdown = document.querySelector('.network-dropdown');
+			expect(networkButton?.disabled).toBe(false);
+			expect(networkButton?.classList.contains('wallet-action-pending')).toBe(false);
+			expect(networkDropdown?.dataset.walletActionPending).toBe('false');
+
+			isPendingSpy.mockRestore();
+		});
 	});
 
 	describe('handleNetworkSelectionCommit', () => {
@@ -259,6 +295,27 @@ describe('Header wallet connection independence (issue #153)', () => {
 			await app.handleNetworkSelectionCommit(null);
 
 			expect(window.location.reload).not.toHaveBeenCalled();
+		});
+
+		it('blocks network switching while wallet action is pending', async () => {
+			const isPendingSpy = vi.spyOn(walletManager, 'isWalletActionPending').mockReturnValue(true);
+			const app = initializeApp({
+				walletChainId: BNB_CHAIN_ID,
+				selectedSlug: ETHEREUM_SLUG,
+			});
+			const switchSpy = vi.spyOn(app, 'switchWalletToNetwork');
+			const targetNetwork = getNetworkBySlug(POLYGON_SLUG);
+
+			await app.handleNetworkSelectionCommit(targetNetwork, {
+				selectedChainChanged: true,
+				previousSelectedNetwork: getNetworkBySlug(ETHEREUM_SLUG),
+			});
+
+			expect(switchSpy).not.toHaveBeenCalled();
+			expect(app.showWarning).toHaveBeenCalledWith('Finish or cancel the current wallet action before switching networks.');
+			expect(window.location.reload).not.toHaveBeenCalled();
+
+			isPendingSpy.mockRestore();
 		});
 	});
 

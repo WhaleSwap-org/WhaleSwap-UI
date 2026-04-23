@@ -28,6 +28,17 @@ const normalizeChainId = (chainId) => {
 };
 
 const STARTUP_REQUEST_TIMEOUT_MS = 4000;
+const INTERACTIVE_WALLET_METHODS = new Set([
+    'eth_requestaccounts',
+    'wallet_switchethereumchain',
+    'wallet_addethereumchain',
+    'eth_sendtransaction',
+    'eth_signtypeddata',
+    'eth_signtypeddata_v3',
+    'eth_signtypeddata_v4',
+    'eth_sign',
+    'personal_sign',
+]);
 
 export class WalletManager {
     constructor() {
@@ -62,6 +73,7 @@ export class WalletManager {
         // Add user preference tracking for disconnect state
         this.userDisconnected = false;
         this.STORAGE_KEY = 'wallet_user_disconnected';
+        this.walletActionPendingCount = 0;
     }
 
     describeProvider(provider, index = null) {
@@ -132,6 +144,50 @@ export class WalletManager {
         return !!this.getInjectedProvider();
     }
 
+    instrumentInjectedProviderRequest(provider) {
+        if (!provider || provider.__whaleSwapWalletActionPatched || typeof provider.request !== 'function') {
+            return provider;
+        }
+
+        const originalRequest = provider.request.bind(provider);
+        provider.__whaleSwapWalletActionPatched = true;
+
+        provider.request = async (payload) => {
+            const method = String(payload?.method || '').toLowerCase();
+            const isInteractiveMethod = INTERACTIVE_WALLET_METHODS.has(method);
+
+            if (isInteractiveMethod) {
+                this.walletActionPendingCount += 1;
+                this.notifyListeners('walletActionStateChanged', {
+                    pending: true,
+                    method,
+                    pendingCount: this.walletActionPendingCount,
+                });
+            }
+
+            try {
+                return await originalRequest(payload);
+            } finally {
+                if (!isInteractiveMethod) {
+                    return;
+                }
+
+                this.walletActionPendingCount = Math.max(0, this.walletActionPendingCount - 1);
+                this.notifyListeners('walletActionStateChanged', {
+                    pending: this.walletActionPendingCount > 0,
+                    method,
+                    pendingCount: this.walletActionPendingCount,
+                });
+            }
+        };
+
+        return provider;
+    }
+
+    isWalletActionPending() {
+        return this.walletActionPendingCount > 0;
+    }
+
     async request(method, params = undefined) {
         const injectedProvider = this.getInjectedProvider();
         if (!injectedProvider?.request) {
@@ -185,6 +241,8 @@ export class WalletManager {
                 this.isInitialized = true;
                 return;
             }
+
+            this.instrumentInjectedProviderRequest(injectedProvider);
 
             // Use the "any" network so the provider survives chain changes without
             // throwing "underlying network changed" on the next signer/contract call.
