@@ -450,6 +450,10 @@ export class OrdersComponentHelper {
         );
         const originalButtonLabel = button?.textContent;
         let progressToast = null;
+        const releaseWalletActionLock = this.component.acquireWalletActionLock();
+        if (!releaseWalletActionLock) {
+            return;
+        }
 
         this.component.isProcessingFill = true;
 
@@ -722,6 +726,7 @@ export class OrdersComponentHelper {
             }
             this.component.isProcessingFill = false;
             this.syncFillProgressButtons();
+            releaseWalletActionLock();
         }
     }
 

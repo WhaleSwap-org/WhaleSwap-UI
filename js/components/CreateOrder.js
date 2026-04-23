@@ -1799,6 +1799,11 @@ export class CreateOrder extends BaseComponent {
             return;
         }
 
+        const releaseWalletActionLock = this.acquireWalletActionLock();
+        if (!releaseWalletActionLock) {
+            return;
+        }
+
         this.isSubmitting = true;
         this.updateCreateButtonState();
         
@@ -2172,6 +2177,7 @@ export class CreateOrder extends BaseComponent {
         } finally {
             this.isSubmitting = false;
             this.updateCreateButtonState();
+            releaseWalletActionLock();
         }
     }
 

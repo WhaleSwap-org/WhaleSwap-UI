@@ -33,7 +33,19 @@
  * Values are populated by App during initialization
  * @returns {AppContext}
  */
+function assert(condition, message) {
+    if (!condition) {
+        throw new Error(message);
+    }
+}
+
 export function createAppContext() {
+    const walletActionListeners = new Set();
+
+    const notifyWalletActionListeners = () => {
+        walletActionListeners.forEach(listener => listener());
+    };
+
     return {
         // Core services (set by App during load)
         wallet: null,
@@ -42,6 +54,7 @@ export function createAppContext() {
         contractService: null,
         selectedChainSlug: null,
         walletChainId: null,
+        isWalletActionActive: false,
         
         // Toast functions
         toast: {
@@ -114,6 +127,33 @@ export function createAppContext() {
          */
         getWalletChainId() {
             return this.walletChainId;
+        },
+
+        beginWalletAction() {
+            assert(!this.isWalletActionActive, 'Wallet action already active');
+            this.isWalletActionActive = true;
+            notifyWalletActionListeners();
+
+            let released = false;
+            return () => {
+                if (released) return;
+                released = true;
+                this.endWalletAction();
+            };
+        },
+
+        endWalletAction() {
+            this.isWalletActionActive = false;
+            notifyWalletActionListeners();
+        },
+
+        isWalletActionInFlight() {
+            return this.isWalletActionActive;
+        },
+
+        onWalletActionChange(listener) {
+            walletActionListeners.add(listener);
+            return () => walletActionListeners.delete(listener);
         },
         
         /**

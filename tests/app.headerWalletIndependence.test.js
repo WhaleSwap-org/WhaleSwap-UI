@@ -52,6 +52,7 @@ function initializeApp({ walletChainId, selectedSlug }) {
 	// Initialize app context
 	const AppCtor = window.app.constructor;
 	const app = new AppCtor();
+	let walletActionLocked = false;
 	app.ctx = {
 		getSelectedChainSlug: () => selectedSlug,
 		getWalletChainId: () => walletChainId,
@@ -59,6 +60,10 @@ function initializeApp({ walletChainId, selectedSlug }) {
 			isWalletConnected: () => !!walletChainId,
 			getSigner: () => walletChainId ? {} : null,
 		}),
+		isWalletActionInFlight: () => walletActionLocked,
+		setWalletActionLocked: (value) => {
+			walletActionLocked = Boolean(value);
+		},
 	};
 	app.showWarning = vi.fn();
 	app.warn = vi.fn();
@@ -171,6 +176,27 @@ describe('Header wallet connection independence (issue #153)', () => {
 	});
 
 	describe('handleNetworkSelectionCommit', () => {
+		it('blocks connected-wallet network switching while a wallet action is active', async () => {
+			const app = initializeApp({
+				walletChainId: BNB_CHAIN_ID,
+				selectedSlug: ETHEREUM_SLUG,
+			});
+			app.ctx.setWalletActionLocked(true);
+			const switchSpy = vi.spyOn(app, 'switchWalletToNetwork');
+			const targetNetwork = getNetworkBySlug(POLYGON_SLUG);
+
+			const result = await app.handleNetworkSelectionCommit(targetNetwork, {
+				selectedChainChanged: true,
+				previousSelectedNetwork: getNetworkBySlug(ETHEREUM_SLUG),
+			});
+
+			expect(result).toBe(false);
+			expect(switchSpy).not.toHaveBeenCalled();
+			expect(app.showWarning).toHaveBeenCalledWith(
+				'Finish or cancel the current wallet action before switching networks.'
+			);
+		});
+
 		it('calls switchWalletToNetwork when a connected wallet changes the selected network', async () => {
 			const app = initializeApp({
 				walletChainId: BNB_CHAIN_ID, // Wallet on BNB
@@ -298,6 +324,47 @@ describe('Header wallet connection independence (issue #153)', () => {
 			// Add network button should be visible after failed switch
 			expect(addNetworkButton?.classList.contains('hidden')).toBe(false);
 			expect(addNetworkButton?.textContent).toBe('Add Polygon Mainnet');
+		});
+	});
+
+	describe('network selector wallet-action lock', () => {
+		it('shows the header network selector as blocked while a wallet action is active', () => {
+			const app = initializeApp({
+				walletChainId: BNB_CHAIN_ID,
+				selectedSlug: POLYGON_SLUG,
+			});
+			app.ctx.setWalletActionLocked(true);
+
+			window.syncNetworkBadgeFromState();
+
+			const networkButton = document.querySelector('.network-button');
+			expect(networkButton?.getAttribute('aria-disabled')).toBe('true');
+		});
+
+		it('blocks header interaction with a warning while a wallet action is active and re-enables after it clears', () => {
+			const app = initializeApp({
+				walletChainId: BNB_CHAIN_ID,
+				selectedSlug: POLYGON_SLUG,
+			});
+			const networkButton = document.querySelector('.network-button');
+			const networkDropdown = document.querySelector('.network-dropdown');
+
+			app.ctx.setWalletActionLocked(true);
+			window.syncNetworkBadgeFromState();
+			networkButton?.click();
+
+			expect(app.showWarning).toHaveBeenCalledWith(
+				'Finish or cancel the current wallet action before switching networks.'
+			);
+			expect(networkDropdown?.classList.contains('hidden')).toBe(true);
+
+			app.showWarning.mockClear();
+			app.ctx.setWalletActionLocked(false);
+			window.syncNetworkBadgeFromState();
+			networkButton?.click();
+
+			expect(app.showWarning).not.toHaveBeenCalled();
+			expect(networkDropdown?.classList.contains('hidden')).toBe(false);
 		});
 	});
 });

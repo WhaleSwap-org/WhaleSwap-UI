@@ -274,6 +274,13 @@ export class Claim extends BaseComponent {
         this.pendingClaims.add(tokenLower);
         this.renderClaimRows(this.claims);
 
+        const releaseWalletActionLock = this.acquireWalletActionLock();
+        if (!releaseWalletActionLock) {
+            this.pendingClaims.delete(tokenLower);
+            this.renderClaimRows(this.claims);
+            return;
+        }
+
         try {
             if (!await this.ensureWalletReadyForWrite('claim this token')) {
                 return;
@@ -329,6 +336,7 @@ export class Claim extends BaseComponent {
             }
         } finally {
             this.pendingClaims.delete(tokenLower);
+            releaseWalletActionLock();
             await this.refreshClaimables();
         }
     }

@@ -37,6 +37,7 @@ import { clearBalanceCache } from './utils/contractTokens.js';
 
 const BOOTSTRAP_LOADER_STATE_KEY = 'whaleswapBootstrapLoader';
 const ACTIVE_TAB_STATE_KEY = 'whaleswapActiveTab';
+const NETWORK_SWITCH_BLOCKED_MESSAGE = 'Finish or cancel the current wallet action before switching networks.';
 class App {
 	constructor() {
 		this.isInitializing = false;
@@ -1244,6 +1245,11 @@ class App {
 	async handleNetworkSelectionCommit(network, options = {}) {
 		if (!network) return;
 
+		if (this.isWalletActionInFlight()) {
+			this.showWarning(NETWORK_SWITCH_BLOCKED_MESSAGE);
+			return false;
+		}
+
 		const {
 			selectedChainChanged = true,
 			previousSelectedNetwork = null,
@@ -1288,6 +1294,9 @@ class App {
 			// Create application context for dependency injection
 			this.ctx = createAppContext();
 			setGlobalContext(this.ctx);
+			this.ctx.onWalletActionChange(() => {
+				syncNetworkBadgeFromState();
+			});
 			const initialSelectedNetwork = getInitialSelectedNetwork();
 			this.ctx.setSelectedChainSlug(initialSelectedNetwork.slug);
 			setActiveNetwork(initialSelectedNetwork);
@@ -1880,6 +1889,10 @@ class App {
 		return showInfo(message, duration);
 	}
 
+	isWalletActionInFlight() {
+		return this.ctx.isWalletActionInFlight();
+	}
+
 	showToast(message, type = 'info', duration = 5000) {
 		this.debug(`Showing ${type} toast:`, message);
 		return this.toast.showToast(message, type, duration);
@@ -2250,6 +2263,7 @@ function syncAddNetworkButtonVisibility() {
 	addNetworkButton.textContent = shouldShow
 		? `Add ${selectedNetwork.displayName || selectedNetwork.name}`
 		: 'Add Network';
+	addNetworkButton.setAttribute('aria-disabled', String(window.app.isWalletActionInFlight()));
 }
 
 function triggerPageReloadWithSwitchFallback(options = {}) {
@@ -2285,6 +2299,14 @@ function syncNetworkBadgeFromState() {
 	}
 	if (networkDropdown) {
 		networkDropdown.dataset.networkStatus = 'default';
+	}
+
+	const isWalletActionLocked = window.app.isWalletActionInFlight();
+	if (networkButton) {
+		networkButton.setAttribute('aria-disabled', String(isWalletActionLocked));
+	}
+	if (isWalletActionLocked) {
+		toggleNetworkDropdown(false);
 	}
 
 	// Let syncAddNetworkButtonVisibility() decide visibility based on networkSetupRequiredSlug (PR #178 review)
@@ -2326,6 +2348,10 @@ function toggleNetworkDropdown(forceOpen = null) {
 	}
 }
 
+function blockNetworkInteraction() {
+	window.app.showWarning(NETWORK_SWITCH_BLOCKED_MESSAGE);
+}
+
 // Dynamically populate network options
 const populateNetworkOptions = () => {
 	const networks = getAllNetworks();
@@ -2346,36 +2372,47 @@ const populateNetworkOptions = () => {
 	networkDropdown.innerHTML = networks.map(network => buildNetworkOptionMarkup(network)).join('');
 
 	// Re-attach click handlers only if multiple networks.
-		document.querySelectorAll('.network-option').forEach(option => {
-			const commitSelection = async () => {
-				const network = getNetworkBySlug(option.dataset.slug);
-				if (!network) return;
-				const previousSelectedNetwork = getNetworkBySlug(
-					selectedNetworkSlug || window.app?.ctx?.getSelectedChainSlug?.() || getDefaultNetwork().slug
-				) || getDefaultNetwork();
-				const hasChanged = applySelectedNetwork(network, { updateUrl: true });
-				const walletChainId = window.app?.ctx?.getWalletChainId?.();
-				const shouldRetryCurrentSelection = Boolean(
-					!hasChanged
-					&& walletChainId
-					&& typeof window.app?.isWalletOnSelectedNetwork === 'function'
-					&& !window.app.isWalletOnSelectedNetwork()
-				);
+	document.querySelectorAll('.network-option').forEach(option => {
+		const commitSelection = async () => {
+			if (window.app.isWalletActionInFlight()) {
 				toggleNetworkDropdown(false);
-				if ((hasChanged || shouldRetryCurrentSelection) && typeof window.app?.handleNetworkSelectionCommit === 'function') {
-					await window.app.handleNetworkSelectionCommit(network, {
-						selectedChainChanged: hasChanged,
-						previousSelectedNetwork,
-					});
-				}
-			};
+				blockNetworkInteraction();
+				return;
+			}
+
+			const network = getNetworkBySlug(option.dataset.slug);
+			if (!network) return;
+
+			const previousSelectedNetwork = getNetworkBySlug(
+				selectedNetworkSlug || window.app.ctx?.getSelectedChainSlug?.() || getDefaultNetwork().slug
+			) || getDefaultNetwork();
+			const hasChanged = applySelectedNetwork(network, { updateUrl: true });
+			const walletChainId = window.app.ctx?.getWalletChainId?.();
+			const shouldRetryCurrentSelection = Boolean(
+				!hasChanged
+				&& walletChainId
+				&& !window.app.isWalletOnSelectedNetwork()
+			);
+
+			toggleNetworkDropdown(false);
+			if (!hasChanged && !shouldRetryCurrentSelection) {
+				return;
+			}
+
+			await window.app.handleNetworkSelectionCommit(network, {
+				selectedChainChanged: hasChanged,
+				previousSelectedNetwork,
+			});
+		};
 
 		option.addEventListener('click', commitSelection);
 		option.addEventListener('keydown', async (event) => {
-			if (event.key === 'Enter' || event.key === ' ') {
-				event.preventDefault();
-				await commitSelection();
+			if (event.key !== 'Enter' && event.key !== ' ') {
+				return;
 			}
+
+			event.preventDefault();
+			await commitSelection();
 		});
 	});
 
@@ -2394,6 +2431,11 @@ document.addEventListener('DOMContentLoaded', () => {
 		addNetworkButton.addEventListener('click', async (event) => {
 			event.preventDefault();
 
+			if (window.app.isWalletActionInFlight()) {
+				blockNetworkInteraction();
+				return;
+			}
+
 			const selectedSlug = selectedNetworkSlug || window.app?.ctx?.getSelectedChainSlug?.() || getDefaultNetwork().slug;
 			const selectedNetwork = getNetworkBySlug(selectedSlug) || getDefaultNetwork();
 
@@ -2411,7 +2453,7 @@ document.addEventListener('DOMContentLoaded', () => {
 			addNetworkButton.textContent = 'Retrying...';
 
 			try {
-				await window.app?.switchWalletToNetwork?.(selectedNetwork, {
+				await window.app.switchWalletToNetwork(selectedNetwork, {
 					source: 'add-network-button',
 					selectedChainChanged: false,
 				});
@@ -2427,6 +2469,10 @@ document.addEventListener('DOMContentLoaded', () => {
 		networkButton.setAttribute('aria-expanded', 'false');
 		networkButton.addEventListener('click', (event) => {
 			event.preventDefault();
+			if (window.app.isWalletActionInFlight()) {
+				blockNetworkInteraction();
+				return;
+			}
 			if (networkButton.classList.contains('single-network')) return;
 			toggleNetworkDropdown();
 		});

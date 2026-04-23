@@ -208,6 +208,16 @@ export class BaseComponent {
         });
     }
 
+    acquireWalletActionLock() {
+        const ctx = this.ctx;
+        if (ctx.isWalletActionInFlight()) {
+            this.showWarning('Finish or cancel the current wallet action before starting another one.');
+            return null;
+        }
+
+        return ctx.beginWalletAction();
+    }
+
     /**
      * Default initialize method - subclasses should override
      * @param {boolean} readOnlyMode - true if no wallet connected

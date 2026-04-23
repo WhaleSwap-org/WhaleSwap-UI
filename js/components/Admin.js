@@ -838,6 +838,11 @@ export class Admin extends BaseComponent {
             return;
         }
 
+        const releaseWalletActionLock = this.acquireWalletActionLock();
+        if (!releaseWalletActionLock) {
+            return;
+        }
+
         try {
             this.updateFeeButton.disabled = true;
             this.updateFeeButton.textContent = 'Updating...';
@@ -877,6 +882,7 @@ export class Admin extends BaseComponent {
         } finally {
             this.updateFeeButton.disabled = false;
             this.updateFeeButton.textContent = 'Update Fee Config';
+            releaseWalletActionLock();
         }
     }
 
@@ -948,6 +954,11 @@ export class Admin extends BaseComponent {
             return;
         }
 
+        const releaseWalletActionLock = this.acquireWalletActionLock();
+        if (!releaseWalletActionLock) {
+            return;
+        }
+
         try {
             this.updateTokensButton.disabled = true;
             this.updateTokensButton.textContent = 'Updating...';
@@ -974,6 +985,7 @@ export class Admin extends BaseComponent {
         } finally {
             this.updateTokensButton.disabled = false;
             this.updateTokensButton.textContent = 'Update Allowed Tokens';
+            releaseWalletActionLock();
         }
     }
 
@@ -982,6 +994,11 @@ export class Admin extends BaseComponent {
             'Disabling new orders is permanent and cannot be undone. Continue?'
         );
         if (!confirmed) return;
+
+        const releaseWalletActionLock = this.acquireWalletActionLock();
+        if (!releaseWalletActionLock) {
+            return;
+        }
 
         try {
             this.disableButton.disabled = true;
@@ -1003,6 +1020,8 @@ export class Admin extends BaseComponent {
             this.showError(`Failed to disable contract: ${error.message}`);
             this.disableButton.disabled = false;
             this.disableButton.textContent = 'Disable New Orders Permanently';
+        } finally {
+            releaseWalletActionLock();
         }
     }
 
