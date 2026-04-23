@@ -40,12 +40,6 @@ function assert(condition, message) {
 }
 
 export function createAppContext() {
-    const walletActionListeners = new Set();
-
-    const notifyWalletActionListeners = () => {
-        walletActionListeners.forEach(listener => listener());
-    };
-
     return {
         // Core services (set by App during load)
         wallet: null,
@@ -132,7 +126,6 @@ export function createAppContext() {
         beginWalletAction() {
             assert(!this.isWalletActionActive, 'Wallet action already active');
             this.isWalletActionActive = true;
-            notifyWalletActionListeners();
 
             let released = false;
             return () => {
@@ -144,16 +137,10 @@ export function createAppContext() {
 
         endWalletAction() {
             this.isWalletActionActive = false;
-            notifyWalletActionListeners();
         },
 
         isWalletActionInFlight() {
             return this.isWalletActionActive;
-        },
-
-        onWalletActionChange(listener) {
-            walletActionListeners.add(listener);
-            return () => walletActionListeners.delete(listener);
         },
         
         /**
