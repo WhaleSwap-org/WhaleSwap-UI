@@ -163,12 +163,24 @@ export class WalletManager {
         };
     }
 
-    async selectWalletForConnection() {
+    async getAvailableWallets() {
+        return await this.walletCore.discoverWallets();
+    }
+
+    async selectWalletForConnection(walletId = null) {
         const wallets = await this.walletCore.discoverWallets();
         const state = this.walletCore.getState();
+
+        if (walletId) {
+            const selectedWallet = wallets.find((wallet) => wallet.id === walletId);
+            if (!selectedWallet) {
+                throw new Error('Selected wallet is no longer available.');
+            }
+            return selectedWallet;
+        }
+
         return wallets.find((wallet) => wallet.id === state.selectedWalletId)
-            || wallets.find((wallet) => wallet.info?.rdns === 'io.metamask')
-            || wallets[0]
+            || (wallets.length === 1 ? wallets[0] : null)
             || null;
     }
 
@@ -349,7 +361,7 @@ export class WalletManager {
     }
 
     async connect(options = {}) {
-        const { userInitiated = false } = options;
+        const { userInitiated = false, walletId = null } = options;
 
         if (this.isConnecting) {
             console.log('[WalletManager] Connection already in progress');
@@ -363,9 +375,9 @@ export class WalletManager {
         this.isConnecting = true;
         try {
             this.debug('Discovering wallets...');
-            const wallet = await this.selectWalletForConnection();
+            const wallet = await this.selectWalletForConnection(walletId);
             if (!wallet) {
-                throw new Error('No injected wallet provider detected.');
+                throw new Error('Select a wallet to connect.');
             }
 
             this.debug('Requesting accounts through wallet core...', wallet.info?.name || wallet.id);
