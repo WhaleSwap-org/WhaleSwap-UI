@@ -204,18 +204,18 @@ export class WalletUI extends BaseComponent {
 
         // Close popup on outside click
         this._boundDocumentClickHandler = (e) => {
-            if (!this.walletPopup) return;
             const target = e.target;
             if (!(target instanceof Element)) {
                 this.hideWalletPopup();
                 this.hideWalletSelection();
                 return;
             }
-            if (!target.closest('.wallet-info-popup') && !target.closest('#walletInfo')) {
-                this.hideWalletPopup();
-            }
             if (!target.closest('.wallet-selection-menu') && !target.closest('#walletConnect')) {
                 this.hideWalletSelection();
+            }
+            if (!this.walletPopup) return;
+            if (!target.closest('.wallet-info-popup') && !target.closest('#walletInfo')) {
+                this.hideWalletPopup();
             }
         };
         document.addEventListener('click', this._boundDocumentClickHandler);
@@ -295,11 +295,6 @@ export class WalletUI extends BaseComponent {
         try {
             this.debug('Checking initial connection state...');
             
-            if (!walletManager.hasInjectedProvider()) {
-                this.debug('No injected wallet provider found, initializing in read-only mode');
-                return;
-            }
-            
             // Check if user has manually disconnected
             if (walletManager.hasUserDisconnected()) {
                 this.debug('User has manually disconnected, showing connect button');
@@ -314,6 +309,17 @@ export class WalletUI extends BaseComponent {
                 this.debug('Found existing wallet manager session, syncing UI');
                 this.updateUI(existingAccount);
                 this.updateNetworkBadge(walletManager.chainId);
+                return;
+            }
+
+            if (!walletManager.hasWalletSession()) {
+                this.debug('No saved wallet session found, showing connect button');
+                this.showConnectButton();
+                return;
+            }
+
+            if (!walletManager.hasInjectedProvider()) {
+                this.debug('No injected wallet provider found, initializing in read-only mode');
                 return;
             }
 

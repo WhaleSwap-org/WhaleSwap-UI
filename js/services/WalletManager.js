@@ -70,33 +70,6 @@ export class WalletManager {
         this.STORAGE_KEY = 'wallet_user_disconnected';
     }
 
-    describeProvider(provider, index = null) {
-        return {
-            index,
-            isMetaMask: !!provider?.isMetaMask,
-            isPhantom: !!provider?.isPhantom,
-            isCoinbaseWallet: !!provider?.isCoinbaseWallet,
-            isBraveWallet: !!provider?.isBraveWallet
-        };
-    }
-
-    isLikelyMetaMaskProvider(provider) {
-        return Boolean(
-            provider?.isMetaMask
-            && !provider?.isBraveWallet
-            && !provider?.isCoinbaseWallet
-            && !provider?.isPhantom
-        );
-    }
-
-    isConnectedWalletMetaMask() {
-        return this.isLikelyMetaMaskProvider(this.getInjectedProvider());
-    }
-
-    isRequestCapableInjectedProvider(provider) {
-        return typeof provider?.request === 'function';
-    }
-
     resolveInjectedProvider() {
         return this.walletCore.getEip1193Provider();
     }
@@ -123,15 +96,26 @@ export class WalletManager {
         return this.injectedProvider;
     }
 
+    clearSignerAndContractState() {
+        this.signer = null;
+        this.contract = null;
+        this.contractInitialized = false;
+    }
+
     ensureWeb3Provider() {
+        const previousInjectedProvider = this.injectedProvider;
         const injectedProvider = this.syncInjectedProviderFromCore();
         if (!injectedProvider) {
             this.provider = null;
+            this.clearSignerAndContractState();
             return null;
         }
-        if (!this.provider) {
+
+        if (!this.provider || previousInjectedProvider !== injectedProvider) {
             this.provider = new ethers.providers.Web3Provider(injectedProvider, 'any');
+            this.clearSignerAndContractState();
         }
+
         return this.provider;
     }
 
@@ -153,18 +137,20 @@ export class WalletManager {
         this.account = state.account;
         this.chainId = this.normalizeWalletCoreChainId(state.chainId);
         this.isConnected = Boolean(this.account);
-        this.syncInjectedProviderFromCore();
         this.ensureWeb3Provider();
         return {
             account: this.account,
             chainId: this.chainId,
-            userInitiated,
-            isMetaMaskWallet: this.isConnectedWalletMetaMask()
+            userInitiated
         };
     }
 
     async getAvailableWallets() {
         return await this.walletCore.discoverWallets();
+    }
+
+    hasWalletSession() {
+        return this.walletCore.hasWalletSession();
     }
 
     async selectWalletForConnection(walletId = null) {
@@ -234,24 +220,11 @@ export class WalletManager {
                 return;
             }
 
-            const injectedProvider = this.getInjectedProvider();
-            if (!injectedProvider) {
-                this.debug('No injected wallet provider found, initializing in read-only mode');
-                this.provider = null;
-                this.isInitialized = true;
-                return;
-            }
-
-            // Use the "any" network so the provider survives chain changes without
-            // throwing "underlying network changed" on the next signer/contract call.
-            this.ensureWeb3Provider();
-            
             // Set contract configuration
             const networkCfg = getNetworkConfig();
             this.contractAddress = networkCfg.contractAddress;
             this.contractABI = CONTRACT_ABI;
             
-            this.debug('Provider initialized');
             this.debug('Contract config:', {
                 address: this.contractAddress,
                 hasABI: !!this.contractABI
@@ -261,23 +234,14 @@ export class WalletManager {
 
             // Check user disconnect preference before auto-connecting
             this.loadUserDisconnectPreference();
+
+            await this.walletCore.discoverWallets();
             
             // Only auto-connect if user hasn't manually disconnected
-            if (!this.userDisconnected) {
+            if (!this.userDisconnected && this.hasWalletSession()) {
                 try {
                     await this.walletCore.sync();
-                    let state = this.walletCore.getState();
-                    if (!state.account) {
-                        const accounts = await this.requestWithTimeout('eth_accounts');
-                        if (accounts.length > 0) {
-                            const chainId = await this.requestWithTimeout('eth_chainId');
-                            this.account = accounts[0];
-                            this.chainId = chainId;
-                            this.isConnected = true;
-                        }
-                    } else {
-                        this.syncConnectedStateFromWalletCore();
-                    }
+                    this.syncConnectedStateFromWalletCore();
 
                     if (this.account) {
                         this.debug('Auto-connecting to existing wallet session');
@@ -295,7 +259,7 @@ export class WalletManager {
                     this.warn('Wallet auto-connect check failed, continuing in read-only mode', autoConnectError);
                 }
             } else {
-                this.debug('User has manually disconnected, skipping auto-connect');
+                this.debug('No saved wallet session to restore, skipping wallet probe');
             }
 
             this.isInitialized = true;
@@ -368,10 +332,6 @@ export class WalletManager {
             return null;
         }
 
-        if (!this.provider) {
-            throw new Error('No injected wallet provider detected.');
-        }
-
         this.isConnecting = true;
         try {
             this.debug('Discovering wallets...');
@@ -396,8 +356,7 @@ export class WalletManager {
             this.notifyListeners('connect', {
                 account: result.account,
                 chainId: result.chainId,
-                userInitiated,
-                isMetaMaskWallet: result.isMetaMaskWallet
+                userInitiated
             });
 
             return result;
