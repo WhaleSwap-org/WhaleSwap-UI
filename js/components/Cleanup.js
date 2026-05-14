@@ -36,6 +36,18 @@ export class Cleanup extends BaseComponent {
         }
     }
 
+    async openWalletPicker() {
+        const walletUI = window.app?.walletUI || window.app?.components?.['wallet-info'];
+        if (typeof walletUI?.showWalletSelection === 'function') {
+            await walletUI.showWalletSelection();
+            return true;
+        }
+
+        this.warn('Wallet picker is not available from Cleanup');
+        this.showError('Use the header Connect Wallet button to choose a wallet.');
+        return false;
+    }
+
     async initialize(readOnlyMode = true) {
         if (this.isInitializing) {
             this.debug('Already initializing, skipping...');
@@ -110,18 +122,15 @@ export class Cleanup extends BaseComponent {
                 // Set up the cleanup button event listener for read-only mode
                 this.cleanupButton = document.getElementById('cleanup-button');
                 if (this.cleanupButton) {
-                    this.cleanupButton.addEventListener('click', () => {
-                        this.debug('Cleanup button clicked (read-only): attempting wallet connect');
-                        const wallet = this.ctx.getWallet();
-                        if (wallet) {
-                            wallet.connect({ userInitiated: true })
-                                .catch(error => {
-                                    this.error('Wallet connect failed from cleanup (read-only):', error);
-                                    this.showError('Failed to connect wallet: ' + error.message);
-                                });
-                        } else {
-                            this.warn('WalletManager not available on cleanup button click (read-only)');
-                        }
+                    this.cleanupButton.addEventListener('click', (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        this.debug('Cleanup button clicked (read-only): opening wallet picker');
+                        this.openWalletPicker()
+                            .catch(error => {
+                                this.error('Failed to open wallet picker from cleanup (read-only):', error);
+                                this.showError('Failed to load wallets: ' + error.message);
+                            });
                     });
                 }
 
@@ -179,7 +188,9 @@ export class Cleanup extends BaseComponent {
             // Only set up the cleanup button event listener
             this.cleanupButton = document.getElementById('cleanup-button');
             if (this.cleanupButton) {
-                this.cleanupButton.addEventListener('click', () => {
+                this.cleanupButton.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
                     this.debug('Cleanup button clicked (connected): starting performCleanup');
                     this.performCleanup();
                 });
@@ -423,15 +434,15 @@ export class Cleanup extends BaseComponent {
             // Check if wallet is connected first
             const wallet = this.ctx.getWallet();
             if (!wallet?.isWalletConnected()) {
-                this.debug('Wallet not connected, attempting to connect...');
+                this.debug('Wallet not connected, opening wallet picker...');
                 try {
-                    await wallet.connect({ userInitiated: true });
-                    // After successful connection, refresh the button state
+                    await this.openWalletPicker();
+                    // After the picker opens, refresh the button state.
                     await this.checkCleanupOpportunities();
                     return;
                 } catch (error) {
-                    this.error('Failed to connect wallet:', error);
-                    this.showError('Failed to connect wallet: ' + error.message);
+                    this.error('Failed to open wallet picker:', error);
+                    this.showError('Failed to load wallets: ' + error.message);
                     return;
                 }
             }
