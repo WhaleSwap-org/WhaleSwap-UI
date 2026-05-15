@@ -2,7 +2,7 @@ import { ethers } from 'ethers';
 import { BaseComponent } from './BaseComponent.js';
 import { createLogger } from '../services/LogService.js';
 import { handleTransactionError } from '../utils/ui.js';
-import { contractService } from '../services/ContractService.js';
+import { getFallbackIconData } from '../utils/tokenIcons.js';
 
 export class Cleanup extends BaseComponent {
     constructor(containerId) {
@@ -46,6 +46,75 @@ export class Cleanup extends BaseComponent {
         this.warn('Wallet picker is not available from Cleanup');
         this.showError('Use the header Connect Wallet button to choose a wallet.');
         return false;
+    }
+
+    getOrderCleanupFee(order) {
+        if (!order?.feeToken || order.orderCreationFee === null || order.orderCreationFee === undefined) {
+            return null;
+        }
+
+        return {
+            feeToken: order.feeToken,
+            feeAmount: ethers.BigNumber.from(order.orderCreationFee)
+        };
+    }
+
+    getFallbackTokenSymbol(tokenAddress) {
+        if (!tokenAddress || typeof tokenAddress !== 'string') {
+            return 'Fee token';
+        }
+        return `${tokenAddress.slice(0, 6)}...${tokenAddress.slice(-4)}`;
+    }
+
+    setCurrentRewardText(element, text) {
+        if (!element) return;
+        element.replaceChildren();
+        element.textContent = text;
+        element.removeAttribute('aria-label');
+    }
+
+    createCleanupRewardIcon(tokenInfo, tokenAddress, symbol) {
+        const icon = document.createElement('span');
+        icon.className = 'token-icon small cleanup-reward-icon';
+        icon.setAttribute('aria-hidden', 'true');
+
+        const fallbackData = getFallbackIconData(tokenAddress, symbol);
+        const fallback = document.createElement('span');
+        fallback.className = 'token-icon-fallback small';
+        fallback.style.background = fallbackData.backgroundColor;
+        fallback.textContent = fallbackData.text;
+
+        if (tokenInfo?.iconUrl && tokenInfo.iconUrl !== 'fallback') {
+            const image = document.createElement('img');
+            image.src = tokenInfo.iconUrl;
+            image.alt = '';
+            image.className = 'token-icon-image';
+            fallback.style.display = 'none';
+            image.addEventListener('error', () => {
+                image.style.display = 'none';
+                fallback.style.display = 'flex';
+            });
+            icon.append(image, fallback);
+            return icon;
+        }
+
+        icon.append(fallback);
+        return icon;
+    }
+
+    renderCurrentReward(element, { formattedAmount, tokenInfo, feeToken }) {
+        if (!element) return;
+
+        const symbol = tokenInfo?.symbol || this.getFallbackTokenSymbol(feeToken);
+        const wrapper = document.createElement('span');
+        wrapper.className = 'cleanup-reward-token';
+        wrapper.append(
+            this.createCleanupRewardIcon(tokenInfo, feeToken, symbol),
+            this.createElement('span', 'cleanup-reward-amount', `${formattedAmount} ${symbol}`)
+        );
+
+        element.replaceChildren(wrapper);
+        element.setAttribute('aria-label', `${formattedAmount} ${symbol}`);
     }
 
     async initialize(readOnlyMode = true) {
@@ -303,33 +372,46 @@ export class Cleanup extends BaseComponent {
             // Display reward for next cleanup
             if (elements.currentReward && nextOrderToClean) {
                 try {
-                    // Use HTTP RPC for fee config to avoid WebSocket timeout issues
-                    const { feeToken, feeAmount } = await contractService.getFeeConfig();
+                    const cleanupFee = this.getOrderCleanupFee(nextOrderToClean);
+                    if (!cleanupFee) {
+                        throw new Error(`Missing cleanup fee details for order ${nextOrderToClean.id}`);
+                    }
 
-                    this.debug('Fee info from contract:', { feeToken, feeAmount: feeAmount.toString() });
+                    const { feeToken, feeAmount } = cleanupFee;
+                    this.debug('Fee info from order:', {
+                        orderId: nextOrderToClean.id,
+                        feeToken,
+                        feeAmount: feeAmount.toString()
+                    });
 
                     const tokenInfo = await this.webSocket.getTokenInfo(feeToken);
+                    const decimals = Number.isInteger(tokenInfo?.decimals) ? tokenInfo.decimals : 18;
                     
                     // Format with proper decimals and round to 6 decimal places
                     const formattedAmount = parseFloat(
-                        ethers.utils.formatUnits(feeAmount, tokenInfo.decimals)
+                        ethers.utils.formatUnits(feeAmount, decimals)
                     ).toFixed(6);
 
-                    elements.currentReward.textContent = `${formattedAmount} ${tokenInfo.symbol}`;
+                    this.renderCurrentReward(elements.currentReward, {
+                        formattedAmount,
+                        tokenInfo,
+                        feeToken
+                    });
 
                     this.debug('Reward formatting:', {
+                        orderId: nextOrderToClean.id,
                         feeToken,
                         feeAmount: feeAmount.toString(),
-                        decimals: tokenInfo.decimals,
+                        decimals,
                         formatted: formattedAmount,
-                        symbol: tokenInfo.symbol
+                        symbol: tokenInfo?.symbol
                     });
                 } catch (error) {
                     this.debug('Error formatting reward:', error);
-                    elements.currentReward.textContent = 'Error getting reward amount';
+                    this.setCurrentRewardText(elements.currentReward, 'Error getting reward amount');
                 }
             } else if (elements.currentReward) {
-                elements.currentReward.textContent = 'No orders to clean';
+                this.setCurrentRewardText(elements.currentReward, 'No orders to clean');
             }
 
             if (elements.cleanupButton) {
