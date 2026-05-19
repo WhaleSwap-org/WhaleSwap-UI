@@ -59,6 +59,12 @@ export class WalletManager {
         this.isInitialized = false;
         this.contractInitialized = false;
         this.injectedProvider = null;
+        this.selectedWallet = {
+            id: null,
+            name: null,
+            rdns: null,
+            icon: null
+        };
         this.walletCore = createWalletCore({
             walletSessionKey: 'whaleswap-ui:wallet-session',
             discoveryWaitMs: 250
@@ -137,6 +143,12 @@ export class WalletManager {
         this.account = state.account;
         this.chainId = this.normalizeWalletCoreChainId(state.chainId);
         this.isConnected = Boolean(this.account);
+        this.selectedWallet = {
+            id: state.selectedWalletId || null,
+            name: state.selectedWalletName || null,
+            rdns: state.selectedWalletRdns || null,
+            icon: state.selectedWalletIcon || null
+        };
         this.ensureWeb3Provider();
         return {
             account: this.account,
@@ -440,6 +452,12 @@ export class WalletManager {
         if (accounts.length === 0) {
             this.account = null;
             this.isConnected = false;
+            this.selectedWallet = {
+                id: null,
+                name: null,
+                rdns: null,
+                icon: null
+            };
             this.signer = null;
             this.contract = null;
             this.contractInitialized = false;
@@ -476,6 +494,12 @@ export class WalletManager {
     handleDisconnect(error) {
         this.isConnected = false;
         this.account = null;
+        this.selectedWallet = {
+            id: null,
+            name: null,
+            rdns: null,
+            icon: null
+        };
         this.signer = null;
         this.contract = null;
         this.contractInitialized = false;
@@ -488,6 +512,10 @@ export class WalletManager {
     // Utility methods
     getAccount() {
         return this.account;
+    }
+
+    getSelectedWalletInfo() {
+        return { ...this.selectedWallet };
     }
 
     isWalletConnected() {
@@ -507,6 +535,12 @@ export class WalletManager {
         this.account = null;
         this.chainId = null;
         this.isConnected = false;
+        this.selectedWallet = {
+            id: null,
+            name: null,
+            rdns: null,
+            icon: null
+        };
         this.signer = null;
         this.contract = null;
         this.contractInitialized = false;

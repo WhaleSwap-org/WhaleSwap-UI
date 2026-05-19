@@ -23,6 +23,8 @@ export class WalletUI extends BaseComponent {
         this.popupAccount = null;
         this.walletPopup = null;
         this.walletSelectionMenu = null;
+        this.connectedWalletIcon = null;
+        this.connectedWalletName = null;
         
         this.debug('Constructor completed (no side effects)');
     }
@@ -428,21 +430,11 @@ export class WalletUI extends BaseComponent {
         option.dataset.walletId = wallet.id;
         option.setAttribute('role', 'menuitem');
 
-        const icon = document.createElement('span');
-        icon.className = 'wallet-selection-icon';
-
         const name = wallet?.info?.name || 'Injected Wallet';
-        icon.textContent = name.trim().slice(0, 2).toUpperCase() || 'W';
-
-        if (wallet?.info?.icon) {
-            const image = document.createElement('img');
-            image.src = wallet.info.icon;
-            image.alt = '';
-            image.addEventListener('load', () => {
-                icon.textContent = '';
-                icon.append(image);
-            });
-        }
+        const icon = this.createWalletIconElement({
+            name,
+            icon: wallet?.info?.icon || ''
+        }, 'wallet-selection-icon');
 
         const copy = document.createElement('span');
         copy.className = 'wallet-selection-copy';
@@ -458,6 +450,33 @@ export class WalletUI extends BaseComponent {
         copy.append(label, meta);
         option.append(icon, copy);
         return option;
+    }
+
+    createWalletIconElement(walletInfo = {}, className = 'wallet-selection-icon') {
+        const icon = document.createElement('span');
+        icon.className = className;
+
+        const fallback = document.createElement('span');
+        const name = walletInfo.name || 'Wallet';
+        fallback.textContent = name.trim().slice(0, 2).toUpperCase() || 'W';
+        icon.append(fallback);
+
+        if (walletInfo.icon) {
+            const image = document.createElement('img');
+            image.src = walletInfo.icon;
+            image.alt = '';
+            image.hidden = true;
+            image.addEventListener('load', () => {
+                fallback.remove();
+                image.hidden = false;
+            });
+            image.addEventListener('error', () => {
+                image.remove();
+            });
+            icon.append(image);
+        }
+
+        return icon;
     }
 
     createWalletSelectionMessage(messageText) {
@@ -500,7 +519,7 @@ export class WalletUI extends BaseComponent {
             this.connectButton.classList.add('hidden');
             this.hideWalletSelection();
             this.walletInfo.classList.remove('hidden');
-            this.accountAddress.textContent = shortAddress;
+            this.renderConnectedWalletInfo(shortAddress);
             
             // Add wallet-connected class
             document.querySelector('.swap-section')?.classList.add('wallet-connected');
@@ -513,6 +532,31 @@ export class WalletUI extends BaseComponent {
         } catch (error) {
             this.error('[WalletUI] Error in updateUI:', error);
         }
+    }
+
+    renderConnectedWalletInfo(shortAddress) {
+        const selectedWallet = walletManager.getSelectedWalletInfo?.() || {};
+        const walletName = selectedWallet.name || 'Wallet';
+
+        this.connectedWalletIcon = this.createWalletIconElement({
+            name: walletName,
+            icon: selectedWallet.icon || ''
+        }, 'wallet-info-icon');
+
+        this.connectedWalletName = document.createElement('span');
+        this.connectedWalletName.className = 'wallet-info-name';
+        this.connectedWalletName.textContent = walletName;
+
+        this.accountAddress = document.createElement('span');
+        this.accountAddress.id = 'accountAddress';
+        this.accountAddress.className = 'account-address';
+        this.accountAddress.textContent = shortAddress;
+
+        this.walletInfo.replaceChildren(
+            this.connectedWalletIcon,
+            this.connectedWalletName,
+            this.accountAddress
+        );
     }
 
     showConnectButton() {
