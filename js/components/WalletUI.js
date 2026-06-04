@@ -533,12 +533,6 @@ export class WalletUI extends BaseComponent {
     }
 
     renderConnectedWalletInfo(shortAddress) {
-        if (!this.accountAddress) {
-            this.accountAddress = document.createElement('span');
-            this.accountAddress.id = 'accountAddress';
-            this.accountAddress.className = 'account-address';
-        }
-
         this.accountAddress.textContent = shortAddress;
         this.walletInfo.replaceChildren(this.accountAddress);
     }

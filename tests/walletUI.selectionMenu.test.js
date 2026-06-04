@@ -72,9 +72,7 @@ describe('WalletUI wallet selection menu', () => {
         ui.initializeElements();
         ui.renderConnectedWalletInfo('0x6587...2361');
 
-        expect(ui.walletInfo.querySelector('.wallet-info-icon')).toBeNull();
-        expect(ui.walletInfo.querySelector('.wallet-info-name')).toBeNull();
         expect(ui.walletInfo.children).toHaveLength(1);
-        expect(ui.accountAddress.textContent).toBe('0x6587...2361');
+        expect(ui.walletInfo.textContent).toBe('0x6587...2361');
     });
 });

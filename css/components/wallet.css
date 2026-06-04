@@ -86,7 +86,7 @@
   position: absolute;
   top: calc(100% + 4px);
   right: 0;
-  background: var(--dropdown-glass-bg);
+  background: var(--background-secondary);
   border: 1px solid var(--border-color);
   border-radius: 12px;
   padding: 4px;
@@ -148,7 +148,7 @@
 
 .network-option:hover,
 .network-option.active {
-  background: var(--dropdown-glass-hover);
+  background: var(--background-hover);
 }
 
 .network-dropdown[data-network-status="connected"] .network-option:hover,
@@ -535,7 +535,7 @@
 }
 
 .wallet-popup-close:hover {
-  background: var(--background-hover);
+  background: var(--dropdown-glass-hover);
   border-color: var(--border-color);
   color: var(--text-primary);
 }
@@ -610,28 +610,14 @@
 }
 
 [data-theme="dark"] .wallet-info-popup-content {
-  background: var(--dropdown-glass-bg);
   border-color: rgba(148, 163, 184, 0.32);
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.46);
 }
 
-[data-theme="dark"] .wallet-popup-close {
-  background: rgba(30, 41, 59, 0.9);
-  border-color: rgba(148, 163, 184, 0.32);
-}
-
-[data-theme="dark"] .wallet-popup-address-box {
-  background: rgba(30, 41, 59, 0.8);
-  border-color: rgba(148, 163, 184, 0.32);
-}
-
+[data-theme="dark"] .wallet-popup-close,
+[data-theme="dark"] .wallet-popup-address-box,
 [data-theme="dark"] .copy-icon-button {
-  background: rgba(30, 41, 59, 0.88);
   border-color: rgba(148, 163, 184, 0.32);
-}
-
-[data-theme="dark"] .copy-icon-button:hover {
-  background: rgba(51, 65, 85, 0.96);
 }
 
 [data-theme="dark"] .disconnect-button {

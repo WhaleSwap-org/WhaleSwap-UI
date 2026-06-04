@@ -63,7 +63,6 @@
   --network-button-disconnected-border: #b8c0cb;
   --network-button-disconnected-hover: #d7dde5;
   --network-button-disconnected-text: #1a1a1a;
-  /* Dropdown glass: 50% less transparent than --background-secondary / --background-hover */
   --dropdown-glass-bg: rgba(255, 255, 255, 0.90);
   --dropdown-glass-hover: rgba(255, 255, 255, 0.95);
 }
@@ -123,7 +122,6 @@
   --network-button-disconnected-border: #747474;
   --network-button-disconnected-hover: #545454;
   --network-button-disconnected-text: #ffffff;
-  /* Dropdown glass: 50% less transparent than --background-secondary / --background-hover */
   --dropdown-glass-bg: rgba(24, 30, 40, 0.81);
   --dropdown-glass-hover: rgba(35, 42, 56, 0.87);
 }
@@ -917,11 +915,7 @@ input {
 }
 
 /* Update dropdown backgrounds */
-.network-dropdown {
-  background: var(--dropdown-glass-bg);
-  border-color: var(--border-color);
-}
-
+.network-dropdown,
 .token-modal-content {
   background: var(--bg-secondary);
   border-color: var(--border-color);
