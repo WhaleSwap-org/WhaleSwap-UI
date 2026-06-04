@@ -533,8 +533,11 @@ export class WalletUI extends BaseComponent {
     }
 
     renderConnectedWalletInfo(shortAddress) {
+        const { name, icon } = walletManager.getSelectedWalletInfo();
+        const walletIcon = this.createWalletIconElement({ name, icon }, 'wallet-info-icon');
+
         this.accountAddress.textContent = shortAddress;
-        this.walletInfo.replaceChildren(this.accountAddress);
+        this.walletInfo.replaceChildren(walletIcon, this.accountAddress);
     }
 
     showConnectButton() {

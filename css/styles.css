@@ -988,9 +988,9 @@ input {
 .header-right .wallet-info {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 6px;
-  padding: 8px 12px;
+  padding: 8px 12px 8px 22px;
   min-width: 196px;
   min-height: 42px;
   border-radius: 12px;
