@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WalletUI } from '../js/components/WalletUI.js';
+import { walletManager } from '../js/services/WalletManager.js';
 
 let ui = null;
 
@@ -56,5 +57,31 @@ describe('WalletUI wallet selection menu', () => {
         const image = option.querySelector('.wallet-selection-icon img');
         expect(image?.getAttribute('src')).toContain('data:image/svg+xml');
         expect(option.querySelector('.wallet-selection-name')?.textContent).toBe('MetaMask');
+    });
+
+    it('shows wallet icon and truncated address without wallet name in connected badge', () => {
+        document.body.innerHTML = `
+            <div id="wallet-container"></div>
+            <button id="walletConnect">Connect Wallet</button>
+            <div id="walletInfo" class="wallet-info">
+                <span id="accountAddress" class="account-address"></span>
+            </div>
+            <div id="wallet-popup-container"></div>
+        `;
+
+        vi.spyOn(walletManager, 'getSelectedWalletInfo').mockReturnValue({
+            name: 'Trust Wallet',
+            icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'/>",
+        });
+
+        ui = new WalletUI();
+        ui.initializeElements();
+        ui.renderConnectedWalletInfo('0x6587...2361');
+
+        expect(ui.walletInfo.querySelector('.wallet-info-name')).toBeNull();
+        expect(ui.walletInfo.querySelector('.wallet-info-icon img')?.getAttribute('src')).toContain(
+            'data:image/svg+xml'
+        );
+        expect(ui.accountAddress.textContent).toBe('0x6587...2361');
     });
 });

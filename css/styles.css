@@ -63,6 +63,8 @@
   --network-button-disconnected-border: #b8c0cb;
   --network-button-disconnected-hover: #d7dde5;
   --network-button-disconnected-text: #1a1a1a;
+  --dropdown-glass-bg: rgba(255, 255, 255, 0.90);
+  --dropdown-glass-hover: rgba(255, 255, 255, 0.95);
 }
 
 [data-theme="dark"] {
@@ -120,6 +122,8 @@
   --network-button-disconnected-border: #747474;
   --network-button-disconnected-hover: #545454;
   --network-button-disconnected-text: #ffffff;
+  --dropdown-glass-bg: rgba(24, 30, 40, 0.81);
+  --dropdown-glass-hover: rgba(35, 42, 56, 0.87);
 }
 
 /* Base styles */
@@ -984,9 +988,9 @@ input {
 .header-right .wallet-info {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 6px;
-  padding: 8px 12px;
+  padding: 8px 12px 8px 22px;
   min-width: 196px;
   min-height: 42px;
   border-radius: 12px;
