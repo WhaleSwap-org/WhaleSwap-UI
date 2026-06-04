@@ -1,9 +1,9 @@
 import { ethers } from 'ethers';
-import { createWalletCore } from '../../vendor/liberdus-wallet-core/index.js';
+import { createWalletCore } from '../../vendor/liberdus-wallet-module/index.js';
 import {
     addEthereumChain,
     switchEthereumChain
-} from '../../vendor/liberdus-wallet-core/adapters/chain.js';
+} from '../../vendor/liberdus-wallet-module/adapters/chain.js';
 import { abi as CONTRACT_ABI } from '../abi/OTCSwap.js';
 import { createLogger } from './LogService.js';
 import {

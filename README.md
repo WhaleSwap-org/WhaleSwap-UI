@@ -46,6 +46,18 @@ Chain support is defined in `js/config/networks.js`. The selector only exposes c
 
 ## Getting Started (locally)
 
+Clone with the shared wallet module submodule initialized:
+
+```bash
+git clone --recurse-submodules https://github.com/WhaleSwap-org/WhaleSwap-UI.git
+```
+
+For an existing clone, initialize submodules before running the app:
+
+```bash
+git submodule update --init --recursive
+```
+
 1. Install dependencies:
 ```bash
 npm install

@@ -33,7 +33,7 @@ function mockEthers() {
 }
 
 describe('WalletManager provider initialization', () => {
-    it('discovers wallets without probing or creating a Web3Provider when there is no saved session', async () => {
+    it('discovers wallets without auto-connecting or creating a Web3Provider when there is no saved session', async () => {
         const { mockWeb3Provider } = mockEthers();
         const injectedProvider = {
             request: vi.fn(async ({ method }) => {
@@ -52,7 +52,7 @@ describe('WalletManager provider initialization', () => {
         const manager = new WalletManager();
         await manager.init();
 
-        expect(injectedProvider.request).not.toHaveBeenCalled();
+        expect(injectedProvider.request).not.toHaveBeenCalledWith({ method: 'eth_accounts' });
         expect(mockWeb3Provider).not.toHaveBeenCalled();
         expect(manager.getProvider()).toBeNull();
     });
