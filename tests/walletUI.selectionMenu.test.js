@@ -57,4 +57,24 @@ describe('WalletUI wallet selection menu', () => {
         expect(image?.getAttribute('src')).toContain('data:image/svg+xml');
         expect(option.querySelector('.wallet-selection-name')?.textContent).toBe('MetaMask');
     });
+
+    it('shows only truncated address in connected wallet badge', () => {
+        document.body.innerHTML = `
+            <div id="wallet-container"></div>
+            <button id="walletConnect">Connect Wallet</button>
+            <div id="walletInfo" class="wallet-info">
+                <span id="accountAddress" class="account-address"></span>
+            </div>
+            <div id="wallet-popup-container"></div>
+        `;
+
+        ui = new WalletUI();
+        ui.initializeElements();
+        ui.renderConnectedWalletInfo('0x6587...2361');
+
+        expect(ui.walletInfo.querySelector('.wallet-info-icon')).toBeNull();
+        expect(ui.walletInfo.querySelector('.wallet-info-name')).toBeNull();
+        expect(ui.walletInfo.children).toHaveLength(1);
+        expect(ui.accountAddress.textContent).toBe('0x6587...2361');
+    });
 });

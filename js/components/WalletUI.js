@@ -23,8 +23,6 @@ export class WalletUI extends BaseComponent {
         this.popupAccount = null;
         this.walletPopup = null;
         this.walletSelectionMenu = null;
-        this.connectedWalletIcon = null;
-        this.connectedWalletName = null;
         
         this.debug('Constructor completed (no side effects)');
     }
@@ -535,28 +533,14 @@ export class WalletUI extends BaseComponent {
     }
 
     renderConnectedWalletInfo(shortAddress) {
-        const selectedWallet = walletManager.getSelectedWalletInfo?.() || {};
-        const walletName = selectedWallet.name || 'Wallet';
+        if (!this.accountAddress) {
+            this.accountAddress = document.createElement('span');
+            this.accountAddress.id = 'accountAddress';
+            this.accountAddress.className = 'account-address';
+        }
 
-        this.connectedWalletIcon = this.createWalletIconElement({
-            name: walletName,
-            icon: selectedWallet.icon || ''
-        }, 'wallet-info-icon');
-
-        this.connectedWalletName = document.createElement('span');
-        this.connectedWalletName.className = 'wallet-info-name';
-        this.connectedWalletName.textContent = walletName;
-
-        this.accountAddress = document.createElement('span');
-        this.accountAddress.id = 'accountAddress';
-        this.accountAddress.className = 'account-address';
         this.accountAddress.textContent = shortAddress;
-
-        this.walletInfo.replaceChildren(
-            this.connectedWalletIcon,
-            this.connectedWalletName,
-            this.accountAddress
-        );
+        this.walletInfo.replaceChildren(this.accountAddress);
     }
 
     showConnectButton() {
