@@ -74,7 +74,7 @@ describe('WalletManager provider initialization', () => {
             removeListener: vi.fn(),
         };
 
-        localStorage.setItem('whaleswap-ui:wallet-session', JSON.stringify({ walletId: 'legacy:globalthis' }));
+        localStorage.setItem('whaleswap-ui:wallet-session', JSON.stringify({ walletId: 'legacy:default' }));
         window.ethereum = injectedProvider;
 
         const { WalletManager } = await import('../js/services/WalletManager.js');
